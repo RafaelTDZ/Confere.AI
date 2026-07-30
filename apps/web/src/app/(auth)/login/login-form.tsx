@@ -60,14 +60,15 @@ export function LoginForm() {
     const supabase = getSupabaseBrowserClient();
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) throw signInError;
 
-      router.push("/dashboard");
+      const tenantId = data.user?.app_metadata?.tenant_id;
+      router.push(tenantId ? "/dashboard" : "/onboarding");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao entrar");

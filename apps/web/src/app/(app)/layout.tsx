@@ -6,7 +6,7 @@ import {
   Package,
   Settings,
 } from "lucide-react";
-import { getAuthContextOrNull } from "@/lib/auth";
+import { resolveAuthState } from "@/lib/auth";
 import { SignOutButton } from "./sign-out-button";
 
 const NAV_ITEMS = [
@@ -19,8 +19,11 @@ const NAV_ITEMS = [
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const ctx = await getAuthContextOrNull();
-  if (!ctx) redirect("/login");
+  const state = await resolveAuthState();
+  if (state.status === "unauthenticated") redirect("/login");
+  if (state.status === "needs_onboarding") redirect("/onboarding");
+
+  const ctx = state.context;
 
   return (
     <div className="flex min-h-screen">
