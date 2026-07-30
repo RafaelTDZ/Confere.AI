@@ -115,19 +115,6 @@ export function SignupForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email" className="text-sm font-medium">
-          E-mail
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          disabled
-          className="text-base bg-muted"
-        />
-      </div>
-
-      <div className="space-y-2">
         <Label htmlFor="full-name" className="text-sm font-medium">
           Nome Completo
         </Label>
