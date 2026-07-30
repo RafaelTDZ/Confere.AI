@@ -27,6 +27,8 @@ export const tenantMembers = pgTable(
     role: text("role", {
       enum: ["owner", "admin", "operator", "viewer"],
     }).notNull(),
+    fullName: text("full_name"),
+    companyName: text("company_name"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
