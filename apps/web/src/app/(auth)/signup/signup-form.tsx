@@ -12,6 +12,8 @@ export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +29,16 @@ export function SignupForm() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+
+    if (!fullName.trim()) {
+      setError("Nome completo é obrigatório");
+      return;
+    }
+
+    if (!companyName.trim()) {
+      setError("Nome da empresa é obrigatório");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("As senhas não coincidem");
@@ -56,6 +68,20 @@ export function SignupForm() {
       });
 
       if (signInError) throw signInError;
+
+      // Salva os dados adicionais do usuário (nome e empresa)
+      const response = await fetch("/api/auth/save-user-info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          companyName: companyName.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Falha ao salvar informações do usuário");
+      }
 
       router.push("/onboarding");
       router.refresh();
@@ -102,6 +128,40 @@ export function SignupForm() {
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="full-name" className="text-sm font-medium">
+          Nome Completo
+        </Label>
+        <Input
+          id="full-name"
+          type="text"
+          required
+          autoComplete="name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          disabled={loading}
+          className="text-base"
+          placeholder="Seu nome completo"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="company-name" className="text-sm font-medium">
+          Nome da Empresa
+        </Label>
+        <Input
+          id="company-name"
+          type="text"
+          required
+          autoComplete="organization"
+          value={companyName}
+          onChange={(e) => setCompanyName(e.target.value)}
+          disabled={loading}
+          className="text-base"
+          placeholder="Nome da sua empresa"
+        />
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="password" className="text-sm font-medium">
           Senha
         </Label>
@@ -143,7 +203,7 @@ export function SignupForm() {
       <Button
         type="submit"
         className="w-full group"
-        disabled={loading || !password || !confirmPassword}
+        disabled={loading || !fullName || !companyName || !password || !confirmPassword}
         size="lg"
       >
         {loading ? "Criando conta..." : "Criar conta"}
