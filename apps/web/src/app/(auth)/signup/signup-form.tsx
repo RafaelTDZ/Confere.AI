@@ -54,36 +54,59 @@ export function SignupForm() {
     const supabase = getSupabaseBrowserClient();
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
       });
 
-      if (signUpError) throw signUpError;
-
-      // Após signup bem-sucedido, tenta fazer login
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) throw signInError;
-
-      // Salva os dados adicionais do usuário (nome e empresa)
-      const response = await fetch("/api/auth/save-user-info", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
-          companyName: companyName.trim(),
-        }),
-      });
-
-      if (!response.ok) {
-        console.error("Falha ao salvar informações do usuário");
+      if (signUpError) {
+        const message = signUpError.message.toLowerCase();
+        if (
+          message.includes("already registered") ||
+          message.includes("already been registered") ||
+          signUpError.code === "user_already_exists"
+        ) {
+          setError("Este e-mail já possui conta. Faça login para continuar.");
+          return;
+        }
+        throw signUpError;
       }
 
-      router.push("/onboarding");
+      // Com confirmacao de e-mail desligada, a sessao ja vem no signUp.
+      if (!signUpData.session) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (signInError) throw signInError;
+      }
+
+      const { error: tenantError } = await supabase.rpc(
+        "create_tenant_with_owner",
+        { p_name: companyName.trim() },
+      );
+      if (tenantError) throw tenantError;
+
+      const { data: refreshed, error: refreshError } =
+        await supabase.auth.refreshSession();
+      if (refreshError) throw refreshError;
+
+      const tenantId = refreshed.session?.user?.app_metadata?.tenant_id as
+        | string
+        | undefined;
+      const userId = refreshed.session?.user?.id;
+      if (tenantId && userId) {
+        await supabase
+          .from("tenant_members")
+          .update({
+            full_name: fullName.trim(),
+            company_name: companyName.trim(),
+          })
+          .eq("tenant_id", tenantId)
+          .eq("user_id", userId);
+      }
+
+      router.push("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao criar conta");
