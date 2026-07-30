@@ -1,4 +1,5 @@
 -- Provisiona tenant automaticamente no signup (sem tela de onboarding).
+-- AFTER INSERT: o user_id precisa existir por causa da FK em tenant_members.
 
 create or replace function private.handle_new_user()
 returns trigger
@@ -28,12 +29,14 @@ begin
   insert into public.tenant_settings (tenant_id)
   values (v_tenant_id);
 
-  new.raw_app_meta_data :=
-    coalesce(new.raw_app_meta_data, '{}'::jsonb)
+  update auth.users
+  set raw_app_meta_data =
+    coalesce(raw_app_meta_data, '{}'::jsonb)
     || jsonb_build_object(
       'tenant_id', v_tenant_id::text,
       'tenant_role', 'owner'
-    );
+    )
+  where id = new.id;
 
   return new;
 end;
@@ -41,6 +44,6 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
-  before insert on auth.users
+  after insert on auth.users
   for each row
   execute function private.handle_new_user();

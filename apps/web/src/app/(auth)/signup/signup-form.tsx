@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { ensureUserTenant } from "@/lib/tenant";
+import { ensureUserTenant, toUserFacingError } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,7 +85,7 @@ export function SignupForm() {
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao criar conta");
+      setError(toUserFacingError(err, "Falha ao criar conta"));
     } finally {
       setLoading(false);
     }
