@@ -1,0 +1,21 @@
+{
+  "name": "@confere/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@confere/config": "workspace:*",
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
