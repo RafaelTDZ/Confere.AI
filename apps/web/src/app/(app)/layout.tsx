@@ -20,8 +20,7 @@ export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const state = await resolveAuthState();
-  if (state.status === "unauthenticated") redirect("/login");
-  if (state.status === "needs_onboarding") redirect("/onboarding");
+  if (state.status !== "authenticated") redirect("/login");
 
   const ctx = state.context;
 

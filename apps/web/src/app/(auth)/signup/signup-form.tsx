@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { ensureUserTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,6 @@ export function SignupForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
-  const [companyName, setCompanyName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,11 +35,6 @@ export function SignupForm() {
       return;
     }
 
-    if (!companyName.trim()) {
-      setError("Nome da empresa é obrigatório");
-      return;
-    }
-
     if (password !== confirmPassword) {
       setError("As senhas não coincidem");
       return;
@@ -57,6 +52,11 @@ export function SignupForm() {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+          },
+        },
       });
 
       if (signUpError) {
@@ -72,7 +72,6 @@ export function SignupForm() {
         throw signUpError;
       }
 
-      // Com confirmacao de e-mail desligada, a sessao ja vem no signUp.
       if (!signUpData.session) {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -81,30 +80,7 @@ export function SignupForm() {
         if (signInError) throw signInError;
       }
 
-      const { error: tenantError } = await supabase.rpc(
-        "create_tenant_with_owner",
-        { p_name: companyName.trim() },
-      );
-      if (tenantError) throw tenantError;
-
-      const { data: refreshed, error: refreshError } =
-        await supabase.auth.refreshSession();
-      if (refreshError) throw refreshError;
-
-      const tenantId = refreshed.session?.user?.app_metadata?.tenant_id as
-        | string
-        | undefined;
-      const userId = refreshed.session?.user?.id;
-      if (tenantId && userId) {
-        await supabase
-          .from("tenant_members")
-          .update({
-            full_name: fullName.trim(),
-            company_name: companyName.trim(),
-          })
-          .eq("tenant_id", tenantId)
-          .eq("user_id", userId);
-      }
+      await ensureUserTenant(supabase, fullName.trim());
 
       router.push("/dashboard");
       router.refresh();
@@ -146,28 +122,12 @@ export function SignupForm() {
           type="text"
           required
           autoComplete="name"
+          autoFocus
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           disabled={loading}
           className="text-base"
           placeholder="Seu nome completo"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="company-name" className="text-sm font-medium">
-          Nome da Empresa
-        </Label>
-        <Input
-          id="company-name"
-          type="text"
-          required
-          autoComplete="organization"
-          value={companyName}
-          onChange={(e) => setCompanyName(e.target.value)}
-          disabled={loading}
-          className="text-base"
-          placeholder="Nome da sua empresa"
         />
       </div>
 
@@ -181,7 +141,6 @@ export function SignupForm() {
           required
           minLength={6}
           autoComplete="new-password"
-          autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={loading}
@@ -213,7 +172,7 @@ export function SignupForm() {
       <Button
         type="submit"
         className="w-full group"
-        disabled={loading || !fullName || !companyName || !password || !confirmPassword}
+        disabled={loading || !fullName || !password || !confirmPassword}
         size="lg"
       >
         {loading ? "Criando conta..." : "Criar conta"}

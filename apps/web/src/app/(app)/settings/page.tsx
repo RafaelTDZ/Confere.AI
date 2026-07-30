@@ -13,7 +13,7 @@ import { SettingsForm } from "./settings-form";
 
 export default async function SettingsPage() {
   const ctx = await getAuthContext().catch(() => null);
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) redirect("/login");
 
   const supabase = await createSupabaseServerClient();
   const { data: settings } = await supabase

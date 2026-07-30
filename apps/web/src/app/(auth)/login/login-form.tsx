@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { ensureUserTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,15 +61,16 @@ export function LoginForm() {
     const supabase = getSupabaseBrowserClient();
 
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) throw signInError;
 
-      const tenantId = data.user?.app_metadata?.tenant_id;
-      router.push(tenantId ? "/dashboard" : "/onboarding");
+      await ensureUserTenant(supabase, email.split("@")[0] || "Minha empresa");
+
+      router.push("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao entrar");

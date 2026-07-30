@@ -16,7 +16,7 @@ export default async function ProductsPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const ctx = await getAuthContext().catch(() => null);
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) redirect("/login");
 
   const { q } = await searchParams;
   const supabase = await createSupabaseServerClient();

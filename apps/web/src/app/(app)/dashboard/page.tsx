@@ -13,7 +13,7 @@ import {
 
 export default async function DashboardPage() {
   const ctx = await getAuthContext().catch(() => null);
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) redirect("/login");
 
   const supabase = await createSupabaseServerClient();
 

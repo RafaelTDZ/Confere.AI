@@ -22,7 +22,7 @@ const STATUS_LABEL: Record<string, { label: string; variant: "default" | "second
 
 export default async function ImportsPage() {
   const ctx = await getAuthContext().catch(() => null);
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) redirect("/login");
 
   const supabase = await createSupabaseServerClient();
   const { data: imports } = await supabase

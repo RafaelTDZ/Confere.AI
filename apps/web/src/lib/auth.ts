@@ -10,7 +10,6 @@ export interface AuthContext {
 
 export type AuthState =
   | { status: "unauthenticated" }
-  | { status: "needs_onboarding"; userId: string; email: string | null }
   | { status: "authenticated"; context: AuthContext };
 
 export class UnauthorizedError extends Error {
@@ -28,8 +27,8 @@ export class MissingTenantError extends Error {
 }
 
 /**
- * Resolve o estado de autenticacao sem colapsar "sem tenant" em "logout".
- * tenant_id/role vem de app_metadata (hook ou raw_app_meta_data).
+ * Resolve o estado de autenticacao a partir do JWT.
+ * tenant_id/role vem de app_metadata (trigger de signup / hook).
  */
 export async function resolveAuthState(): Promise<AuthState> {
   const supabase = await createSupabaseServerClient();
@@ -46,11 +45,7 @@ export async function resolveAuthState(): Promise<AuthState> {
   const role = (user.app_metadata?.tenant_role ?? "viewer") as MemberRole;
 
   if (!tenantId) {
-    return {
-      status: "needs_onboarding",
-      userId: user.id,
-      email: user.email ?? null,
-    };
+    return { status: "unauthenticated" };
   }
 
   return {
@@ -66,17 +61,12 @@ export async function resolveAuthState(): Promise<AuthState> {
 
 /**
  * Resolve o contexto de autenticacao a partir do JWT validado pelo Supabase.
- * tenant_id/role vem de app_metadata (injetados pelo custom access token hook).
  */
 export async function getAuthContext(): Promise<AuthContext> {
   const state = await resolveAuthState();
 
   if (state.status === "unauthenticated") {
     throw new UnauthorizedError();
-  }
-
-  if (state.status === "needs_onboarding") {
-    throw new MissingTenantError();
   }
 
   return state.context;

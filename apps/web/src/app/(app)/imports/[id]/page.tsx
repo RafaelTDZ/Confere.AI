@@ -10,7 +10,7 @@ export default async function ImportDetailPage({
 }) {
   const { id } = await params;
   const ctx = await getAuthContext().catch(() => null);
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) redirect("/login");
 
   const supabase = await createSupabaseServerClient();
   const { data: importRecord } = await supabase
