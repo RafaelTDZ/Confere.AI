@@ -5,6 +5,12 @@
 create extension if not exists pg_trgm;
 create extension if not exists pgcrypto;
 
+-- As funcoes security definer abaixo referenciam tabelas criadas mais adiante
+-- neste mesmo arquivo. Sem isto, o Postgres valida o corpo das funcoes SQL na
+-- criacao (check_function_bodies = on por padrao) e falha com
+-- "relation public.tenant_members does not exist".
+set check_function_bodies = off;
+
 -- ---------------------------------------------------------------------------
 -- Schema privado: funcoes security definer NUNCA ficam em schema exposto
 -- ---------------------------------------------------------------------------
