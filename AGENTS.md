@@ -19,20 +19,33 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    ```bash
    pnpm install
    cp .env.example .env
-   cp .env apps/web/.env.local
+   cp .env apps/web/.env.local   # não existe no git — Next lê este path
    ```
-   Edite `.env` e `apps/web/.env.local` e preencha:
+   Edite `.env` e `apps/web/.env.local` e preencha (**uma chave por linha**):
    - `NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
+   - `OPENROUTER_API_KEY` — para smoke/IA (`https://openrouter.ai/settings/keys`); opcional até ligar o pipeline
 
    Chaves em: Supabase Dashboard > Settings > API Keys. **Não deixe `SUPABASE_INTERNAL_URL=` vazio**
    — remova a linha ou deixe comentada para usar `NEXT_PUBLIC_SUPABASE_URL`.
    Fallback legado: `NEXT_PUBLIC_SUPABASE_ANON_KEY` (JWT).
+
+   **Env vazio no processo ganha do arquivo:** se o shell/CI exportar
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=` (string vazia), o Next **não** aplica o valor
+   do `.env.local`. Faça `unset` da variável ou defina o valor real antes do `pnpm dev`.
 2. **Web**:
    ```bash
    pnpm --filter @confere/web dev   # http://localhost:3000
    # ou: pnpm dev
    ```
+
+### OpenRouter (IA)
+
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `openai/gpt-5.6-luna`).
+- Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
+  - Sem cookie → `401`; sem `OPENROUTER_API_KEY` → `503`; sucesso → `{ ok, model, text, latencyMs }`.
+- Chave **só no servidor** (`OPENROUTER_API_KEY`); nunca `NEXT_PUBLIC_*`.
+- Pipeline de documentos (upload/classificação/extração) **ainda não** usa este client.
 
 ### Migrations no cloud
 
@@ -74,6 +87,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | UI pronta; upload é mock (sem backend) |
+| Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
 | Pipeline de documentos (upload, IA, análise) | Não implementado |
 | Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
 
@@ -91,6 +105,9 @@ curl -sI http://localhost:3000/login | head -1
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
+# OpenRouter (sessão autenticada + OPENROUTER_API_KEY em apps/web/.env.local):
+# curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
+# → {"ok":true,"model":"openai/gpt-5.6-luna","text":"ok","latencyMs":...}
 ```
 
 ### Cuidados não-óbvios
@@ -106,5 +123,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Proxy `/supabase`**: não use rewrite do `next.config` (404 no App Router). O route handler
   deve filtrar hop-by-hop — senão "Failed to fetch" no login (senha).
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
-- **`.env` é gitignored.** Next.js lê `apps/web/.env.local`; a raiz é usada para copiar para o app.
+- **`.env` / `.env.local` são gitignored.** Não vêm no clone — copie de `.env.example`.
+  Next.js lê `apps/web/.env.local`; a raiz `.env` é só para copiar para o app.
+- **Não cole a publishable key na mesma linha do comentário** `# NEXT_PUBLIC_SUPABASE_ANON_KEY=`
+  (vira `Invalid API key`).
+- **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env.local` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
+- **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
