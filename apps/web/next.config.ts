@@ -1,22 +1,22 @@
 import type { NextConfig } from "next";
 
+const supabaseUpstream =
+  process.env.SUPABASE_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  "http://127.0.0.1:54321";
+
 const nextConfig: NextConfig = {
-  transpilePackages: [
-    "@confere/application",
-    "@confere/ai",
-    "@confere/database",
-    "@confere/domain",
-    "@confere/infrastructure",
-  ],
-  serverExternalPackages: ["pg", "pg-boss"],
-  webpack: (config) => {
-    // Packages internos usam imports relativos com extensao .js (padrao ESM
-    // NodeNext) apontando para fontes .ts — mapear para o webpack.
-    config.resolve.extensionAlias = {
-      ".js": [".ts", ".tsx", ".js"],
-      ".jsx": [".tsx", ".jsx"],
-    };
-    return config;
+  async rewrites() {
+    return [
+      {
+        // Proxy same-origin para o browser alcançar o Supabase. O destino segue
+        // NEXT_PUBLIC_SUPABASE_URL, então funciona tanto com o Supabase local
+        // quanto com o hospedado em produção/preview (o browser não fala direto
+        // com o upstream, o que quebraria em preview/túnel remoto).
+        source: "/supabase/:path*",
+        destination: `${supabaseUpstream}/:path*`,
+      },
+    ];
   },
 };
 

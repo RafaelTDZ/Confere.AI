@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
 
 /**
  * Client Supabase para Server Components / Route Handlers.
@@ -14,31 +15,31 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
 
   if (!url || !key) {
     throw new Error(
-      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY"
+      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY",
     );
   }
 
   return createServerClient(url, key, {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(
-          cookiesToSet: Array<{
-            name: string;
-            value: string;
-            options: CookieOptions;
-          }>,
-        ) {
-          try {
-            for (const { name, value, options } of cookiesToSet) {
-              cookieStore.set(name, value, options);
-            }
-          } catch {
-            // Chamado de um Server Component: o middleware faz o refresh.
+    cookieOptions: { name: AUTH_COOKIE_NAME },
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(
+        cookiesToSet: Array<{
+          name: string;
+          value: string;
+          options: CookieOptions;
+        }>,
+      ) {
+        try {
+          for (const { name, value, options } of cookiesToSet) {
+            cookieStore.set(name, value, options);
           }
-        },
+        } catch {
+          // Chamado de um Server Component: o middleware faz o refresh.
+        }
       },
     },
-  );
+  });
 }

@@ -11,11 +11,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@confere/application": "workspace:*",
-    "@confere/ai": "workspace:*",
-    "@confere/database": "workspace:*",
-    "@confere/domain": "workspace:*",
-    "@confere/infrastructure": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.10",
     "class-variance-authority": "^0.7.1",

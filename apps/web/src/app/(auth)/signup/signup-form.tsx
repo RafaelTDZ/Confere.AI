@@ -82,7 +82,7 @@ export function SignupForm() {
 
       await ensureUserTenant(supabase, fullName.trim());
 
-      router.push("/dashboard");
+      router.push("/analise");
       router.refresh();
     } catch (err) {
       setError(toUserFacingError(err, "Falha ao criar conta"));

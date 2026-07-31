@@ -1,4 +1,0 @@
-{
-  "extends": "@confere/config/tsconfig.base.json",
-  "include": ["src"]
-}

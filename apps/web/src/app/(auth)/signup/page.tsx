@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { SignupForm } from "./signup-form";
 import {
   Card,
@@ -18,7 +19,9 @@ export default function SignupPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SignupForm />
+          <Suspense fallback={null}>
+            <SignupForm />
+          </Suspense>
         </CardContent>
       </Card>
     </main>
