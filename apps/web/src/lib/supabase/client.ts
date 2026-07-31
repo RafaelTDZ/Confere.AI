@@ -9,9 +9,9 @@ let client: SupabaseClient | null = null;
 /**
  * URL pública do Supabase no browser.
  * Usa proxy same-origin (/supabase) para funcionar em preview/túnel remoto,
- * não só em localhost. O destino do proxy é resolvido pelo rewrite do Next
+ * não só em localhost. O destino do proxy é resolvido pelo route handler
  * conforme o ambiente (SUPABASE_INTERNAL_URL → NEXT_PUBLIC_SUPABASE_URL →
- * Supabase local).
+ * fallback http://127.0.0.1:54321).
  */
 function getBrowserSupabaseUrl(): string {
   if (typeof window !== "undefined") {

@@ -19,7 +19,7 @@ divergências entre documentos.
   - Logout
   - Middleware de refresh de sessão (`@supabase/ssr`)
   - Cookie fixo `sb-confere-auth-token` (browser/server/middleware)
-  - Proxy same-origin `/supabase` (local e produção via `NEXT_PUBLIC_SUPABASE_URL`)
+  - Proxy same-origin `/supabase` (produção/preview via `NEXT_PUBLIC_SUPABASE_URL`)
 - [x] **Multi-tenant**
   - Schema com RLS por `tenant_id` (claim em `app_metadata`)
   - Provisionamento automático no signup (trigger `on_auth_user_created`)
@@ -111,8 +111,6 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 | `/api/auth/save-user-info` | Lê `tenant_id` de `user_metadata` em vez de `app_metadata` — rota legada, provavelmente não usada |
 | Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
 | Upload mock | `upload-dropzone.tsx` simula delay de 600ms sem persistir arquivo |
-| Storage desabilitado | Supabase Storage excluído do `supabase start` local (`-x storage-api`) |
-
 ## Arquitetura atual
 
 ```
@@ -134,6 +132,6 @@ Supabase
 ## Referências
 
 - [`README.md`](README.md) — setup, variáveis de ambiente, rotas
-- [`AGENTS.md`](AGENTS.md) — instruções para agentes (Cursor Cloud, Docker, auth)
+- [`AGENTS.md`](AGENTS.md) — instruções para agentes (Cursor Cloud, auth)
 - [`.env.example`](.env.example) — variáveis de ambiente
 - [`supabase/migrations/`](supabase/migrations/) — schema do banco
