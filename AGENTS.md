@@ -23,11 +23,11 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    ```
    Edite `.env` e `apps/web/.env.local` e preencha:
    - `NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — chave anon do projeto cloud
-   - `SUPABASE_SERVICE_ROLE_KEY` — chave service role do projeto cloud
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
 
-   Chaves em: Supabase Dashboard > Settings > API. **Não deixe `SUPABASE_INTERNAL_URL=` vazio**
+   Chaves em: Supabase Dashboard > Settings > API Keys. **Não deixe `SUPABASE_INTERNAL_URL=` vazio**
    — remova a linha ou deixe comentada para usar `NEXT_PUBLIC_SUPABASE_URL`.
+   Fallback legado: `NEXT_PUBLIC_SUPABASE_ANON_KEY` (JWT).
 2. **Web**:
    ```bash
    pnpm --filter @confere/web dev   # http://localhost:3000
@@ -77,7 +77,7 @@ Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 Com as chaves reais do projeto cloud:
 
 ```bash
-# Defina ANON com NEXT_PUBLIC_SUPABASE_ANON_KEY do .env
+# Defina ANON com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do .env
 curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $ANON"  # JSON do GoTrue
 curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $ANON"              # mesmo via proxy
 curl -sI http://localhost:3000/login | head -1                                       # HTTP 200

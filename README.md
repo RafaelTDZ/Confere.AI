@@ -45,8 +45,8 @@ Pré-requisitos: Node >= 20, pnpm 10. O projeto usa **Supabase cloud** — não 
 pnpm install
 cp .env.example .env
 cp .env apps/web/.env.local
-# Preencha NEXT_PUBLIC_SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY
-# com as chaves do projeto cloud (Supabase Dashboard > Settings > API)
+# Preencha NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+# (Dashboard > Settings > API Keys — sb_publishable_...)
 pnpm dev         # web em http://localhost:3000
 ```
 
@@ -75,7 +75,7 @@ Requer Supabase CLI (qualquer versão recente compatível com `db push`).
 Com as chaves reais do projeto:
 
 ```bash
-# Defina ANON com NEXT_PUBLIC_SUPABASE_ANON_KEY do seu .env
+# Defina ANON com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do seu .env
 curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $ANON"  # JSON GoTrue
 curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $ANON"            # mesmo via proxy
 curl -sI http://localhost:3000/login | head -1                                      # HTTP 200
@@ -108,8 +108,9 @@ pnpm db:migration <nome>   # cria nova migration
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Sim | URL do projeto Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sim | Chave anon do Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Sim | Chave service role (apenas servidor) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Sim* | Chave publishable (`sb_publishable_...`). *Ou use `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legado) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
+| `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Não | Chave secreta / service_role (apenas servidor; app atual não usa) |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
 | `SENTRY_DSN` | Não | Observabilidade |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Observabilidade |
@@ -140,8 +141,7 @@ Configure as variáveis no ambiente de deploy (Vercel, etc.):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 ```
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.

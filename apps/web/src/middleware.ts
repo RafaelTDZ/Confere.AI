@@ -1,13 +1,14 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 /** Refresh de sessao em toda request (padrao @supabase/ssr). */
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = getSupabasePublicKey();
 
   // Ignorar middleware se variáveis não estiverem configuradas (exemplo: em desenvolvimento local sem .env.local)
   if (!supabaseUrl || !supabaseKey) {

@@ -3,6 +3,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 let client: SupabaseClient | null = null;
 
@@ -23,11 +24,11 @@ function getBrowserSupabaseUrl(): string {
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (client) return client;
 
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = getSupabasePublicKey();
 
   if (!key) {
     throw new Error(
-      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_ANON_KEY em seu arquivo .env.local",
+      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ou NEXT_PUBLIC_SUPABASE_ANON_KEY) em seu arquivo .env.local",
     );
   }
 
