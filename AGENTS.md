@@ -71,6 +71,8 @@ preview/túnel remoto). O Next faz proxy same-origin:
 - Rewrite: `/supabase/:path*` → `http://127.0.0.1:54321/:path*` ([`apps/web/next.config.ts`](apps/web/next.config.ts))
 - Browser client usa `window.location.origin + "/supabase"` ([`apps/web/src/lib/supabase/client.ts`](apps/web/src/lib/supabase/client.ts))
 - Server/middleware continuam usando `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`
+- Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/middleware),
+  senão o storageKey diverge (hostname do proxy vs `127.0.0.1`) e `/analise` redireciona de volta ao login.
 
 ### Smoke check rápido
 
