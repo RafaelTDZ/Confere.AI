@@ -54,7 +54,8 @@ pnpm dev         # web em http://localhost:3000
 
 O projeto usa o Supabase cloud: `https://xmvypuwizexdhpwrgrao.supabase.co`.
 
-As chaves `anon` e `service_role` estão no dashboard: **Settings → API**.
+As chaves publishable (`sb_publishable_...`) estão no dashboard: **Settings → API Keys**.
+(Opcional legado: `anon` JWT em Legacy API Keys.)
 
 `SUPABASE_INTERNAL_URL` deve ficar **removido ou comentado** no `.env` — string vazia quebra o proxy `/supabase`.
 

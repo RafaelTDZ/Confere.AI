@@ -19,7 +19,8 @@ divergências entre documentos.
   - Logout
   - Middleware de refresh de sessão (`@supabase/ssr`)
   - Cookie fixo `sb-confere-auth-token` (browser/server/middleware)
-  - Proxy same-origin `/supabase` (produção/preview via `NEXT_PUBLIC_SUPABASE_URL`)
+  - Proxy same-origin `/supabase` (route handler → Supabase cloud via `NEXT_PUBLIC_SUPABASE_URL`)
+  - Chave pública: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`; fallback `ANON_KEY` legado)
 - [x] **Multi-tenant**
   - Schema com RLS por `tenant_id` (claim em `app_metadata`)
   - Provisionamento automático no signup (trigger `on_auth_user_created`)
@@ -118,15 +119,15 @@ Browser
   │
   ├─ /login, /signup          → React (client components + Supabase browser client)
   ├─ /analise                 → React (server layout + client dropzone)
-  ├─ /supabase/*              → Next.js rewrite → Supabase (Auth API)
+  ├─ /supabase/*              → Next.js route handler → Supabase cloud (Auth API)
   └─ /api/auth/*              → Route Handlers (server Supabase client)
 
 Next.js middleware             → refresh de sessão em toda request
 
-Supabase
+Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
   ├─ PostgreSQL + RLS         → schema multi-tenant
-  └─ Triggers                   → provisionamento automático de tenant no signup
+  └─ Triggers                 → provisionamento automático de tenant no signup
 ```
 
 ## Referências
