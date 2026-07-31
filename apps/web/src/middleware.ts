@@ -4,6 +4,17 @@ import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
 import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
+function clearAuthCookies(response: NextResponse, request: NextRequest) {
+  for (const { name } of request.cookies.getAll()) {
+    if (name === AUTH_COOKIE_NAME || name.startsWith(`${AUTH_COOKIE_NAME}.`)) {
+      response.cookies.set(name, "", {
+        maxAge: 0,
+        path: "/",
+      });
+    }
+  }
+}
+
 /** Refresh de sessao em toda request (padrao @supabase/ssr). */
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -41,7 +52,12 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { error } = await supabase.auth.getUser();
+  // JWT de outro projeto (ex.: Supabase local) → limpa cookie para não quebrar RPCs/login.
+  if (error) {
+    clearAuthCookies(response, request);
+  }
+
   return response;
 }
 

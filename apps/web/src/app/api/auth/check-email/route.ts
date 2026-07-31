@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabasePublicClient } from "@/lib/supabase/public-client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Email inválido" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseServerClient();
+    // Sem cookies: JWT legado/local no browser não pode contaminar esta RPC.
+    const supabase = createSupabasePublicClient();
     const { data, error } = await supabase.rpc("email_registered", {
       p_email: normalized,
     });
