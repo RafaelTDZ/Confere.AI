@@ -112,7 +112,7 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 | `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha em `apps/web/.env.local` e reinicie o Next |
 | `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env.local` (Dashboard → API Keys) |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
-| `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor) |
+| `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor). O `/api/ai/analyze` já grava via service role e não depende desse grant |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
 
 Detalhes para agentes (Cursor Cloud): [`AGENTS.md`](AGENTS.md).

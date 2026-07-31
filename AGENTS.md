@@ -135,4 +135,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env.local` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
 - **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
-- **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze` gravar `extraction_results` / `ai_logs` (RLS bloqueia authenticated).
+- **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze`
+  (grava Storage/`imports`/`documents`/`extraction_results`/`ai_logs` via admin;
+  tenant_id sempre do JWT). Evita `permission denied for function current_tenant_id`
+  quando os grants de `private.*` ainda não foram aplicados no cloud.
+- **Grants RLS** (recomendado): rode
+  [`20250731190000_grant_private_rls_functions.sql`](supabase/migrations/20250731190000_grant_private_rls_functions.sql)
+  no SQL Editor para selects autenticados com policies RLS funcionarem.

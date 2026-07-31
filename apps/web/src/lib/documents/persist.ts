@@ -1,8 +1,14 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DocumentType, InvoiceExtraction } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "import-documents";
+
+/**
+ * Persistência do pipeline de análise.
+ * Usa service role (bypassa RLS) porque as policies chamam private.* e o
+ * grant EXECUTE para authenticated pode ainda não estar aplicado no cloud.
+ * tenant_id / created_by sempre vêm do JWT validado em getAuthContext().
+ */
 
 export function buildStoragePath(
   tenantId: string,
@@ -13,15 +19,13 @@ export function buildStoragePath(
   return `${tenantId}/${importId}/${safe}`;
 }
 
-export async function createImportRecord(
-  supabase: SupabaseClient,
-  params: {
-    tenantId: string;
-    userId: string;
-    referenceNumber: string;
-  },
-): Promise<string> {
-  const { data, error } = await supabase
+export async function createImportRecord(params: {
+  tenantId: string;
+  userId: string;
+  referenceNumber: string;
+}): Promise<string> {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
     .from("imports")
     .insert({
       tenant_id: params.tenantId,
@@ -38,15 +42,13 @@ export async function createImportRecord(
   return data.id as string;
 }
 
-export async function uploadImportFile(
-  supabase: SupabaseClient,
-  params: {
-    storagePath: string;
-    bytes: Uint8Array;
-    mediaType: string;
-  },
-): Promise<void> {
-  const { error } = await supabase.storage
+export async function uploadImportFile(params: {
+  storagePath: string;
+  bytes: Uint8Array;
+  mediaType: string;
+}): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.storage
     .from(BUCKET)
     .upload(params.storagePath, params.bytes, {
       contentType: params.mediaType,
@@ -58,19 +60,17 @@ export async function uploadImportFile(
   }
 }
 
-export async function insertDocuments(
-  supabase: SupabaseClient,
-  params: {
-    tenantId: string;
-    importId: string;
-    types: DocumentType[];
-    storagePath: string;
-    sha256: string;
-    filename: string;
-    mediaType: string;
-    sizeBytes: number;
-  },
-): Promise<Array<{ id: string; docType: DocumentType }>> {
+export async function insertDocuments(params: {
+  tenantId: string;
+  importId: string;
+  types: DocumentType[];
+  storagePath: string;
+  sha256: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+}): Promise<Array<{ id: string; docType: DocumentType }>> {
+  const admin = createSupabaseAdminClient();
   const rows = params.types.map((docType) => ({
     tenant_id: params.tenantId,
     import_id: params.importId,
@@ -84,7 +84,7 @@ export async function insertDocuments(
     size_bytes: params.sizeBytes,
   }));
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("documents")
     .insert(rows)
     .select("id, doc_type");
@@ -100,12 +100,12 @@ export async function insertDocuments(
 }
 
 export async function updateImportStatus(
-  supabase: SupabaseClient,
   importId: string,
   status: "uploaded" | "processing" | "awaiting_review" | "completed" | "rejected",
   extra?: { supplierName?: string | null },
 ): Promise<void> {
-  const { error } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
     .from("imports")
     .update({
       status,
@@ -121,11 +121,11 @@ export async function updateImportStatus(
 }
 
 export async function updateDocumentStatus(
-  supabase: SupabaseClient,
   documentId: string,
   status: "pending" | "extracted" | "failed",
 ): Promise<void> {
-  const { error } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
     .from("documents")
     .update({ status })
     .eq("id", documentId);
@@ -180,7 +180,6 @@ export async function persistAiLog(params: {
       error_message: params.errorMessage ?? null,
     });
   } catch (err) {
-    // Log auxiliar — não derruba o fluxo principal
     console.error("[ai_logs] falha ao persistir:", err);
   }
 }

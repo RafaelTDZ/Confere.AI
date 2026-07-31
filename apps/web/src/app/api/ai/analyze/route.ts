@@ -19,7 +19,6 @@ import {
   updateImportStatus,
   uploadImportFile,
 } from "@/lib/documents/persist";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -70,20 +69,19 @@ export async function POST(request: Request) {
     assertAllowedFile(buffer.byteLength, mediaType);
     const digest = sha256Hex(buffer);
 
-    const supabase = await createSupabaseServerClient();
     const referenceNumber = `IMP-${new Date()
       .toISOString()
       .slice(0, 10)
       .replace(/-/g, "")}-${digest.slice(0, 6)}`;
 
-    const importId = await createImportRecord(supabase, {
+    const importId = await createImportRecord({
       tenantId: auth.tenantId,
       userId: auth.userId,
       referenceNumber,
     });
 
     const storagePath = buildStoragePath(auth.tenantId, importId, filename);
-    await uploadImportFile(supabase, {
+    await uploadImportFile({
       storagePath,
       bytes: buffer,
       mediaType,
@@ -114,12 +112,12 @@ export async function POST(request: Request) {
         status: "error",
         errorMessage: err instanceof Error ? err.message : String(err),
       });
-      await updateImportStatus(supabase, importId, "rejected");
+      await updateImportStatus(importId, "rejected");
       throw err;
     }
 
     const types = classifyResult.classification.types;
-    const documents = await insertDocuments(supabase, {
+    const documents = await insertDocuments({
       tenantId: auth.tenantId,
       importId,
       types,
@@ -153,8 +151,8 @@ export async function POST(request: Request) {
           payload: extracted.invoice,
           tokensUsed: extracted.tokensIn + extracted.tokensOut,
         });
-        await updateDocumentStatus(supabase, invoiceDoc.id, "extracted");
-        await updateImportStatus(supabase, importId, "awaiting_review", {
+        await updateDocumentStatus(invoiceDoc.id, "extracted");
+        await updateImportStatus(importId, "awaiting_review", {
           supplierName: extracted.invoice.exporter.name,
         });
       } catch (err) {
@@ -168,12 +166,12 @@ export async function POST(request: Request) {
           status: "error",
           errorMessage: err instanceof Error ? err.message : String(err),
         });
-        await updateDocumentStatus(supabase, invoiceDoc.id, "failed");
-        await updateImportStatus(supabase, importId, "awaiting_review");
+        await updateDocumentStatus(invoiceDoc.id, "failed");
+        await updateImportStatus(importId, "awaiting_review");
         throw err;
       }
     } else {
-      await updateImportStatus(supabase, importId, "awaiting_review");
+      await updateImportStatus(importId, "awaiting_review");
     }
 
     const body: AnalyzeSuccess = {
