@@ -15,10 +15,12 @@ export const documentClassificationSchema = z.object({
     .describe(
       "Tipos de documento de importação presentes no arquivo (pode haver mais de um)",
     ),
+  // Azure/OpenAI strict JSON schema exige toda key de properties em required.
+  // Use nullable (não optional) para campos ausentes.
   notes: z
     .string()
-    .optional()
-    .describe("Observação breve sobre a classificação, se útil"),
+    .nullable()
+    .describe("Observação breve sobre a classificação, ou null"),
 });
 
 export type DocumentClassification = z.infer<typeof documentClassificationSchema>;
