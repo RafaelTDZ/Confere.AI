@@ -3,6 +3,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 let client: SupabaseClient | null = null;
@@ -34,6 +35,7 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 
   client = createBrowserClient(getBrowserSupabaseUrl(), key, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
+    global: { fetch: createSupabaseFetch(key) },
   });
   return client;
 }

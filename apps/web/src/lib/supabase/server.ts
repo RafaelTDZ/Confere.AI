@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 /**
@@ -22,6 +23,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
 
   return createServerClient(url, key, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
+    global: { fetch: createSupabaseFetch(key) },
     cookies: {
       getAll() {
         return cookieStore.getAll();

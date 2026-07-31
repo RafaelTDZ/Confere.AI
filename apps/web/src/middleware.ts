@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 /** Refresh de sessao em toda request (padrao @supabase/ssr). */
@@ -17,6 +18,7 @@ export async function middleware(request: NextRequest) {
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
+    global: { fetch: createSupabaseFetch(supabaseKey) },
     cookies: {
       getAll() {
         return request.cookies.getAll();

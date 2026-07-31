@@ -94,6 +94,10 @@ curl -sI http://localhost:3000/ | grep -i location                              
 - **Não use Supabase CLI 2.110+** ao aplicar migrations (`db push`). O engine novo de migrations
   (effect/sql) quebra funções dollar-quoted e esconde o erro real do Postgres. Use versão estável
   (ex.: 2.34.3) para migrations.
+- **Publishable key (`sb_publishable_...`)**: não é JWT. O `supabase-js` enviava a key
+  em `Authorization: Bearer`, e o PostgREST respondia `PGRST301` ("Erro ao verificar email").
+  Corrigido com `createSupabaseFetch` em [`apps/web/src/lib/supabase/fetch.ts`](apps/web/src/lib/supabase/fetch.ts)
+  (remove Authorization quando o Bearer é a própria API key opaca).
 - **Proxy `/supabase`**: rewrite em `next.config.ts` não funcionou no App Router (404).
   Substituído por route handler; não remover sem testar login no browser.
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
