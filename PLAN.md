@@ -112,6 +112,7 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 | `/api/auth/save-user-info` | Lê `tenant_id` de `user_metadata` em vez de `app_metadata` — rota legada, provavelmente não usada |
 | Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
 | Upload mock | `upload-dropzone.tsx` simula delay de 600ms sem persistir arquivo |
+| Grants RLS private.* | Migration `20250731190000_grant_private_rls_functions.sql` corrige `permission denied` nas funções; aplicar no cloud com `supabase db push` ou SQL Editor |
 ## Arquitetura atual
 
 ```
