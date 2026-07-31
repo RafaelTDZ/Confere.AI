@@ -1,42 +1,20 @@
 import { generateText, Output } from "ai";
+import type { AnalyzeFileInput } from "@/lib/ai/classify";
 import {
-  createOpenRouterClient,
-  getOpenRouterModel,
-} from "@/lib/ai/openrouter";
+  getDocumentLanguageModel,
+  isPdfParseError,
+  type PdfEngine,
+} from "@/lib/ai/document-model";
+import { getOpenRouterModel } from "@/lib/ai/openrouter";
 import {
   invoiceExtractionSchema,
   type InvoiceExtraction,
 } from "@/lib/ai/schemas";
-import type { AnalyzeFileInput } from "@/lib/ai/classify";
 
-function buildModel(isPdf: boolean) {
-  const openrouter = createOpenRouterClient();
-  const modelId = getOpenRouterModel();
-  return openrouter(modelId, {
-    plugins: [
-      ...(isPdf
-        ? ([{ id: "file-parser" as const, pdf: { engine: "pdf-text" as const } }] as const)
-        : []),
-      { id: "response-healing" as const },
-    ],
-  });
-}
-
-export async function extractInvoice(
-  file: AnalyzeFileInput,
-): Promise<{
-  invoice: InvoiceExtraction;
-  model: string;
-  tokensIn: number;
-  tokensOut: number;
-  latencyMs: number;
-}> {
-  const modelId = getOpenRouterModel();
+async function extractOnce(file: AnalyzeFileInput, pdfEngine: PdfEngine) {
   const isPdf = file.mediaType === "application/pdf";
-  const started = Date.now();
-
-  const result = await generateText({
-    model: buildModel(isPdf),
+  return generateText({
+    model: getDocumentLanguageModel({ isPdf, pdfEngine }),
     output: Output.object({
       schema: invoiceExtractionSchema,
       name: "invoice_extraction",
@@ -70,6 +48,31 @@ export async function extractInvoice(
       },
     ],
   });
+}
+
+export async function extractInvoice(
+  file: AnalyzeFileInput,
+): Promise<{
+  invoice: InvoiceExtraction;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  latencyMs: number;
+}> {
+  const modelId = getOpenRouterModel();
+  const isPdf = file.mediaType === "application/pdf";
+  const started = Date.now();
+
+  let result;
+  try {
+    result = await extractOnce(file, isPdf ? "mistral-ocr" : "native");
+  } catch (error) {
+    if (isPdf && isPdfParseError(error)) {
+      result = await extractOnce(file, "native");
+    } else {
+      throw error;
+    }
+  }
 
   const invoice = result.output;
   if (!invoice) {

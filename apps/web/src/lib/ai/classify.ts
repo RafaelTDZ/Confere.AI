@@ -1,8 +1,10 @@
 import { generateText, Output } from "ai";
 import {
-  createOpenRouterClient,
-  getOpenRouterModel,
-} from "@/lib/ai/openrouter";
+  getDocumentLanguageModel,
+  isPdfParseError,
+  type PdfEngine,
+} from "@/lib/ai/document-model";
+import { getOpenRouterModel } from "@/lib/ai/openrouter";
 import {
   documentClassificationSchema,
   type DocumentClassification,
@@ -14,34 +16,13 @@ export type AnalyzeFileInput = {
   filename: string;
 };
 
-function buildModel(isPdf: boolean) {
-  const openrouter = createOpenRouterClient();
-  const modelId = getOpenRouterModel();
-  return openrouter(modelId, {
-    plugins: [
-      ...(isPdf
-        ? ([{ id: "file-parser" as const, pdf: { engine: "pdf-text" as const } }] as const)
-        : []),
-      { id: "response-healing" as const },
-    ],
-  });
-}
-
-export async function classifyDocument(
+async function classifyOnce(
   file: AnalyzeFileInput,
-): Promise<{
-  classification: DocumentClassification;
-  model: string;
-  tokensIn: number;
-  tokensOut: number;
-  latencyMs: number;
-}> {
-  const modelId = getOpenRouterModel();
+  pdfEngine: PdfEngine,
+) {
   const isPdf = file.mediaType === "application/pdf";
-  const started = Date.now();
-
-  const result = await generateText({
-    model: buildModel(isPdf),
+  return generateText({
+    model: getDocumentLanguageModel({ isPdf, pdfEngine }),
     output: Output.object({
       schema: documentClassificationSchema,
       name: "document_classification",
@@ -74,13 +55,38 @@ export async function classifyDocument(
       },
     ],
   });
+}
+
+export async function classifyDocument(
+  file: AnalyzeFileInput,
+): Promise<{
+  classification: DocumentClassification;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  latencyMs: number;
+}> {
+  const modelId = getOpenRouterModel();
+  const isPdf = file.mediaType === "application/pdf";
+  const started = Date.now();
+
+  let result;
+  try {
+    result = await classifyOnce(file, isPdf ? "mistral-ocr" : "native");
+  } catch (error) {
+    if (isPdf && isPdfParseError(error)) {
+      // Fallback: envia o PDF nativo ao modelo (sem OCR prévio do OpenRouter)
+      result = await classifyOnce(file, "native");
+    } else {
+      throw error;
+    }
+  }
 
   const classification = result.output;
   if (!classification?.types?.length) {
     throw new Error("A IA não identificou nenhum tipo de documento");
   }
 
-  // Dedup preservando ordem
   const seen = new Set<string>();
   const types = classification.types.filter((t) => {
     if (seen.has(t)) return false;

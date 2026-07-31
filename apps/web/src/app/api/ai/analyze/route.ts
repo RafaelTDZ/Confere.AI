@@ -213,6 +213,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    if (/failed to parse/i.test(message)) {
+      return NextResponse.json(
+        {
+          error:
+            "Não foi possível ler o PDF. Tente reenviar, ou use PNG/JPG do documento.",
+        },
+        { status: 422 },
+      );
+    }
+
     console.error("[api/ai/analyze]", error);
     if (tenantIdForLog) {
       await persistAiLog({

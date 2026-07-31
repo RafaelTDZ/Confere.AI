@@ -16,3 +16,4 @@ export {
 } from "@/lib/ai/schemas";
 export { classifyDocument } from "@/lib/ai/classify";
 export { extractInvoice } from "@/lib/ai/extract-invoice";
+export { getDocumentLanguageModel } from "@/lib/ai/document-model";
