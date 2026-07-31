@@ -1,0 +1,22 @@
+const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+
+export class OpenRouterConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenRouterConfigError";
+  }
+}
+
+export function getOpenRouterApiKey(): string {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!apiKey) {
+    throw new OpenRouterConfigError(
+      "OPENROUTER_API_KEY não configurada. Defina a chave em apps/web/.env.local (openrouter.ai/settings/keys).",
+    );
+  }
+  return apiKey;
+}
+
+export function getOpenRouterModel(): string {
+  return process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+}

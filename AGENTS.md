@@ -24,6 +24,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    Edite `.env` e `apps/web/.env.local` e preencha:
    - `NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
+   - `OPENROUTER_API_KEY` — para smoke/IA (`https://openrouter.ai/settings/keys`); opcional até ligar o pipeline
 
    Chaves em: Supabase Dashboard > Settings > API Keys. **Não deixe `SUPABASE_INTERNAL_URL=` vazio**
    — remova a linha ou deixe comentada para usar `NEXT_PUBLIC_SUPABASE_URL`.
@@ -33,6 +34,13 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    pnpm --filter @confere/web dev   # http://localhost:3000
    # ou: pnpm dev
    ```
+
+### OpenRouter (IA)
+
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `openai/gpt-5.6-luna`).
+- Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
+- Chave **só no servidor** (`OPENROUTER_API_KEY`); nunca `NEXT_PUBLIC_*`.
+- Pipeline de documentos (upload/classificação/extração) **ainda não** usa este client.
 
 ### Migrations no cloud
 
@@ -74,6 +82,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | UI pronta; upload é mock (sem backend) |
+| Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
 | Pipeline de documentos (upload, IA, análise) | Não implementado |
 | Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
 
@@ -91,6 +100,8 @@ curl -sI http://localhost:3000/login | head -1
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
+# OpenRouter (sessão autenticada + OPENROUTER_API_KEY):
+# curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 ```
 
 ### Cuidados não-óbvios
@@ -108,3 +119,4 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
 - **`.env` é gitignored.** Next.js lê `apps/web/.env.local`; a raiz é usada para copiar para o app.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
+- **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.

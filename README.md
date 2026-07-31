@@ -10,6 +10,7 @@ Nesta etapa o produto expõe autenticação (login/signup) e a página protegida
 |--------|------------|
 | Front-end | Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui |
 | Banco / Auth | Supabase cloud (PostgreSQL com RLS) |
+| IA | OpenRouter (`@openrouter/ai-sdk-provider` + AI SDK); modelo default `openai/gpt-5.6-luna` |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Estrutura
@@ -34,6 +35,7 @@ supabase/
 | `/analise` | Protegido | Nova análise de importação (dropzone + orientações) |
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
 | `/api/auth/save-user-info` | Autenticado | Atualiza nome/empresa do membro (legado) |
+| `/api/ai/health` | Autenticado | Smoke da integração OpenRouter (`generateText`) |
 
 ## Setup local
 
@@ -47,6 +49,7 @@ cp .env.example .env
 cp .env apps/web/.env.local
 # Preencha NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 # (Dashboard > Settings > API Keys — sb_publishable_...)
+# Opcional para smoke de IA: OPENROUTER_API_KEY (openrouter.ai/settings/keys)
 pnpm dev         # web em http://localhost:3000
 ```
 
@@ -83,6 +86,8 @@ curl -sI http://localhost:3000/login | head -1                                  
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'                                                 # {"exists":...}
+# OpenRouter (requer cookie de sessão autenticada + OPENROUTER_API_KEY):
+# curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'  # {"ok":true,"model":"openai/gpt-5.6-luna",...}
 ```
 
 ### Troubleshooting
@@ -117,6 +122,8 @@ pnpm db:migration <nome>   # cria nova migration
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Não | Chave secreta / service_role (apenas servidor; app atual não usa) |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
+| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para `/api/ai/health` e futuras chamadas de IA |
+| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `openai/gpt-5.6-luna`) |
 | `SENTRY_DSN` | Não | Observabilidade |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Observabilidade |
 
@@ -148,6 +155,8 @@ Configure as variáveis no ambiente de deploy (Vercel, etc.):
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+OPENROUTER_API_KEY=<sk-or-v1-...>
+OPENROUTER_MODEL=openai/gpt-5.6-luna
 ```
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.

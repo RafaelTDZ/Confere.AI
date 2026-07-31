@@ -34,6 +34,7 @@ divergências entre documentos.
   - Barra de progresso de documentos recebidos (estática)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
+- [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`); pipeline de documentos ainda não ligado
 
 ### Não implementado (UI ou backend)
 
@@ -123,7 +124,8 @@ Browser
   ├─ /login, /signup          → React (client + Supabase browser via /supabase proxy)
   ├─ /analise                 → React (server layout + client dropzone)
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
-  └─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
+  ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
+  └─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
 
 Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 
@@ -131,6 +133,8 @@ Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
   ├─ PostgreSQL + RLS         → schema multi-tenant (private.* com GRANT a authenticated)
   └─ Triggers                 → provisionamento automático de tenant no signup
+
+OpenRouter                    → modelo default openai/gpt-5.6-luna (OPENROUTER_API_KEY)
 ```
 
 ## Referências
