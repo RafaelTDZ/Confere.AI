@@ -18,7 +18,6 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [userExists, setUserExists] = useState<boolean | null>(null);
 
   async function handleEmailSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -39,8 +38,6 @@ export function LoginForm() {
       }
 
       if (data.exists) {
-        // Usuário existe, vai para senha
-        setUserExists(true);
         setStep("password");
       } else {
         // Usuário não existe, redireciona para cadastro
