@@ -44,6 +44,11 @@ supabase db push          # aplica supabase/migrations/
 pnpm db:migration <nome>  # cria nova migration em supabase/migrations/
 ```
 
+**RLS / grants:** a migration `20250731190000_grant_private_rls_functions.sql` concede
+`EXECUTE` nas funções `private.*` para `authenticated`. Sem ela, selects autenticados
+falham com `permission denied for function current_tenant_id`. Se não puder usar a CLI,
+cole o SQL dessa migration no **SQL Editor** do dashboard e execute.
+
 ### Auth no browser (importante)
 
 O client browser **não** chama o Supabase direto (falha com `Failed to fetch` em
