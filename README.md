@@ -46,12 +46,14 @@ Pré-requisitos: Node >= 20, pnpm 10. O projeto usa **Supabase cloud** — não 
 ```bash
 pnpm install
 cp .env.example .env
-cp .env apps/web/.env.local
-# Preencha NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-# (Dashboard > Settings > API Keys — sb_publishable_...)
-# Opcional para smoke de IA: OPENROUTER_API_KEY (openrouter.ai/settings/keys)
+cp .env apps/web/.env.local   # Next.js lê este arquivo (não existe no git)
+# Edite apps/web/.env.local e preencha (uma chave por linha):
+#   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+#   OPENROUTER_API_KEY=sk-or-v1-...   # smoke/IA
 pnpm dev         # web em http://localhost:3000
 ```
+
+O arquivo `apps/web/.env.local` **não vem no repositório** (gitignored). Sem ele, o Next não carrega as chaves.
 
 ### Projeto Supabase
 
@@ -61,6 +63,8 @@ As chaves publishable (`sb_publishable_...`) estão no dashboard: **Settings →
 (Opcional legado: `anon` JWT em Legacy API Keys.)
 
 `SUPABASE_INTERNAL_URL` deve ficar **removido ou comentado** no `.env` — string vazia quebra o proxy `/supabase`.
+
+Variáveis já exportadas no shell/CI com valor **vazio** (ex.: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=`) **não são sobrescritas** pelo `.env.local` — remova-as do ambiente ou defina o valor real antes de `pnpm dev`.
 
 ### Migrations
 
@@ -87,17 +91,23 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'                                                 # {"exists":...}
 # OpenRouter (requer cookie de sessão autenticada + OPENROUTER_API_KEY):
-# curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'  # {"ok":true,"model":"openai/gpt-5.6-luna",...}
+# Faça login no browser em /login, depois:
+curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
+# Esperado: {"ok":true,"model":"openai/gpt-5.6-luna","text":"ok","latencyMs":...}
 ```
 
 ### Troubleshooting
 
 | Problema | Causa provável | Solução |
 |----------|----------------|---------|
-| `Variáveis de ambiente Supabase não configuradas` | `.env.local` faltando ou sem chaves | Copie `.env.example` para `.env` e `apps/web/.env.local`; preencha `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
+| Não acho `.env.local` | Arquivo não está no git | `cp .env.example .env && cp .env apps/web/.env.local` e preencha as chaves |
+| `Variáveis de ambiente Supabase não configuradas` | `.env.local` faltando, chave vazia, ou env do shell/CI com `NEXT_PUBLIC_*=` vazio sobrescrevendo o arquivo | Crie/preencha `apps/web/.env.local`; `unset` vars vazias no shell; reinicie o `pnpm dev` |
+| `Invalid API key` no Auth | Publishable key colada na mesma linha do comentário `# NEXT_PUBLIC_SUPABASE_ANON_KEY=` | Deixe a key sozinha na linha; comente o anon em linha separada |
 | `Erro ao verificar email` | JWT antigo no cookie (ex.: Supabase local) ou publishable key em `Authorization: Bearer` | Hard refresh / limpar `sb-confere-auth-token*`; `/api/auth/check-email` usa client sem sessão; ver `createSupabaseFetch` |
 | `Failed to fetch` na senha (login/signup) | Proxy repassando headers hop-by-hop do Cloudflare, ou browser chamando Supabase direto | Confira route handler em `apps/web/src/app/supabase/[...path]/route.ts` (filtra `content-encoding` / `transfer-encoding` / `set-cookie`) |
 | `/supabase/*` retorna 500 | `SUPABASE_INTERNAL_URL=` vazio no `.env` | Remova a linha ou comente — string vazia quebra o proxy |
+| `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
+| `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha em `apps/web/.env.local` e reinicie o Next |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor) |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
