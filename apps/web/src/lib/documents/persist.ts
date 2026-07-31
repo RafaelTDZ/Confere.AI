@@ -141,20 +141,26 @@ export async function persistExtractionResult(params: {
   model: string;
   payload: InvoiceExtraction;
   tokensUsed?: number;
-}): Promise<void> {
+}): Promise<string> {
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.from("extraction_results").insert({
-    tenant_id: params.tenantId,
-    document_id: params.documentId,
-    model: params.model,
-    payload: params.payload,
-    confidence: {},
-    tokens_used: params.tokensUsed ?? null,
-  });
+  const { data, error } = await admin
+    .from("extraction_results")
+    .insert({
+      tenant_id: params.tenantId,
+      document_id: params.documentId,
+      model: params.model,
+      payload: params.payload,
+      confidence: {},
+      tokens_used: params.tokensUsed ?? null,
+    })
+    .select("id")
+    .single();
 
-  if (error) {
-    throw new Error(error.message || "Falha ao salvar extração");
+  if (error || !data?.id) {
+    throw new Error(error?.message || "Falha ao salvar extração");
   }
+
+  return data.id as string;
 }
 
 export async function persistAiLog(params: {

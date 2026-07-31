@@ -29,9 +29,9 @@ divergências entre documentos.
   - RPC `email_registered` para verificar email no login
 - [x] **Página `/analise`**
   - Layout autenticado (header com email + logout)
-  - Dropzone de upload (UI only — mock de 600ms)
+  - Dropzone de upload ligada a `POST /api/ai/analyze` (Storage + classify + extract Invoice)
   - Cards "Como funciona" e "Documentos necessários"
-  - Barra de progresso de documentos recebidos (estática)
+  - Barra de progresso de documentos recebidos (atualizada pelos tipos classificados)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
 - [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`; validado com chave real); pipeline de documentos ainda não ligado
@@ -83,9 +83,9 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 
 ### Fase 3 — Extração de dados
 
-- Pipeline OCR + LLM para extrair campos estruturados
-- Persistir em `extraction_results`
-- Suportar Invoice (itens, valores, INCOTERM), BL (container, peso) e Packing List (volumes)
+- [x] Pipeline OCR + LLM para Invoice (campos atuais: número, partes, produtos)
+- [x] Persistir Invoice em `extraction_results` (+ confirmação `extractionResultId` na API)
+- [ ] Expandir Invoice (valores, INCOTERM) e extrair BL (container, peso) / Packing List (volumes)
 
 ### Fase 4 — Comparação e análise
 
@@ -113,7 +113,6 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 |------|---------|
 | `/api/auth/save-user-info` | Lê `tenant_id` de `user_metadata` em vez de `app_metadata` — rota legada, provavelmente não usada |
 | Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
-| Upload mock | `upload-dropzone.tsx` simula delay de 600ms sem persistir arquivo |
 | Grants RLS private.* | Migration `20250731190000_grant_private_rls_functions.sql` — aplicar no cloud se selects autenticados ainda falharem |
 
 ## Arquitetura atual

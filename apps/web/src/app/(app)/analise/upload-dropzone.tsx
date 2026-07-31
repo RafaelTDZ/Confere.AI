@@ -35,6 +35,7 @@ type AnalyzeResponse = {
   types: DocumentType[];
   documents: Array<{ id: string; docType: DocumentType }>;
   invoice: InvoiceExtraction | null;
+  extractionResultId: string | null;
   model: string;
   latencyMs: number;
   error?: string;
@@ -87,13 +88,17 @@ export function UploadDropzone() {
       setInvoice(data.invoice);
 
       const typeLabels = data.types.map((t) => DOC_LABELS[t]).join(", ");
-      if (data.invoice) {
+      if (data.invoice && data.extractionResultId) {
         setInfo(
-          `Tipos identificados: ${typeLabels}. Invoice ${data.invoice.number ?? "sem número"} extraída (${data.latencyMs} ms).`,
+          `Tipos identificados: ${typeLabels}. Invoice ${data.invoice.number ?? "sem número"} extraída e salva (${data.latencyMs} ms). Importação ${data.importId}.`,
+        );
+      } else if (data.invoice) {
+        setInfo(
+          `Tipos identificados: ${typeLabels}. Invoice ${data.invoice.number ?? "sem número"} extraída (${data.latencyMs} ms), mas a gravação no banco não foi confirmada.`,
         );
       } else {
         setInfo(
-          `Tipos identificados: ${typeLabels}. Nenhuma Invoice neste arquivo — extração de PL/BL virá nos próximos passos.`,
+          `Tipos identificados: ${typeLabels}. Nenhuma Invoice neste arquivo — extração de PL/BL virá nos próximos passos. Importação ${data.importId}.`,
         );
       }
     } catch (err) {

@@ -28,6 +28,7 @@ type AnalyzeSuccess = {
   types: DocumentType[];
   documents: Array<{ id: string; docType: DocumentType }>;
   invoice: InvoiceExtraction | null;
+  extractionResultId: string | null;
   model: string;
   latencyMs: number;
 };
@@ -129,6 +130,7 @@ export async function POST(request: Request) {
     });
 
     let invoice: InvoiceExtraction | null = null;
+    let extractionResultId: string | null = null;
     const invoiceDoc = documents.find((d) => d.docType === "invoice");
 
     if (invoiceDoc) {
@@ -144,16 +146,12 @@ export async function POST(request: Request) {
           latencyMs: extracted.latencyMs,
           status: "success",
         });
-        await persistExtractionResult({
+        extractionResultId = await persistExtractionResult({
           tenantId: auth.tenantId,
           documentId: invoiceDoc.id,
           model: extracted.model,
           payload: extracted.invoice,
           tokensUsed: extracted.tokensIn + extracted.tokensOut,
-        });
-        await updateDocumentStatus(invoiceDoc.id, "extracted");
-        await updateImportStatus(importId, "awaiting_review", {
-          supplierName: extracted.invoice.exporter.name,
         });
       } catch (err) {
         await persistAiLog({
@@ -166,9 +164,29 @@ export async function POST(request: Request) {
           status: "error",
           errorMessage: err instanceof Error ? err.message : String(err),
         });
-        await updateDocumentStatus(invoiceDoc.id, "failed");
+        try {
+          await updateDocumentStatus(invoiceDoc.id, "failed");
+        } catch (statusErr) {
+          console.error(
+            "[api/ai/analyze] falha ao marcar documento failed:",
+            statusErr,
+          );
+        }
         await updateImportStatus(importId, "awaiting_review");
         throw err;
+      }
+
+      // Payload já está em extraction_results — status é best-effort.
+      try {
+        await updateDocumentStatus(invoiceDoc.id, "extracted");
+        await updateImportStatus(importId, "awaiting_review", {
+          supplierName: invoice?.exporter.name ?? null,
+        });
+      } catch (statusErr) {
+        console.error(
+          "[api/ai/analyze] extração salva, mas falha ao atualizar status:",
+          statusErr,
+        );
       }
     } else {
       await updateImportStatus(importId, "awaiting_review");
@@ -179,6 +197,7 @@ export async function POST(request: Request) {
       types,
       documents,
       invoice,
+      extractionResultId,
       model: classifyResult.model,
       latencyMs: Date.now() - started,
     };

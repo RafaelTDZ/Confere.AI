@@ -90,9 +90,9 @@ preview/túnel remoto). O Next faz proxy same-origin:
 |------|--------|
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
-| Página `/analise` | UI pronta; upload é mock (sem backend) |
+| Página `/analise` | Dropzone → `/api/ai/analyze` (Storage + classify + extract Invoice persistido) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
-| Classificação + extract Invoice | `/api/ai/analyze` + dropzone; PL/BL só tipo |
+| Classificação + extract Invoice | `/api/ai/analyze` + dropzone; Invoice em `extraction_results`; PL/BL só tipo |
 | Pipeline completo (PL/BL extract, comparação) | Não implementado |
 | Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
 
