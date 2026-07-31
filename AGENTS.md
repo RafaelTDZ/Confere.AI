@@ -55,21 +55,23 @@ O client browser **não** chama o Supabase direto (falha com `Failed to fetch` e
 preview/túnel remoto). O Next faz proxy same-origin:
 
 - Route handler: `/supabase/:path*` → upstream Supabase ([`apps/web/src/app/supabase/[...path]/route.ts`](apps/web/src/app/supabase/[...path]/route.ts))
+  - Bufferiza o body; **filtra** hop-by-hop (`content-encoding`, `transfer-encoding`, `set-cookie`, etc.)
+  - Sem o filtro, o login na senha quebra com `Failed to fetch` (headers do Cloudflare)
 - Destino: `SUPABASE_INTERNAL_URL` (se não vazio) → `NEXT_PUBLIC_SUPABASE_URL`
 - Browser client usa `window.location.origin + "/supabase"` ([`apps/web/src/lib/supabase/client.ts`](apps/web/src/lib/supabase/client.ts))
 - Server/middleware usam `NEXT_PUBLIC_SUPABASE_URL` diretamente
-- Middleware ignora `/supabase` no matcher (não refresca sessão em requests de API)
-- Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/middleware),
-  senão o storageKey diverge (hostname do proxy vs URL direta) e `/analise` redireciona de volta ao login.
-
-Como o projeto já está na cloud, `NEXT_PUBLIC_SUPABASE_URL` é a URL de produção em dev e deploy —
-o proxy segue automaticamente, sem hardcode.
+- Middleware ignora `/supabase` no matcher; limpa `sb-confere-auth-token*` se `getUser()` falhar
+- Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/middleware)
+- `/api/auth/check-email` usa [`createSupabasePublicClient`](apps/web/src/lib/supabase/public-client.ts) (**sem cookies**)
+  — evita JWT antigo (ex.: Supabase local) contaminar a RPC `email_registered`
+- Publishable key: [`createSupabaseFetch`](apps/web/src/lib/supabase/fetch.ts) remove `Authorization: Bearer sb_publishable_...`
+  (não é JWT; PostgREST responde `PGRST301` se enviada como Bearer)
 
 ### Estado atual do produto
 
 | Área | Status |
 |------|--------|
-| Login / signup / logout | Funcional |
+| Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | UI pronta; upload é mock (sem backend) |
 | Pipeline de documentos (upload, IA, análise) | Não implementado |
@@ -82,11 +84,13 @@ Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 Com as chaves reais do projeto cloud:
 
 ```bash
-# Defina ANON com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do .env
-curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $ANON"  # JSON do GoTrue
-curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $ANON"              # mesmo via proxy
-curl -sI http://localhost:3000/login | head -1                                       # HTTP 200
-curl -sI http://localhost:3000/ | grep -i location                                   # redirect /login
+# Defina KEY com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do .env
+curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $KEY"
+curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $KEY"
+curl -sI http://localhost:3000/login | head -1
+curl -s -X POST http://localhost:3000/api/auth/check-email \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
 ```
 
 ### Cuidados não-óbvios
@@ -94,11 +98,13 @@ curl -sI http://localhost:3000/ | grep -i location                              
 - **Não use Supabase CLI 2.110+** ao aplicar migrations (`db push`). O engine novo de migrations
   (effect/sql) quebra funções dollar-quoted e esconde o erro real do Postgres. Use versão estável
   (ex.: 2.34.3) para migrations.
-- **Publishable key (`sb_publishable_...`)**: não é JWT. O `supabase-js` enviava a key
-  em `Authorization: Bearer`, e o PostgREST respondia `PGRST301` ("Erro ao verificar email").
-  Corrigido com `createSupabaseFetch` em [`apps/web/src/lib/supabase/fetch.ts`](apps/web/src/lib/supabase/fetch.ts)
-  (remove Authorization quando o Bearer é a própria API key opaca).
-- **Proxy `/supabase`**: rewrite em `next.config.ts` não funcionou no App Router (404).
-  Substituído por route handler; não remover sem testar login no browser.
+- **Publishable key (`sb_publishable_...`)**: não é JWT. Sem `createSupabaseFetch`, o PostgREST
+  responde `PGRST301` e a UI mostra "Erro ao verificar email".
+- **Cookie JWT de outro projeto** (ex.: stack local antiga): quebra check-email/RPC com `PGRST301`.
+  check-email ignora cookies; middleware limpa auth inválida. Hard refresh / limpar
+  `sb-confere-auth-token*` se o browser ainda falhar.
+- **Proxy `/supabase`**: não use rewrite do `next.config` (404 no App Router). O route handler
+  deve filtrar hop-by-hop — senão "Failed to fetch" no login (senha).
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
 - **`.env` é gitignored.** Next.js lê `apps/web/.env.local`; a raiz é usada para copiar para o app.
+- **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.

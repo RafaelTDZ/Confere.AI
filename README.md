@@ -76,22 +76,26 @@ Requer Supabase CLI (qualquer versão recente compatível com `db push`).
 Com as chaves reais do projeto:
 
 ```bash
-# Defina ANON com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do seu .env
-curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $ANON"  # JSON GoTrue
-curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $ANON"            # mesmo via proxy
+# Defina KEY com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do seu .env
+curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $KEY"  # JSON GoTrue
+curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $KEY"            # mesmo via proxy
 curl -sI http://localhost:3000/login | head -1                                      # HTTP 200
-curl -sI http://localhost:3000/ | grep -i location                                   # redirect /login
+curl -s -X POST http://localhost:3000/api/auth/check-email \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"teste@empresa.com"}'                                                 # {"exists":...}
 ```
 
 ### Troubleshooting
 
 | Problema | Causa provável | Solução |
 |----------|----------------|---------|
-| `Variáveis de ambiente Supabase não configuradas` | `.env.local` faltando ou sem chaves | Copie `.env.example` para `.env` e `apps/web/.env.local`; preencha as chaves do projeto cloud |
-| `Failed to fetch` no login/signup | Browser tentando chamar Supabase direto | O app usa proxy `/supabase`; confira route handler em `apps/web/src/app/supabase/[...path]/route.ts` |
+| `Variáveis de ambiente Supabase não configuradas` | `.env.local` faltando ou sem chaves | Copie `.env.example` para `.env` e `apps/web/.env.local`; preencha `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
+| `Erro ao verificar email` | JWT antigo no cookie (ex.: Supabase local) ou publishable key em `Authorization: Bearer` | Hard refresh / limpar `sb-confere-auth-token*`; `/api/auth/check-email` usa client sem sessão; ver `createSupabaseFetch` |
+| `Failed to fetch` na senha (login/signup) | Proxy repassando headers hop-by-hop do Cloudflare, ou browser chamando Supabase direto | Confira route handler em `apps/web/src/app/supabase/[...path]/route.ts` (filtra `content-encoding` / `transfer-encoding` / `set-cookie`) |
 | `/supabase/*` retorna 500 | `SUPABASE_INTERNAL_URL=` vazio no `.env` | Remova a linha ou comente — string vazia quebra o proxy |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
-| Migrations não aplicadas / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
+| `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor) |
+| Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
 
 Detalhes para agentes (Cursor Cloud): [`AGENTS.md`](AGENTS.md).
 
@@ -120,10 +124,11 @@ O Next.js lê `apps/web/.env.local`. Migrations no projeto cloud são aplicadas 
 
 ## Auth
 
-- **Login em 2 etapas**: verifica email via RPC `email_registered`; se existir, pede senha; senão redireciona para signup.
+- **Login em 2 etapas**: `/api/auth/check-email` chama RPC `email_registered` com client **público** (sem cookies); se o email existir, pede senha; senão redireciona para signup.
 - **Signup**: cria conta no Supabase Auth; trigger `on_auth_user_created` provisiona tenant, membro (owner) e settings automaticamente.
-- **Sessão**: cookie fixo `sb-confere-auth-token` compartilhado entre browser, server e middleware.
-- **Proxy same-origin**: o browser chama `/supabase/*` via route handler em `apps/web/src/app/supabase/[...path]/route.ts`; o destino segue `SUPABASE_INTERNAL_URL` → `NEXT_PUBLIC_SUPABASE_URL`. Necessário para preview/túnel remoto e produção.
+- **Sessão**: cookie fixo `sb-confere-auth-token` compartilhado entre browser, server e middleware. Middleware limpa o cookie se `getUser()` falhar (JWT de outro projeto).
+- **Proxy same-origin**: o browser chama `/supabase/*` via route handler em `apps/web/src/app/supabase/[...path]/route.ts` (bufferiza o body e filtra headers hop-by-hop). Destino: `SUPABASE_INTERNAL_URL` → `NEXT_PUBLIC_SUPABASE_URL`.
+- **Publishable key**: use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). `createSupabaseFetch` evita enviá-la em `Authorization: Bearer` (não é JWT).
 - **Claims**: `tenant_id` e `tenant_role` em `app_metadata` (nunca `user_metadata`).
 
 ## Banco de dados
