@@ -4,6 +4,7 @@
 
 Confere.ia é um monorepo pnpm + Turborepo (web + Supabase local).
 Comandos padrão (lint/typecheck/test/build/dev) estão no `README.md` e no `package.json` raiz — use-os.
+Roadmap e estado do produto: `plan.md`.
 
 ### Serviços
 
@@ -65,14 +66,29 @@ Comandos padrão (lint/typecheck/test/build/dev) estão no `README.md` e no `pac
 
 ### Auth no browser (importante)
 
-O client browser **não** chama `127.0.0.1:54321` direto (falha com `Failed to fetch` em
+O client browser **não** chama o Supabase direto (falha com `Failed to fetch` em
 preview/túnel remoto). O Next faz proxy same-origin:
 
-- Rewrite: `/supabase/:path*` → `http://127.0.0.1:54321/:path*` ([`apps/web/next.config.ts`](apps/web/next.config.ts))
+- Rewrite: `/supabase/:path*` → `SUPABASE_INTERNAL_URL ?? NEXT_PUBLIC_SUPABASE_URL ?? http://127.0.0.1:54321` ([`apps/web/next.config.ts`](apps/web/next.config.ts))
 - Browser client usa `window.location.origin + "/supabase"` ([`apps/web/src/lib/supabase/client.ts`](apps/web/src/lib/supabase/client.ts))
-- Server/middleware continuam usando `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`
+- Server/middleware usam `NEXT_PUBLIC_SUPABASE_URL` diretamente
 - Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/middleware),
   senão o storageKey diverge (hostname do proxy vs `127.0.0.1`) e `/analise` redireciona de volta ao login.
+
+Em produção, `NEXT_PUBLIC_SUPABASE_URL` aponta para o Supabase hospedado e o proxy segue
+automaticamente — não é necessário hardcodar a URL no código.
+
+### Estado atual do produto
+
+| Área | Status |
+|------|--------|
+| Login / signup / logout | Funcional |
+| Provisionamento automático de tenant | Funcional (trigger no signup) |
+| Página `/analise` | UI pronta; upload é mock (sem backend) |
+| Pipeline de documentos (upload, IA, análise) | Não implementado |
+| Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
+
+Detalhes e próximos passos: [`plan.md`](plan.md).
 
 ### Smoke check rápido
 
@@ -87,7 +103,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
   dollar-quoted e esconde o erro real do Postgres.
 - **IPv4 quebrado na bridge** (`ping` entre containers falha, IPv6 funciona): quase sempre
   `net.bridge.bridge-nf-call-iptables=1`. Zere conforme o passo 2.
-- **Realtime “Initialising schema” / pool timeout**: rede sem IPv6 enquanto o container usa
+- **Realtime "Initialising schema" / pool timeout**: rede sem IPv6 enquanto o container usa
   `ECTO_IPV6=true`. Pré-crie a network IPv6 e passe `--network-id`.
 - **`supabase start` pode matar o stack** se um healthcheck HTTP estourar timeout (ex.: storage).
   Use `-x storage-api` e `--ignore-health-check` quando o objetivo for só auth + web.
