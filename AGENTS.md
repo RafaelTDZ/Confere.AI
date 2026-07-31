@@ -63,9 +63,19 @@ Comandos padrão (lint/typecheck/test/build/dev) estão no `README.md` e no `pac
    # ou: pnpm dev
    ```
 
+### Auth no browser (importante)
+
+O client browser **não** chama `127.0.0.1:54321` direto (falha com `Failed to fetch` em
+preview/túnel remoto). O Next faz proxy same-origin:
+
+- Rewrite: `/supabase/:path*` → `http://127.0.0.1:54321/:path*` ([`apps/web/next.config.ts`](apps/web/next.config.ts))
+- Browser client usa `window.location.origin + "/supabase"` ([`apps/web/src/lib/supabase/client.ts`](apps/web/src/lib/supabase/client.ts))
+- Server/middleware continuam usando `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`
+
 ### Smoke check rápido
 
 - `curl -s http://127.0.0.1:54321/auth/v1/health -H "apikey: $ANON"` → JSON do GoTrue
+- `curl -s http://127.0.0.1:3000/supabase/auth/v1/health -H "apikey: $ANON"` → mesmo via proxy
 - `curl -sI http://127.0.0.1:3000/login` → 200
 - `/` e `/analise` sem sessão → redirect para `/login`
 
