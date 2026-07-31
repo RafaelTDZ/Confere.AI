@@ -16,8 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-type DocumentType = "invoice" | "packing_list" | "bill_of_lading";
+import type { DocumentType, InvoiceExtraction } from "@/lib/ai/schemas";
 
 const DOC_LABELS: Record<DocumentType, string> = {
   invoice: "Invoice",
@@ -31,9 +30,32 @@ const TRACKED_TYPES: DocumentType[] = [
   "bill_of_lading",
 ];
 
+type AnalyzeResponse = {
+  importId: string;
+  types: DocumentType[];
+  documents: Array<{ id: string; docType: DocumentType }>;
+  invoice: InvoiceExtraction | null;
+  model: string;
+  latencyMs: number;
+  error?: string;
+};
+
+function formatParty(
+  label: string,
+  party: { name: string | null; cnpj?: string | null; address?: string | null },
+) {
+  const parts = [
+    party.name || "—",
+    party.cnpj ? `CNPJ ${party.cnpj}` : null,
+    party.address || null,
+  ].filter(Boolean);
+  return `${label}: ${parts.join(" · ")}`;
+}
+
 export function UploadDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [presentTypes] = useState<DocumentType[]>([]);
+  const [presentTypes, setPresentTypes] = useState<DocumentType[]>([]);
+  const [invoice, setInvoice] = useState<InvoiceExtraction | null>(null);
   const [lastFileName, setLastFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -43,15 +65,37 @@ export function UploadDropzone() {
   async function handleFile(file: File) {
     setError(null);
     setInfo(null);
+    setInvoice(null);
     setLoading(true);
     setLastFileName(file.name);
 
     try {
-      // UI-only por enquanto: o pipeline de upload/classificação ainda não está ligado.
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      setInfo(
-        `Arquivo “${file.name}” selecionado. O processamento com IA ainda não está disponível.`,
-      );
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch("/api/ai/analyze", {
+        method: "POST",
+        body: form,
+      });
+
+      const data = (await res.json()) as AnalyzeResponse;
+      if (!res.ok) {
+        throw new Error(data.error || "Falha ao analisar documento");
+      }
+
+      setPresentTypes(data.types);
+      setInvoice(data.invoice);
+
+      const typeLabels = data.types.map((t) => DOC_LABELS[t]).join(", ");
+      if (data.invoice) {
+        setInfo(
+          `Tipos identificados: ${typeLabels}. Invoice ${data.invoice.number ?? "sem número"} extraída (${data.latencyMs} ms).`,
+        );
+      } else {
+        setInfo(
+          `Tipos identificados: ${typeLabels}. Nenhuma Invoice neste arquivo — extração de PL/BL virá nos próximos passos.`,
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro inesperado");
     } finally {
@@ -69,7 +113,7 @@ export function UploadDropzone() {
       <CardHeader>
         <CardTitle className="text-base">Enviar documentos</CardTitle>
         <CardDescription>
-          A IA identifica o tipo de cada arquivo automaticamente
+          A IA identifica o tipo de cada arquivo e extrai dados da Invoice
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -92,8 +136,8 @@ export function UploadDropzone() {
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) void handleFile(file);
+            const next = e.dataTransfer.files?.[0];
+            if (next) void handleFile(next);
           }}
           className={cn(
             "group flex min-h-64 w-full flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-all",
@@ -109,9 +153,9 @@ export function UploadDropzone() {
                 <Loader2 className="h-7 w-7 animate-spin text-primary" />
               </span>
               <div className="space-y-1">
-                <p className="text-sm font-medium">Preparando arquivo...</p>
+                <p className="text-sm font-medium">Analisando com IA...</p>
                 <p className="text-xs text-muted-foreground">
-                  {lastFileName ?? "Aguarde um momento"}
+                  {lastFileName ?? "Classificando e extraindo dados"}
                 </p>
               </div>
             </>
@@ -134,7 +178,7 @@ export function UploadDropzone() {
                     : "Arraste um arquivo ou clique para selecionar"}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  PDF ou imagem (PNG, JPG) — um arquivo por vez
+                  PDF ou imagem (PNG, JPG) — um arquivo por vez, até 10 MB
                 </p>
               </div>
             </>
@@ -144,11 +188,11 @@ export function UploadDropzone() {
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,image/*"
+          accept="application/pdf,image/png,image/jpeg,image/webp"
           className="hidden"
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void handleFile(file);
+            const next = e.target.files?.[0];
+            if (next) void handleFile(next);
           }}
         />
 
@@ -194,6 +238,36 @@ export function UploadDropzone() {
             })}
           </ul>
         </div>
+
+        {invoice && (
+          <div className="space-y-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+            <p className="font-medium">Invoice extraída</p>
+            <ul className="space-y-1.5 text-muted-foreground">
+              <li>Número: {invoice.number ?? "—"}</li>
+              <li>Exportador: {invoice.exporter.name ?? "—"}</li>
+              <li>{formatParty("Importador / consignee", invoice.importer)}</li>
+              <li>{formatParty("Adquirente / notify", invoice.notify)}</li>
+            </ul>
+            {invoice.products.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="font-medium text-foreground">Produtos</p>
+                <ul className="space-y-1 text-muted-foreground">
+                  {invoice.products.map((product, index) => (
+                    <li key={`${product.code ?? "p"}-${index}`}>
+                      {[
+                        product.code || "sem código",
+                        product.ncm ? `NCM ${product.ncm}` : null,
+                        product.description || null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         {info && (
           <p className="rounded-md bg-primary/5 px-3 py-2 text-sm text-muted-foreground">

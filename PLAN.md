@@ -35,12 +35,12 @@ divergências entre documentos.
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
 - [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`; validado com chave real); pipeline de documentos ainda não ligado
+- [x] **Upload + classificação + extract Invoice** — `POST /api/ai/analyze` (Storage + `imports`/`documents`; multi-tipo; extrai Invoice; PL/BL só tipagem)
 
 ### Não implementado (UI ou backend)
 
-- [ ] Upload real de arquivos (Supabase Storage ou S3)
-- [ ] Classificação de documentos com IA
-- [ ] Extração de dados (OCR + LLM)
+- [ ] Extração de Packing List
+- [ ] Extração de Bill of Lading
 - [ ] Comparação entre documentos (regras de negócio)
 - [ ] Tela de revisão de divergências
 - [ ] CRUD de produtos
@@ -125,13 +125,15 @@ Browser
   ├─ /analise                 → React (server layout + client dropzone)
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
-  └─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
+  ├─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
+  └─ /api/ai/analyze          → upload Storage + classify + extract Invoice → DB
 
 Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 
 Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
   ├─ PostgreSQL + RLS         → schema multi-tenant (private.* com GRANT a authenticated)
+  ├─ Storage                  → bucket `import-documents` (pasta raiz = tenant_id)
   └─ Triggers                 → provisionamento automático de tenant no signup
 
 OpenRouter                    → modelo default openai/gpt-5.6-luna (OPENROUTER_API_KEY)

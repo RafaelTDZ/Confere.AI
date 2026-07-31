@@ -36,6 +36,7 @@ supabase/
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
 | `/api/auth/save-user-info` | Autenticado | Atualiza nome/empresa do membro (legado) |
 | `/api/ai/health` | Autenticado | Smoke da integração OpenRouter (`generateText`) |
+| `/api/ai/analyze` | Autenticado | Upload + classificação de tipos + extração de Invoice |
 
 ## Setup local
 
@@ -49,7 +50,8 @@ cp .env.example .env
 cp .env apps/web/.env.local   # Next.js lê este arquivo (não existe no git)
 # Edite apps/web/.env.local e preencha (uma chave por linha):
 #   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-#   OPENROUTER_API_KEY=sk-or-v1-...   # smoke/IA
+#   OPENROUTER_API_KEY=sk-or-v1-...
+#   SUPABASE_SERVICE_ROLE_KEY=...   # obrigatória para /api/ai/analyze
 pnpm dev         # web em http://localhost:3000
 ```
 
@@ -108,6 +110,7 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 | `/supabase/*` retorna 500 | `SUPABASE_INTERNAL_URL=` vazio no `.env` | Remova a linha ou comente — string vazia quebra o proxy |
 | `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
 | `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha em `apps/web/.env.local` e reinicie o Next |
+| `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env.local` (Dashboard → API Keys) |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor) |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
@@ -130,7 +133,7 @@ pnpm db:migration <nome>   # cria nova migration
 | `NEXT_PUBLIC_SUPABASE_URL` | Sim | URL do projeto Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`) |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Sim* | Chave publishable (`sb_publishable_...`). *Ou use `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legado) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
-| `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Não | Chave secreta / service_role (apenas servidor; app atual não usa) |
+| `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
 | `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para `/api/ai/health` e futuras chamadas de IA |
 | `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `openai/gpt-5.6-luna`) |
