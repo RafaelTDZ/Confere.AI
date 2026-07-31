@@ -1,19 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  FileStack,
-  LayoutDashboard,
-  Package,
-  Settings,
-} from "lucide-react";
+import { FileSearch } from "lucide-react";
 import { resolveAuthState } from "@/lib/auth";
 import { SignOutButton } from "./sign-out-button";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/imports", label: "Importacoes", icon: FileStack },
-  { href: "/products", label: "Produtos", icon: Package },
-  { href: "/settings", label: "Configuracoes", icon: Settings },
+  { href: "/analise", label: "Análise", icon: FileSearch },
 ] as const;
 
 export default async function AppLayout({
@@ -28,7 +20,7 @@ export default async function AppLayout({
     <div className="flex min-h-screen">
       <aside className="flex w-60 flex-col border-r bg-card">
         <div className="border-b p-4">
-          <Link href="/dashboard" className="text-lg font-bold">
+          <Link href="/analise" className="text-lg font-bold">
             Confere.ia
           </Link>
         </div>

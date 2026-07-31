@@ -70,7 +70,7 @@ export function LoginForm() {
 
       await ensureUserTenant(supabase, email.split("@")[0] || "Minha empresa");
 
-      router.push("/dashboard");
+      router.push("/analise");
       router.refresh();
     } catch (err) {
       setError(toUserFacingError(err, "Falha ao entrar"));

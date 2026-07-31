@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { MemberRole } from "@confere/domain";
+
+export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
 export interface AuthContext {
   userId: string;
