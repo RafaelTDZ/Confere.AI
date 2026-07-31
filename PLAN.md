@@ -19,7 +19,9 @@ divergências entre documentos.
   - Logout
   - Middleware de refresh de sessão (`@supabase/ssr`)
   - Cookie fixo `sb-confere-auth-token` (browser/server/middleware)
-  - Proxy same-origin `/supabase` (local e produção via `NEXT_PUBLIC_SUPABASE_URL`)
+  - Proxy same-origin `/supabase` (route handler com filtro de headers hop-by-hop → Supabase cloud)
+  - Chave pública: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`; fallback `ANON_KEY` legado)
+  - check-email sem cookies de sessão; middleware limpa JWT inválido
 - [x] **Multi-tenant**
   - Schema com RLS por `tenant_id` (claim em `app_metadata`)
   - Provisionamento automático no signup (trigger `on_auth_user_created`)
@@ -111,29 +113,29 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 | `/api/auth/save-user-info` | Lê `tenant_id` de `user_metadata` em vez de `app_metadata` — rota legada, provavelmente não usada |
 | Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
 | Upload mock | `upload-dropzone.tsx` simula delay de 600ms sem persistir arquivo |
-| Storage desabilitado | Supabase Storage excluído do `supabase start` local (`-x storage-api`) |
+| Grants RLS private.* | Migration `20250731190000_grant_private_rls_functions.sql` — aplicar no cloud se selects autenticados ainda falharem |
 
 ## Arquitetura atual
 
 ```
 Browser
   │
-  ├─ /login, /signup          → React (client components + Supabase browser client)
+  ├─ /login, /signup          → React (client + Supabase browser via /supabase proxy)
   ├─ /analise                 → React (server layout + client dropzone)
-  ├─ /supabase/*              → Next.js rewrite → Supabase (Auth API)
-  └─ /api/auth/*              → Route Handlers (server Supabase client)
+  ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
+  └─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
 
-Next.js middleware             → refresh de sessão em toda request
+Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 
-Supabase
+Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
-  ├─ PostgreSQL + RLS         → schema multi-tenant
-  └─ Triggers                   → provisionamento automático de tenant no signup
+  ├─ PostgreSQL + RLS         → schema multi-tenant (private.* com GRANT a authenticated)
+  └─ Triggers                 → provisionamento automático de tenant no signup
 ```
 
 ## Referências
 
 - [`README.md`](README.md) — setup, variáveis de ambiente, rotas
-- [`AGENTS.md`](AGENTS.md) — instruções para agentes (Cursor Cloud, Docker, auth)
+- [`AGENTS.md`](AGENTS.md) — instruções para agentes (Cursor Cloud, auth)
 - [`.env.example`](.env.example) — variáveis de ambiente
 - [`supabase/migrations/`](supabase/migrations/) — schema do banco

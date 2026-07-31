@@ -3,15 +3,17 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import { createSupabaseFetch } from "@/lib/supabase/fetch";
+import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
 let client: SupabaseClient | null = null;
 
 /**
  * URL pública do Supabase no browser.
  * Usa proxy same-origin (/supabase) para funcionar em preview/túnel remoto,
- * não só em localhost. O destino do proxy é resolvido pelo rewrite do Next
+ * não só em localhost. O destino do proxy é resolvido pelo route handler
  * conforme o ambiente (SUPABASE_INTERNAL_URL → NEXT_PUBLIC_SUPABASE_URL →
- * Supabase local).
+ * fallback http://127.0.0.1:54321).
  */
 function getBrowserSupabaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -23,16 +25,17 @@ function getBrowserSupabaseUrl(): string {
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (client) return client;
 
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = getSupabasePublicKey();
 
   if (!key) {
     throw new Error(
-      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_ANON_KEY em seu arquivo .env.local",
+      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ou NEXT_PUBLIC_SUPABASE_ANON_KEY) em seu arquivo .env.local",
     );
   }
 
   client = createBrowserClient(getBrowserSupabaseUrl(), key, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
+    global: { fetch: createSupabaseFetch(key) },
   });
   return client;
 }
