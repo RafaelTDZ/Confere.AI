@@ -44,8 +44,12 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
 - Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `openai/gpt-5.6-luna`).
 - Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
   - Sem cookie → `401`; sem `OPENROUTER_API_KEY` → `503`; sucesso → `{ ok, model, text, latencyMs }`.
-- Chave **só no servidor** (`OPENROUTER_API_KEY`); nunca `NEXT_PUBLIC_*`.
-- Pipeline de documentos (upload/classificação/extração) **ainda não** usa este client.
+- Análise de documento: `POST /api/ai/analyze` (multipart `file`).
+  - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
+  - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
+  - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**.
+- Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
+- Extração de Packing List e BL ainda não implementada.
 
 ### Migrations no cloud
 
@@ -88,7 +92,8 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | UI pronta; upload é mock (sem backend) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
-| Pipeline de documentos (upload, IA, análise) | Não implementado |
+| Classificação + extract Invoice | `/api/ai/analyze` + dropzone; PL/BL só tipo |
+| Pipeline completo (PL/BL extract, comparação) | Não implementado |
 | Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
@@ -130,3 +135,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env.local` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
 - **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
+- **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze`
+  (grava Storage/`imports`/`documents`/`extraction_results`/`ai_logs` via admin;
+  tenant_id sempre do JWT). Evita `permission denied for function current_tenant_id`
+  quando os grants de `private.*` ainda não foram aplicados no cloud.
+- **Grants RLS** (recomendado): rode
+  [`20250731190000_grant_private_rls_functions.sql`](supabase/migrations/20250731190000_grant_private_rls_functions.sql)
+  no SQL Editor para selects autenticados com policies RLS funcionarem.
