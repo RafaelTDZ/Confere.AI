@@ -163,12 +163,9 @@ Ver `PLAN.md` para o roadmap completo.
 
 ## Deploy (Vercel)
 
-O monorepo usa `vercel.json` na raiz (`installCommand` + `buildCommand` com filtro `@confere/web`).
+O monorepo usa `vercel.json` na raiz. Com **Root Directory** vazio (raiz do repo), o Vercel precisa de `next` também no `package.json` da raiz para detectar o framework; o build filtra `@confere/web` via Turborepo.
 
-No projeto Vercel:
-1. **Root Directory**: raiz do repositório (`.`)
-2. **Framework**: Next.js
-3. Adicione as variáveis (Production + Preview):
+Adicione as variáveis (Production + Preview):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
@@ -179,6 +176,8 @@ OPENROUTER_MODEL=openai/gpt-5.6-luna
 ```
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.
+
+> Preferível a médio prazo: Root Directory = `apps/web` no dashboard (padrão Turborepo) e remover `next` da raiz.
 
 ## Segurança
 
