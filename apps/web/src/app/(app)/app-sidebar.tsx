@@ -89,6 +89,7 @@ export function AppSidebar({ email }: AppSidebarProps) {
           variant="ghost"
           size="icon"
           aria-label={open ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
