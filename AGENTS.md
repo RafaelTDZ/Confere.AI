@@ -9,7 +9,7 @@ Roadmap e estado do produto: `PLAN.md`.
 ### Serviços
 
 - **Supabase cloud**: `https://xmvypuwizexdhpwrgrao.supabase.co` — fornece DB e Auth.
-- **Web** (`apps/web`, Next.js): `http://localhost:3000`. Login/signup e página `/analise`.
+- **Web** (`apps/web`, Next.js): `http://localhost:3000`. Login/signup; app com sidebar (`/analise`, `/importacoes`, `/produtos`).
 
 ### Como rodar (sem Docker)
 
@@ -91,6 +91,9 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | Dropzone → `/api/ai/analyze` (Storage + classify + extract Invoice persistido) |
+| Página `/importacoes` | Lista `imports` do tenant (admin + tenant_id do JWT) |
+| Página `/produtos` | Placeholder (CRUD pendente) |
+| Shell autenticado | Sidebar: Nova análise, Importações, Produtos |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
 | Classificação + extract Invoice | `/api/ai/analyze` + dropzone; Invoice em `extraction_results`; PL/BL só tipo |
 | Pipeline completo (PL/BL extract, comparação) | Não implementado |

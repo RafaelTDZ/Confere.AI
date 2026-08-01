@@ -27,11 +27,17 @@ divergências entre documentos.
   - Provisionamento automático no signup (trigger `on_auth_user_created`)
   - RPC `create_tenant_with_owner` como fallback (`ensureUserTenant`)
   - RPC `email_registered` para verificar email no login
+- [x] **Shell autenticado**
+  - Sidebar com Nova análise (`/analise`), Importações (`/importacoes`) e Produtos (`/produtos`)
+  - Overlay mobile com menu abrível
 - [x] **Página `/analise`**
-  - Layout autenticado (header com email + logout)
   - Dropzone de upload ligada a `POST /api/ai/analyze` (Storage + classify + extract Invoice)
   - Cards "Como funciona" e "Documentos necessários"
   - Barra de progresso de documentos recebidos (atualizada pelos tipos classificados)
+- [x] **Página `/importacoes`**
+  - Lista `imports` do tenant (service role + `tenant_id` do JWT; grants RLS `private.*` ainda recomendados para selects autenticados)
+- [x] **Página `/produtos`**
+  - Placeholder (CRUD ainda não implementado)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
 - [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`; validado com chave real); pipeline de documentos ainda não ligado
@@ -44,7 +50,7 @@ divergências entre documentos.
 - [ ] Comparação entre documentos (regras de negócio)
 - [ ] Tela de revisão de divergências
 - [ ] CRUD de produtos
-- [ ] Histórico de análises
+- [ ] Detalhe / revisão de importação
 - [ ] Testes automatizados
 - [ ] Observabilidade (Sentry/OTEL configuráveis mas não integrados)
 
@@ -121,7 +127,9 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 Browser
   │
   ├─ /login, /signup          → React (client + Supabase browser via /supabase proxy)
-  ├─ /analise                 → React (server layout + client dropzone)
+  ├─ /analise                 → React (sidebar + dropzone → /api/ai/analyze)
+  ├─ /importacoes             → Server Component (lista imports do tenant)
+  ├─ /produtos                → Placeholder catálogo
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
   ├─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
