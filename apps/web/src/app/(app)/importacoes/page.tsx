@@ -50,14 +50,24 @@ type ImportRow = {
  */
 export default async function ImportacoesPage() {
   const auth = await getAuthContext();
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("imports")
-    .select("id, reference_number, status, supplier_name, created_at")
-    .eq("tenant_id", auth.tenantId)
-    .order("created_at", { ascending: false });
 
-  const imports = (data ?? []) as ImportRow[];
+  let imports: ImportRow[] = [];
+  let error: string | null = null;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data, error: queryError } = await admin
+      .from("imports")
+      .select("id, reference_number, status, supplier_name, created_at")
+      .eq("tenant_id", auth.tenantId)
+      .order("created_at", { ascending: false });
+    if (queryError) {
+      error = queryError.message;
+    } else {
+      imports = (data ?? []) as ImportRow[];
+    }
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -76,7 +86,7 @@ export default async function ImportacoesPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Não foi possível carregar</CardTitle>
-            <CardDescription>{error.message}</CardDescription>
+            <CardDescription>{error}</CardDescription>
           </CardHeader>
         </Card>
       ) : imports.length === 0 ? (
