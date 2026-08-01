@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      next:
-        specifier: ^15.1.4
-        version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
     devDependencies:
       prettier:
         specifier: ^3.4.2

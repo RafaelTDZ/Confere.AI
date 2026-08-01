@@ -161,13 +161,19 @@ Schema multi-tenant com RLS em todas as tabelas. Tabelas de domínio já existem
 
 Ver `PLAN.md` para o roadmap completo.
 
-## Deploy
+## Deploy (Vercel)
 
-Configure as variáveis no ambiente de deploy (Vercel, etc.):
+O monorepo usa `vercel.json` na raiz (`installCommand` + `buildCommand` com filtro `@confere/web`).
+
+No projeto Vercel:
+1. **Root Directory**: raiz do repositório (`.`)
+2. **Framework**: Next.js
+3. Adicione as variáveis (Production + Preview):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_SERVICE_ROLE_KEY=<service_role>
 OPENROUTER_API_KEY=<sk-or-v1-...>
 OPENROUTER_MODEL=openai/gpt-5.6-luna
 ```

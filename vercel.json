@@ -1,8 +1,5 @@
 {
-  "buildCommand": "turbo run build",
-  "outputDirectory": "apps/web/.next",
-  "framework": "nextjs",
-  "rewrites": [
-    { "source": "/:path*", "destination": "/:path*" }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm turbo run build --filter=@confere/web"
 }

@@ -15,9 +15,6 @@
     "db:migration": "supabase migration new",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\" --ignore-path .gitignore"
   },
-  "dependencies": {
-    "next": "^15.1.4"
-  },
   "devDependencies": {
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
