@@ -172,6 +172,9 @@ export async function persistAiLog(params: {
   latencyMs: number;
   status: "success" | "error";
   errorMessage?: string | null;
+  costUsd?: number | null;
+  reasoningTokens?: number;
+  importId?: string | null;
 }): Promise<void> {
   try {
     const admin = createSupabaseAdminClient();
@@ -184,6 +187,9 @@ export async function persistAiLog(params: {
       latency_ms: params.latencyMs,
       status: params.status,
       error_message: params.errorMessage ?? null,
+      cost_usd: params.costUsd ?? null,
+      reasoning_tokens: params.reasoningTokens ?? 0,
+      import_id: params.importId ?? null,
     });
   } catch (err) {
     console.error("[ai_logs] falha ao persistir:", err);

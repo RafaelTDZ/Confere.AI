@@ -4,11 +4,12 @@ import {
   isPdfParseError,
   type PdfEngine,
 } from "@/lib/ai/document-model";
-import { getOpenRouterModel } from "@/lib/ai/openrouter";
+import { getOpenRouterModel } from "@/lib/ai/model-config";
 import {
   documentClassificationSchema,
   type DocumentClassification,
 } from "@/lib/ai/schemas";
+import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 export type AnalyzeFileInput = {
   bytes: Uint8Array;
@@ -65,6 +66,7 @@ export async function classifyDocument(
   tokensIn: number;
   tokensOut: number;
   latencyMs: number;
+  usage: AiTaskUsage;
 }> {
   const modelId = getOpenRouterModel();
   const isPdf = file.mediaType === "application/pdf";
@@ -94,11 +96,14 @@ export async function classifyDocument(
     return true;
   });
 
+  const usage = extractAiTaskUsage(result, Date.now() - started);
+
   return {
     classification: { ...classification, types },
     model: modelId,
-    tokensIn: result.usage?.inputTokens ?? 0,
-    tokensOut: result.usage?.outputTokens ?? 0,
-    latencyMs: Date.now() - started,
+    tokensIn: usage.tokensIn,
+    tokensOut: usage.tokensOut,
+    latencyMs: usage.latencyMs,
+    usage,
   };
 }

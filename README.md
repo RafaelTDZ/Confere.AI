@@ -137,6 +137,9 @@ pnpm db:migration <nome>   # cria nova migration
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
 | `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para `/api/ai/health` e futuras chamadas de IA |
 | `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `openai/gpt-5.6-luna`) |
+| `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `minimal` \| `none` |
+| `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
+| `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
 | `SENTRY_DSN` | Não | Observabilidade |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Observabilidade |
 
@@ -157,7 +160,7 @@ Schema multi-tenant com RLS em todas as tabelas. Tabelas de domínio já existem
 
 - **Auth/tenant**: `tenants`, `tenant_members`, `tenant_settings`
 - **Domínio** (futuro): `products`, `imports`, `documents`, `extraction_results`, `analysis_results`, `product_matches`
-- **Auditoria**: `audit_logs`, `ai_logs`
+- **Auditoria**: `audit_logs`, `ai_logs` (tokens, `cost_usd`, `reasoning_tokens` e `import_id` por chamada de IA — para relatórios futuros)
 
 Ver `PLAN.md` para o roadmap completo.
 

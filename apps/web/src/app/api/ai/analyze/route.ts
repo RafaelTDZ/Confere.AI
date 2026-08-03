@@ -101,6 +101,9 @@ export async function POST(request: Request) {
         tokensOut: classifyResult.tokensOut,
         latencyMs: classifyResult.latencyMs,
         status: "success",
+        costUsd: classifyResult.usage.costUsd,
+        reasoningTokens: classifyResult.usage.reasoningTokens,
+        importId,
       });
     } catch (err) {
       await persistAiLog({
@@ -112,6 +115,7 @@ export async function POST(request: Request) {
         latencyMs: Date.now() - started,
         status: "error",
         errorMessage: err instanceof Error ? err.message : String(err),
+        importId,
       });
       await updateImportStatus(importId, "rejected");
       throw err;
@@ -145,6 +149,9 @@ export async function POST(request: Request) {
           tokensOut: extracted.tokensOut,
           latencyMs: extracted.latencyMs,
           status: "success",
+          costUsd: extracted.usage.costUsd,
+          reasoningTokens: extracted.usage.reasoningTokens,
+          importId,
         });
         extractionResultId = await persistExtractionResult({
           tenantId: auth.tenantId,
@@ -163,6 +170,7 @@ export async function POST(request: Request) {
           latencyMs: Date.now() - started,
           status: "error",
           errorMessage: err instanceof Error ? err.message : String(err),
+          importId,
         });
         try {
           await updateDocumentStatus(invoiceDoc.id, "failed");

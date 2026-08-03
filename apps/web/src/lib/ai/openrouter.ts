@@ -1,5 +1,9 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { getOpenRouterApiKey, getOpenRouterModel } from "@/lib/ai/config";
+import { getOpenRouterApiKey } from "@/lib/ai/config";
+import {
+  getOpenRouterModel,
+  getOpenRouterReasoning,
+} from "@/lib/ai/model-config";
 
 /**
  * Client OpenRouter (servidor). Usa a chave OPENROUTER_API_KEY.
@@ -14,7 +18,19 @@ export function createOpenRouterClient() {
 /** Modelo configurado via OPENROUTER_MODEL (default: openai/gpt-5.6-luna). */
 export function getDefaultLanguageModel() {
   const openrouter = createOpenRouterClient();
-  return openrouter(getOpenRouterModel());
+  const reasoning = getOpenRouterReasoning("smoke");
+  return openrouter(
+    getOpenRouterModel(),
+    reasoning ? { reasoning } : undefined,
+  );
 }
 
-export { getOpenRouterApiKey, getOpenRouterModel, OpenRouterConfigError } from "@/lib/ai/config";
+export { getOpenRouterApiKey, OpenRouterConfigError } from "@/lib/ai/config";
+export {
+  DEFAULT_OPENROUTER_MODEL,
+  getOpenRouterModel,
+  getOpenRouterReasoning,
+  type OpenRouterReasoningConfig,
+  type OpenRouterReasoningContext,
+  type OpenRouterReasoningEffort,
+} from "@/lib/ai/model-config";
