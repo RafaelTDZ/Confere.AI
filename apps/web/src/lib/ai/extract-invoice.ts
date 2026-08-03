@@ -5,11 +5,12 @@ import {
   isPdfParseError,
   type PdfEngine,
 } from "@/lib/ai/document-model";
-import { getOpenRouterModel } from "@/lib/ai/openrouter";
+import { getOpenRouterModel } from "@/lib/ai/model-config";
 import {
   invoiceExtractionSchema,
   type InvoiceExtraction,
 } from "@/lib/ai/schemas";
+import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 async function extractOnce(file: AnalyzeFileInput, pdfEngine: PdfEngine) {
   const isPdf = file.mediaType === "application/pdf";
@@ -58,6 +59,7 @@ export async function extractInvoice(
   tokensIn: number;
   tokensOut: number;
   latencyMs: number;
+  usage: AiTaskUsage;
 }> {
   const modelId = getOpenRouterModel();
   const isPdf = file.mediaType === "application/pdf";
@@ -79,11 +81,14 @@ export async function extractInvoice(
     throw new Error("A IA não retornou dados da invoice");
   }
 
+  const usage = extractAiTaskUsage(result, Date.now() - started);
+
   return {
     invoice,
     model: modelId,
-    tokensIn: result.usage?.inputTokens ?? 0,
-    tokensOut: result.usage?.outputTokens ?? 0,
-    latencyMs: Date.now() - started,
+    tokensIn: usage.tokensIn,
+    tokensOut: usage.tokensOut,
+    latencyMs: usage.latencyMs,
+    usage,
   };
 }

@@ -1,4 +1,8 @@
-import { createOpenRouterClient, getOpenRouterModel } from "@/lib/ai/openrouter";
+import { createOpenRouterClient } from "@/lib/ai/openrouter";
+import {
+  getOpenRouterModel,
+  getOpenRouterReasoning,
+} from "@/lib/ai/model-config";
 
 export type PdfEngine = "mistral-ocr" | "native" | "pdf-text";
 
@@ -13,10 +17,12 @@ export function getDocumentLanguageModel(options?: {
 }) {
   const openrouter = createOpenRouterClient();
   const modelId = getOpenRouterModel();
+  const reasoning = getOpenRouterReasoning("document");
   const isPdf = options?.isPdf ?? false;
   const pdfEngine = options?.pdfEngine ?? "mistral-ocr";
 
   return openrouter(modelId, {
+    ...(reasoning ? { reasoning } : {}),
     plugins: [
       ...(isPdf
         ? ([{ id: "file-parser" as const, pdf: { engine: pdfEngine } }] as const)
