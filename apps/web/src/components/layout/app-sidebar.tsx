@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Boxes, Menu, Package, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { SignOutButton } from "./sign-out-button";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 
 const NAV_ITEMS = [
   { href: "/analise", label: "Nova análise", icon: Sparkles },

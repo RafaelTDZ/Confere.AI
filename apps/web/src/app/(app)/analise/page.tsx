@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { UploadDropzone } from "./upload-dropzone";
+import { UploadDropzone } from "@/components/analise/upload-dropzone";
 
 const STEPS = [
   {

@@ -18,6 +18,10 @@ Nesta etapa o produto expõe autenticação (login/signup) e a página protegida
 ```
 apps/
   web/              Next.js — UI, APIs de auth e página /analise
+    src/
+      app/          Rotas e pages finas ((auth), (app), api, supabase proxy)
+      components/   ui (shadcn) + auth + layout + analise
+      lib/          ai, auth, documents, supabase, tenant, utils
 packages/
   config/           tsconfig e eslint compartilhados
 supabase/
