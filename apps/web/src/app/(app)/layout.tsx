@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { resolveAuthState } from "@/lib/auth";
-import { AppSidebar } from "./app-sidebar";
+import { AppSidebar } from "@/components/layout/app-sidebar";
 
 export default async function AppLayout({
   children,

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { SignupForm } from "./signup-form";
+import { SignupForm } from "@/components/auth/signup-form";
 import {
   Card,
   CardContent,

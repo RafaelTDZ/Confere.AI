@@ -10,61 +10,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getAuthContext } from "@/lib/auth";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  IMPORT_STATUS_LABELS,
+  listTenantImports,
+  type ImportRow,
+} from "@/lib/documents";
 import { cn, formatDate } from "@/lib/utils";
 
-const STATUS_LABELS: Record<
-  string,
-  {
-    label: string;
-    variant:
-      | "default"
-      | "secondary"
-      | "destructive"
-      | "success"
-      | "warning"
-      | "outline";
-  }
-> = {
-  uploaded: { label: "Enviado", variant: "secondary" },
-  processing: { label: "Processando", variant: "warning" },
-  awaiting_review: { label: "Aguardando revisão", variant: "default" },
-  completed: { label: "Concluída", variant: "success" },
-  rejected: { label: "Rejeitada", variant: "destructive" },
-};
-
-type ImportRow = {
-  id: string;
-  reference_number: string;
-  status: string;
-  supplier_name: string | null;
-  created_at: string;
-};
-
-/**
- * Lista imports do tenant.
- * Usa service role + tenant_id do JWT (mesmo padrão de /api/ai/analyze)
- * porque o grant EXECUTE em private.* pode ainda não estar no cloud —
- * sem ele, select autenticado falha com permission denied for function
- * current_tenant_id.
- */
 export default async function ImportacoesPage() {
   const auth = await getAuthContext();
 
   let imports: ImportRow[] = [];
   let error: string | null = null;
   try {
-    const admin = createSupabaseAdminClient();
-    const { data, error: queryError } = await admin
-      .from("imports")
-      .select("id, reference_number, status, supplier_name, created_at")
-      .eq("tenant_id", auth.tenantId)
-      .order("created_at", { ascending: false });
-    if (queryError) {
-      error = queryError.message;
-    } else {
-      imports = (data ?? []) as ImportRow[];
-    }
+    imports = await listTenantImports(auth.tenantId);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -123,7 +82,7 @@ export default async function ImportacoesPage() {
               </thead>
               <tbody>
                 {imports.map((row) => {
-                  const status = STATUS_LABELS[row.status] ?? {
+                  const status = IMPORT_STATUS_LABELS[row.status] ?? {
                     label: row.status,
                     variant: "outline" as const,
                   };

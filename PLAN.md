@@ -128,12 +128,17 @@ Browser
   │
   ├─ /login, /signup          → React (client + Supabase browser via /supabase proxy)
   ├─ /analise                 → React (sidebar + dropzone → /api/ai/analyze)
-  ├─ /importacoes             → Server Component (lista imports do tenant)
+  ├─ /importacoes             → Server Component (lista via lib/documents)
   ├─ /produtos                → Placeholder catálogo
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
   ├─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
-  └─ /api/ai/analyze          → upload Storage + classify + extract Invoice → DB
+  └─ /api/ai/analyze          → runAnalyzePipeline (upload + classify + extract Invoice)
+
+apps/web/src
+  ├─ app/                     → Rotas e pages finas
+  ├─ components/              → ui + auth + layout + analise
+  └─ lib/                     → ai, auth, documents, supabase
 
 Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 
