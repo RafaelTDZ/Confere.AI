@@ -2,7 +2,7 @@ import { generateText, Output } from "ai";
 import type { AnalyzeFileInput } from "@/lib/ai/classify";
 import {
   getDocumentLanguageModel,
-  isPdfParseError,
+  shouldFallbackPdfEngine,
   type PdfEngine,
 } from "@/lib/ai/document-model";
 import { getOpenRouterModel } from "@/lib/ai/model-config";
@@ -67,10 +67,10 @@ export async function extractInvoice(
 
   let result;
   try {
-    result = await extractOnce(file, isPdf ? "mistral-ocr" : "native");
+    result = await extractOnce(file, "native");
   } catch (error) {
-    if (isPdf && isPdfParseError(error)) {
-      result = await extractOnce(file, "native");
+    if (isPdf && shouldFallbackPdfEngine(error)) {
+      result = await extractOnce(file, "mistral-ocr");
     } else {
       throw error;
     }

@@ -1,7 +1,7 @@
 import { generateText, Output } from "ai";
 import {
   getDocumentLanguageModel,
-  isPdfParseError,
+  shouldFallbackPdfEngine,
   type PdfEngine,
 } from "@/lib/ai/document-model";
 import { getOpenRouterModel } from "@/lib/ai/model-config";
@@ -74,11 +74,11 @@ export async function classifyDocument(
 
   let result;
   try {
-    result = await classifyOnce(file, isPdf ? "mistral-ocr" : "native");
+    result = await classifyOnce(file, "native");
   } catch (error) {
-    if (isPdf && isPdfParseError(error)) {
-      // Fallback: envia o PDF nativo ao modelo (sem OCR prévio do OpenRouter)
-      result = await classifyOnce(file, "native");
+    if (isPdf && shouldFallbackPdfEngine(error)) {
+      // Fallback: OCR via OpenRouter quando o processamento nativo falha
+      result = await classifyOnce(file, "mistral-ocr");
     } else {
       throw error;
     }
