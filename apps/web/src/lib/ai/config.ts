@@ -1,5 +1,3 @@
-const DEFAULT_MODEL = "openai/gpt-5.6-luna";
-
 export class OpenRouterConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -15,8 +13,4 @@ export function getOpenRouterApiKey(): string {
     );
   }
   return apiKey;
-}
-
-export function getOpenRouterModel(): string {
-  return process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
 }
