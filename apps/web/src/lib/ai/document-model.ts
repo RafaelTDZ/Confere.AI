@@ -58,34 +58,9 @@ function errorText(error: unknown): string {
 }
 
 /**
- * Indica se vale retry do PDF com mistral-ocr após falha do engine native.
- * Só retenta em sinais explícitos de parse/file — não em outage/rate limit
- * genéricos do provider (OCR não corrige quota/disponibilidade).
+ * Sinais explícitos de falha de parse/file no texto do erro (inclui responseBody).
  */
-export function shouldFallbackPdfEngine(error: unknown): boolean {
-  const status = errorStatusCode(error);
-  if (
-    status === 401 ||
-    status === 403 ||
-    status === 429 ||
-    status === 502 ||
-    status === 503
-  ) {
-    return false;
-  }
-
-  const text = errorText(error);
-  if (
-    /api key/i.test(text) ||
-    /unauthorized/i.test(text) ||
-    /forbidden/i.test(text) ||
-    /OPENROUTER_API_KEY/i.test(text) ||
-    /rate.?limit/i.test(text) ||
-    /provider.*(error|returned)/i.test(text)
-  ) {
-    return false;
-  }
-
+function hasPdfParseFileSignal(text: string): boolean {
   return (
     /failed to parse/i.test(text) ||
     (/pdf/i.test(text) && /parse/i.test(text)) ||
@@ -96,4 +71,30 @@ export function shouldFallbackPdfEngine(error: unknown): boolean {
     ) ||
     /unable to (process|read|parse).*(file|pdf|document)/i.test(text)
   );
+}
+
+/**
+ * Indica se vale retry do PDF com mistral-ocr após falha do engine native.
+ * Prioriza sinais de parse/file no body (mesmo sob wrapper "Provider returned
+ * an error"); rejeita auth/quota; demais erros de provider sem detalhe de
+ * parse não disparam OCR.
+ */
+export function shouldFallbackPdfEngine(error: unknown): boolean {
+  const status = errorStatusCode(error);
+  const text = errorText(error);
+
+  // Auth e quota: OCR não ajuda — rejeitar mesmo se o body mencionar PDF.
+  if (status === 401 || status === 403 || status === 429) return false;
+  if (
+    /api key/i.test(text) ||
+    /unauthorized/i.test(text) ||
+    /forbidden/i.test(text) ||
+    /OPENROUTER_API_KEY/i.test(text) ||
+    /rate.?limit/i.test(text)
+  ) {
+    return false;
+  }
+
+  // Parse/file no message ou responseBody → fallback, mesmo com wrapper genérico.
+  return hasPdfParseFileSignal(text);
 }
