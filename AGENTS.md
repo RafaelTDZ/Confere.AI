@@ -19,9 +19,8 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    ```bash
    pnpm install
    cp .env.example .env
-   cp .env apps/web/.env.local   # não existe no git — Next lê este path
    ```
-   Edite `.env` e `apps/web/.env.local` e preencha (**uma chave por linha**):
+   Edite o `.env` na raiz e preencha (**uma chave por linha**):
    - `NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
    - `OPENROUTER_API_KEY` — para smoke/IA (`https://openrouter.ai/settings/keys`); opcional até ligar o pipeline
@@ -30,9 +29,11 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    — remova a linha ou deixe comentada para usar `NEXT_PUBLIC_SUPABASE_URL`.
    Fallback legado: `NEXT_PUBLIC_SUPABASE_ANON_KEY` (JWT).
 
+   O Next carrega o `.env` da raiz via `apps/web/next.config.ts` — não use `apps/web/.env.local`.
+
    **Env vazio no processo ganha do arquivo:** se o shell/CI exportar
    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=` (string vazia), o Next **não** aplica o valor
-   do `.env.local`. Faça `unset` da variável ou defina o valor real antes do `pnpm dev`.
+   do `.env`. Faça `unset` da variável ou defina o valor real antes do `pnpm dev`.
 2. **Web**:
    ```bash
    pnpm --filter @confere/web dev   # http://localhost:3000
@@ -113,7 +114,7 @@ curl -sI http://localhost:3000/login | head -1
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
-# OpenRouter (sessão autenticada + OPENROUTER_API_KEY em apps/web/.env.local):
+# OpenRouter (sessão autenticada + OPENROUTER_API_KEY no .env da raiz):
 # curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 # → {"ok":true,"model":"openai/gpt-5.6-luna","text":"ok","latencyMs":...}
 ```
@@ -131,11 +132,11 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Proxy `/supabase`**: não use rewrite do `next.config` (404 no App Router). O route handler
   deve filtrar hop-by-hop — senão "Failed to fetch" no login (senha).
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
-- **`.env` / `.env.local` são gitignored.** Não vêm no clone — copie de `.env.example`.
-  Next.js lê `apps/web/.env.local`; a raiz `.env` é só para copiar para o app.
+- **`.env` na raiz é gitignored.** Não vem no clone — copie de `.env.example`.
+  O Next carrega só o `.env` da raiz (`apps/web/next.config.ts`); não use `apps/web/.env.local`.
 - **Não cole a publishable key na mesma linha do comentário** `# NEXT_PUBLIC_SUPABASE_ANON_KEY=`
   (vira `Invalid API key`).
-- **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env.local` de preencher a chave.
+- **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
 - **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
 - **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze`

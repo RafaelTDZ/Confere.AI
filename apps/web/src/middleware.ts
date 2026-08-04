@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = getSupabasePublicKey();
 
-  // Ignorar middleware se variáveis não estiverem configuradas (exemplo: em desenvolvimento local sem .env.local)
+  // Ignorar middleware se variáveis não estiverem configuradas (exemplo: em desenvolvimento local sem .env na raiz)
   if (!supabaseUrl || !supabaseKey) {
     return response;
   }

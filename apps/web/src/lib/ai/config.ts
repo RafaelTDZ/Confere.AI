@@ -9,7 +9,7 @@ export function getOpenRouterApiKey(): string {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) {
     throw new OpenRouterConfigError(
-      "OPENROUTER_API_KEY não configurada. Defina a chave em apps/web/.env.local (openrouter.ai/settings/keys).",
+      "OPENROUTER_API_KEY não configurada. Defina a chave no .env da raiz (openrouter.ai/settings/keys).",
     );
   }
   return apiKey;

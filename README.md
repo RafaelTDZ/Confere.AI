@@ -51,15 +51,14 @@ Pré-requisitos: Node >= 20, pnpm 10. O projeto usa **Supabase cloud** — não 
 ```bash
 pnpm install
 cp .env.example .env
-cp .env apps/web/.env.local   # Next.js lê este arquivo (não existe no git)
-# Edite apps/web/.env.local e preencha (uma chave por linha):
+# Edite o .env na raiz e preencha (uma chave por linha):
 #   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 #   OPENROUTER_API_KEY=sk-or-v1-...
 #   SUPABASE_SERVICE_ROLE_KEY=...   # obrigatória para /api/ai/analyze
 pnpm dev         # web em http://localhost:3000
 ```
 
-O arquivo `apps/web/.env.local` **não vem no repositório** (gitignored). Sem ele, o Next não carrega as chaves.
+O arquivo `.env` na raiz **não vem no repositório** (gitignored). O Next carrega esse arquivo via `apps/web/next.config.ts` — não é necessário `apps/web/.env.local`.
 
 ### Projeto Supabase
 
@@ -70,7 +69,7 @@ As chaves publishable (`sb_publishable_...`) estão no dashboard: **Settings →
 
 `SUPABASE_INTERNAL_URL` deve ficar **removido ou comentado** no `.env` — string vazia quebra o proxy `/supabase`.
 
-Variáveis já exportadas no shell/CI com valor **vazio** (ex.: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=`) **não são sobrescritas** pelo `.env.local` — remova-as do ambiente ou defina o valor real antes de `pnpm dev`.
+Variáveis já exportadas no shell/CI com valor **vazio** (ex.: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=`) **não são sobrescritas** pelo `.env` — remova-as do ambiente ou defina o valor real antes de `pnpm dev`.
 
 ### Migrations
 
@@ -106,15 +105,15 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 
 | Problema | Causa provável | Solução |
 |----------|----------------|---------|
-| Não acho `.env.local` | Arquivo não está no git | `cp .env.example .env && cp .env apps/web/.env.local` e preencha as chaves |
-| `Variáveis de ambiente Supabase não configuradas` | `.env.local` faltando, chave vazia, ou env do shell/CI com `NEXT_PUBLIC_*=` vazio sobrescrevendo o arquivo | Crie/preencha `apps/web/.env.local`; `unset` vars vazias no shell; reinicie o `pnpm dev` |
+| Não acho `.env` | Arquivo não está no git | `cp .env.example .env` e preencha as chaves |
+| `Variáveis de ambiente Supabase não configuradas` | `.env` faltando, chave vazia, ou env do shell/CI com `NEXT_PUBLIC_*=` vazio sobrescrevendo o arquivo | Crie/preencha o `.env` na raiz; `unset` vars vazias no shell; reinicie o `pnpm dev` |
 | `Invalid API key` no Auth | Publishable key colada na mesma linha do comentário `# NEXT_PUBLIC_SUPABASE_ANON_KEY=` | Deixe a key sozinha na linha; comente o anon em linha separada |
 | `Erro ao verificar email` | JWT antigo no cookie (ex.: Supabase local) ou publishable key em `Authorization: Bearer` | Hard refresh / limpar `sb-confere-auth-token*`; `/api/auth/check-email` usa client sem sessão; ver `createSupabaseFetch` |
 | `Failed to fetch` na senha (login/signup) | Proxy repassando headers hop-by-hop do Cloudflare, ou browser chamando Supabase direto | Confira route handler em `apps/web/src/app/supabase/[...path]/route.ts` (filtra `content-encoding` / `transfer-encoding` / `set-cookie`) |
 | `/supabase/*` retorna 500 | `SUPABASE_INTERNAL_URL=` vazio no `.env` | Remova a linha ou comente — string vazia quebra o proxy |
 | `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
-| `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha em `apps/web/.env.local` e reinicie o Next |
-| `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env.local` (Dashboard → API Keys) |
+| `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha no `.env` da raiz e reinicie o Next |
+| `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env` (Dashboard → API Keys) |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor). O `/api/ai/analyze` já grava via service role e não depende desse grant |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
@@ -147,7 +146,7 @@ pnpm db:migration <nome>   # cria nova migration
 | `SENTRY_DSN` | Não | Observabilidade |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Observabilidade |
 
-O Next.js lê `apps/web/.env.local`. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).
+O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).
 
 ## Auth
 

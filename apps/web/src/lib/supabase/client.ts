@@ -29,7 +29,7 @@ export function getSupabaseBrowserClient(): SupabaseClient {
 
   if (!key) {
     throw new Error(
-      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ou NEXT_PUBLIC_SUPABASE_ANON_KEY) em seu arquivo .env.local",
+      "Variáveis de ambiente Supabase não configuradas. Verifique NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ou NEXT_PUBLIC_SUPABASE_ANON_KEY) no .env da raiz",
     );
   }
 
