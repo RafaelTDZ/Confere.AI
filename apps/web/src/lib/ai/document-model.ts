@@ -59,18 +59,29 @@ function errorText(error: unknown): string {
 
 /**
  * Indica se vale retry do PDF com mistral-ocr após falha do engine native.
- * Não retenta erros de auth/config (API key, 401/403).
+ * Só retenta em sinais explícitos de parse/file — não em outage/rate limit
+ * genéricos do provider (OCR não corrige quota/disponibilidade).
  */
 export function shouldFallbackPdfEngine(error: unknown): boolean {
   const status = errorStatusCode(error);
-  if (status === 401 || status === 403) return false;
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503
+  ) {
+    return false;
+  }
 
   const text = errorText(error);
   if (
     /api key/i.test(text) ||
     /unauthorized/i.test(text) ||
     /forbidden/i.test(text) ||
-    /OPENROUTER_API_KEY/i.test(text)
+    /OPENROUTER_API_KEY/i.test(text) ||
+    /rate.?limit/i.test(text) ||
+    /provider.*(error|returned)/i.test(text)
   ) {
     return false;
   }
@@ -83,11 +94,6 @@ export function shouldFallbackPdfEngine(error: unknown): boolean {
     /(file|pdf|document).*(unsupported|not supported|unable|invalid)/i.test(
       text,
     ) ||
-    /unable to (process|read|parse).*(file|pdf|document)/i.test(text) ||
-    /provider.*(error|returned)/i.test(text) ||
-    /bad request/i.test(text) ||
-    status === 400 ||
-    status === 422 ||
-    status === 502
+    /unable to (process|read|parse).*(file|pdf|document)/i.test(text)
   );
 }
