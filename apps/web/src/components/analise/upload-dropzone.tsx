@@ -201,48 +201,50 @@ export function UploadDropzone() {
           }}
         />
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Documentos recebidos</span>
-            <span>
-              {receivedCount} de {TRACKED_TYPES.length}
-            </span>
+        {(info !== null || presentTypes.length > 0) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Documentos recebidos</span>
+              <span>
+                {receivedCount} de {TRACKED_TYPES.length}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{
+                  width: `${(receivedCount / TRACKED_TYPES.length) * 100}%`,
+                }}
+              />
+            </div>
+            <ul className="flex flex-wrap gap-2 pt-1">
+              {TRACKED_TYPES.map((type) => {
+                const present = presentTypes.includes(type);
+                return (
+                  <li
+                    key={type}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      present
+                        ? "border-primary/30 bg-primary/10 text-primary"
+                        : "border-border bg-muted/50 text-muted-foreground",
+                    )}
+                  >
+                    {present ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <CircleDashed className="h-3.5 w-3.5" />
+                    )}
+                    {DOC_LABELS[type]}
+                    {type === "packing_list" && !present && (
+                      <span className="font-normal opacity-70">(opcional)</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{
-                width: `${(receivedCount / TRACKED_TYPES.length) * 100}%`,
-              }}
-            />
-          </div>
-          <ul className="flex flex-wrap gap-2 pt-1">
-            {TRACKED_TYPES.map((type) => {
-              const present = presentTypes.includes(type);
-              return (
-                <li
-                  key={type}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    present
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : "border-border bg-muted/50 text-muted-foreground",
-                  )}
-                >
-                  {present ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <CircleDashed className="h-3.5 w-3.5" />
-                  )}
-                  {DOC_LABELS[type]}
-                  {type === "packing_list" && !present && (
-                    <span className="font-normal opacity-70">(opcional)</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        )}
 
         {invoice && (
           <div className="space-y-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
