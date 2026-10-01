@@ -10,7 +10,7 @@ Nesta etapa o produto expõe autenticação (login/signup) e a página protegida
 |--------|------------|
 | Front-end | Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui |
 | Banco / Auth | Supabase cloud (PostgreSQL com RLS) |
-| IA | OpenRouter (`@openrouter/ai-sdk-provider` + AI SDK); modelo default `openai/gpt-5.6-luna` |
+| IA | OpenRouter (`@openrouter/ai-sdk-provider` + AI SDK); modelo default `~openai/gpt-luna-latest` |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Estrutura
@@ -98,7 +98,7 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 # OpenRouter (requer cookie de sessão autenticada + OPENROUTER_API_KEY):
 # Faça login no browser em /login, depois:
 curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
-# Esperado: {"ok":true,"model":"openai/gpt-5.6-luna","text":"ok","latencyMs":...}
+# Esperado: {"ok":true,"model":"~openai/gpt-luna-latest","text":"ok","latencyMs":...}
 ```
 
 ### Troubleshooting
@@ -139,8 +139,8 @@ pnpm db:migration <nome>   # cria nova migration
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
 | `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para `/api/ai/health` e futuras chamadas de IA |
-| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `openai/gpt-5.6-luna`) |
-| `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `minimal` \| `none` |
+| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `~openai/gpt-luna-latest`) |
+| `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
 | `SENTRY_DSN` | Não | Observabilidade |
@@ -178,7 +178,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SERVICE_ROLE_KEY=<service_role>
 OPENROUTER_API_KEY=<sk-or-v1-...>
-OPENROUTER_MODEL=openai/gpt-5.6-luna
+OPENROUTER_MODEL=~openai/gpt-luna-latest
 ```
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.

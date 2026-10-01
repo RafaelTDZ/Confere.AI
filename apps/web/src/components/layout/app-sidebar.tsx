@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, Menu, Package, Sparkles, X } from "lucide-react";
+import { Boxes, Building2, Hash, Menu, Package, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -11,6 +11,8 @@ import { SignOutButton } from "@/components/auth/sign-out-button";
 const NAV_ITEMS = [
   { href: "/analise", label: "Nova análise", icon: Sparkles },
   { href: "/importacoes", label: "Importações", icon: Package },
+  { href: "/empresas", label: "Empresas", icon: Building2 },
+  { href: "/ncm", label: "NCM", icon: Hash },
   { href: "/produtos", label: "Produtos", icon: Boxes },
 ] as const;
 
@@ -70,7 +72,7 @@ export function AppSidebar({ email }: AppSidebarProps) {
 
   return (
     <>
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden h-screen w-60 flex-col border-r bg-card md:flex">
         <div className="border-b px-4 py-4">
           <Link href="/analise" className="text-lg font-bold tracking-tight">
             Confere.ia

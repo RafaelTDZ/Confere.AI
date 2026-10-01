@@ -1,11 +1,10 @@
-export const DEFAULT_OPENROUTER_MODEL = "openai/gpt-5.6-luna";
+export const DEFAULT_OPENROUTER_MODEL = "~openai/gpt-luna-latest";
 
 export type OpenRouterReasoningEffort =
   | "xhigh"
   | "high"
   | "medium"
   | "low"
-  | "minimal"
   | "none";
 
 export type OpenRouterReasoningContext = "smoke" | "document" | "default";
@@ -19,8 +18,8 @@ const REASONING_PRESETS: Record<
   OpenRouterReasoningConfig | undefined
 > = {
   smoke: { effort: "none" },
-  document: { effort: "medium", exclude: true },
-  default: { effort: "medium", exclude: true },
+  document: { effort: "low", exclude: true },
+  default: { effort: "low", exclude: true },
 };
 
 export function getOpenRouterModel(): string {
@@ -37,7 +36,6 @@ function parseReasoningEffort(
     effort === "high" ||
     effort === "medium" ||
     effort === "low" ||
-    effort === "minimal" ||
     effort === "none"
   ) {
     return effort;

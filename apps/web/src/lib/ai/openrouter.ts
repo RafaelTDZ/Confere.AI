@@ -15,7 +15,7 @@ export function createOpenRouterClient() {
   });
 }
 
-/** Modelo configurado via OPENROUTER_MODEL (default: openai/gpt-5.6-luna). */
+/** Modelo configurado via OPENROUTER_MODEL (default: ~openai/gpt-luna-latest). */
 export function getDefaultLanguageModel() {
   const openrouter = createOpenRouterClient();
   const reasoning = getOpenRouterReasoning("smoke");

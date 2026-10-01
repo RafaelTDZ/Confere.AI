@@ -11,9 +11,9 @@ export default async function AppLayout({
   const ctx = state.context;
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    <div className="min-h-screen md:pl-60">
       <AppSidebar email={ctx.email ?? ""} />
-      <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
+      <main className="min-h-screen p-4 md:p-8">{children}</main>
     </div>
   );
 }

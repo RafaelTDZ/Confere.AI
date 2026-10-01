@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { listImportStoragePaths } from "@/lib/documents/documents";
 
 const BUCKET = "import-documents";
 
@@ -9,13 +10,48 @@ const BUCKET = "import-documents";
  * tenant_id / created_by sempre vêm do JWT validado em getAuthContext().
  */
 
+export function sanitizeFilename(filename: string): string {
+  return filename.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 180);
+}
+
 export function buildStoragePath(
   tenantId: string,
   importId: string,
   filename: string,
 ): string {
-  const safe = filename.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 180);
-  return `${tenantId}/${importId}/${safe}`;
+  return `${tenantId}/${importId}/${sanitizeFilename(filename)}`;
+}
+
+function withFilenameSuffix(filename: string, suffix: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot <= 0) return `${filename}-${suffix}`;
+  return `${filename.slice(0, lastDot)}-${suffix}${filename.slice(lastDot)}`;
+}
+
+export async function buildUniqueStoragePath(params: {
+  tenantId: string;
+  importId: string;
+  filename: string;
+  digest: string;
+}): Promise<string> {
+  const base = buildStoragePath(
+    params.tenantId,
+    params.importId,
+    params.filename,
+  );
+  const existing = new Set(await listImportStoragePaths(params.importId));
+  if (!existing.has(base)) return base;
+
+  const safe = sanitizeFilename(params.filename);
+  let suffix = params.digest.slice(0, 6);
+  let next = `${params.tenantId}/${params.importId}/${withFilenameSuffix(safe, suffix)}`;
+  let attempt = 2;
+  while (existing.has(next)) {
+    suffix = `${params.digest.slice(0, 6)}-${attempt}`;
+    next = `${params.tenantId}/${params.importId}/${withFilenameSuffix(safe, suffix)}`;
+    attempt += 1;
+  }
+  return next;
 }
 
 export async function uploadImportFile(params: {

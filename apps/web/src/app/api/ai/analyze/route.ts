@@ -1,10 +1,30 @@
 import { NextResponse } from "next/server";
 import { OpenRouterConfigError } from "@/lib/ai";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
-import { persistAiLog, runAnalyzePipeline } from "@/lib/documents";
+import {
+  ImportNotFoundError,
+  ImportValidationError,
+  persistAiLog,
+  runAnalyzePipeline,
+} from "@/lib/documents";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+
+const IMPORT_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseOptionalImportId(
+  value: FormDataEntryValue | null,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (!IMPORT_ID_RE.test(trimmed)) {
+    throw new ImportValidationError("Importação inválida");
+  }
+  return trimmed;
+}
 
 export async function POST(request: Request) {
   const started = Date.now();
@@ -31,11 +51,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const importId = parseOptionalImportId(form.get("importId"));
+
     const result = await runAnalyzePipeline({
       tenantId: auth.tenantId,
       userId: auth.userId,
       file,
       startedAt: started,
+      importId,
     });
     modelId = result.model;
 
@@ -46,6 +69,12 @@ export async function POST(request: Request) {
         { error: "Usuário não autenticado" },
         { status: 401 },
       );
+    }
+    if (error instanceof ImportNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof ImportValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     if (error instanceof OpenRouterConfigError) {
       return NextResponse.json({ error: error.message }, { status: 503 });

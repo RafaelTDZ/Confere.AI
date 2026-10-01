@@ -42,7 +42,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
 
 ### OpenRouter (IA)
 
-- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `openai/gpt-5.6-luna`).
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `~openai/gpt-luna-latest`).
 - Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
   - Sem cookie → `401`; sem `OPENROUTER_API_KEY` → `503`; sucesso → `{ ok, model, text, latencyMs }`.
 - Análise de documento: `POST /api/ai/analyze` (multipart `file`).
@@ -50,7 +50,8 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
   - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**.
 - Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
-- Extração de Packing List e BL ainda não implementada.
+- Packing List: extração limitada ao número de Invoice, quando explicitamente indicado.
+- BL: extrai campos próprios do conhecimento e empresas; não fornece número de Invoice.
 
 ### Migrations no cloud
 
@@ -95,9 +96,9 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/importacoes` | Lista `imports` do tenant (admin + tenant_id do JWT) |
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Produtos |
-| Infra OpenRouter | Client + `/api/ai/health`; modelo default `openai/gpt-5.6-luna` |
-| Classificação + extract Invoice | `/api/ai/analyze` + dropzone; Invoice em `extraction_results`; PL/BL só tipo |
-| Pipeline completo (PL/BL extract, comparação) | Não implementado |
+| Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
+| Classificação + extração | `/api/ai/analyze`; Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
+| Pipeline completo (extração integral de PL, comparação) | Não implementado |
 | Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
@@ -116,7 +117,7 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
 # OpenRouter (sessão autenticada + OPENROUTER_API_KEY no .env da raiz):
 # curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
-# → {"ok":true,"model":"openai/gpt-5.6-luna","text":"ok","latencyMs":...}
+# → {"ok":true,"model":"~openai/gpt-luna-latest","text":"ok","latencyMs":...}
 ```
 
 ### Cuidados não-óbvios

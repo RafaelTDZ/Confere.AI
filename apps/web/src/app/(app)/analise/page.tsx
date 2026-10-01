@@ -1,4 +1,5 @@
 import {
+  CheckCircle2,
   FileCheck2,
   FileText,
   FileUp,
@@ -58,9 +59,21 @@ const REQUIRED_DOCS = [
   },
 ] as const;
 
-export default function AnalisePage() {
+export default async function AnalisePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ partes?: string }>;
+}) {
+  const params = await searchParams;
+
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8">
+      {params.partes === "ok" && (
+        <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+          Consignee e notify cadastrados com sucesso.
+        </p>
+      )}
       <header className="space-y-1">
         <div className="flex items-center gap-2 text-primary">
           <Sparkles className="h-4 w-4" />

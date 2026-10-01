@@ -8,7 +8,7 @@ export type PdfEngine = "native" | "mistral-ocr";
 
 /**
  * Modelo OpenRouter para documentos.
- * PDFs usam native por padrão (modelos com input file, ex.: gpt-5.6-luna).
+ * PDFs usam native por padrão (modelos com input file, ex.: GPT Luna Latest).
  * mistral-ocr fica como fallback quando o processamento nativo falha.
  */
 export function getDocumentLanguageModel(options?: {

@@ -1,11 +1,10 @@
-import type { InvoiceExtraction } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function persistExtractionResult(params: {
   tenantId: string;
   documentId: string;
   model: string;
-  payload: InvoiceExtraction;
+  payload: unknown;
   tokensUsed?: number;
 }): Promise<string> {
   const admin = createSupabaseAdminClient();

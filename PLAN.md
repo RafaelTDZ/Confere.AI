@@ -41,7 +41,7 @@ divergências entre documentos.
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
 - [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`; validado com chave real); pipeline de documentos ainda não ligado
-- [x] **Upload + classificação + extract Invoice** — `POST /api/ai/analyze` (Storage + `imports`/`documents`; multi-tipo; extrai Invoice; PL/BL só tipagem)
+- [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` (Storage + `imports`/`documents`; extrai Invoice, número de Invoice explícito no Packing List e campos do BL)
 
 ### Não implementado (UI ou backend)
 
