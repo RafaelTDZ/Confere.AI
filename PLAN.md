@@ -117,7 +117,6 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 
 | Item | Detalhe |
 |------|---------|
-| `/api/auth/save-user-info` | Lê `tenant_id` de `user_metadata` em vez de `app_metadata` — rota legada, provavelmente não usada |
 | Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
 | Grants RLS private.* | Migration `20250731190000_grant_private_rls_functions.sql` — aplicar no cloud se selects autenticados ainda falharem |
 
@@ -138,7 +137,7 @@ Browser
 apps/web/src
   ├─ app/                     → Rotas e pages finas
   ├─ components/              → ui + auth + layout + analise
-  └─ lib/                     → ai, auth, documents, supabase
+  └─ lib/                     → ai (providers/, tasks/), auth, documents, settings, supabase
 
 Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 

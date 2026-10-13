@@ -1,21 +1,25 @@
 import { generateText, Output } from "ai";
-import type { AnalyzeFileInput } from "@/lib/ai/classify";
+import type { AnalyzeFileInput } from "@/lib/ai/tasks/classify";
 import {
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
-} from "@/lib/ai/document-model";
-import { getOpenRouterModel } from "@/lib/ai/model-config";
+} from "@/lib/ai/tasks/document-model";
+import { getAiModelId, getAiProvider, type AiOverrides } from "@/lib/ai/provider";
 import {
   packingListExtractionSchema,
   type PackingListExtraction,
 } from "@/lib/ai/schemas";
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
-async function extractOnce(file: AnalyzeFileInput, pdfEngine: PdfEngine) {
+async function extractOnce(
+  file: AnalyzeFileInput,
+  pdfEngine: PdfEngine,
+  overrides?: AiOverrides,
+) {
   const isPdf = file.mediaType === "application/pdf";
   return generateText({
-    model: getDocumentLanguageModel({ isPdf, pdfEngine }),
+    model: getDocumentLanguageModel({ isPdf, pdfEngine, overrides }),
     output: Output.object({
       schema: packingListExtractionSchema,
       name: "packing_list_extraction",
@@ -46,7 +50,10 @@ async function extractOnce(file: AnalyzeFileInput, pdfEngine: PdfEngine) {
   });
 }
 
-export async function extractPackingList(file: AnalyzeFileInput): Promise<{
+export async function extractPackingList(
+  file: AnalyzeFileInput,
+  overrides?: AiOverrides,
+): Promise<{
   packingList: PackingListExtraction;
   model: string;
   tokensIn: number;
@@ -54,16 +61,20 @@ export async function extractPackingList(file: AnalyzeFileInput): Promise<{
   latencyMs: number;
   usage: AiTaskUsage;
 }> {
-  const modelId = getOpenRouterModel();
+  const modelId = getAiModelId(overrides);
   const isPdf = file.mediaType === "application/pdf";
   const started = Date.now();
 
   let result;
   try {
-    result = await extractOnce(file, "native");
+    result = await extractOnce(file, "native", overrides);
   } catch (error) {
-    if (isPdf && shouldFallbackPdfEngine(error)) {
-      result = await extractOnce(file, "mistral-ocr");
+    if (
+      isPdf &&
+      getAiProvider(overrides) === "openrouter" &&
+      shouldFallbackPdfEngine(error)
+    ) {
+      result = await extractOnce(file, "mistral-ocr", overrides);
     } else {
       throw error;
     }

@@ -1,15 +1,32 @@
 export {
   createOpenRouterClient,
-  getDefaultLanguageModel,
   getOpenRouterApiKey,
+  AiConfigError,
+  OpenRouterConfigError,
+} from "@/lib/ai/providers/openrouter";
+export {
   getOpenRouterModel,
   getOpenRouterReasoning,
-  OpenRouterConfigError,
   DEFAULT_OPENROUTER_MODEL,
   type OpenRouterReasoningConfig,
   type OpenRouterReasoningContext,
   type OpenRouterReasoningEffort,
-} from "@/lib/ai/openrouter";
+} from "@/lib/ai/providers/openrouter-model";
+export {
+  createFireworksClient,
+  getFireworksApiKey,
+  getFireworksModel,
+  FireworksConfigError,
+  DEFAULT_FIREWORKS_MODEL,
+} from "@/lib/ai/providers/fireworks";
+export {
+  getAiProvider,
+  getAiModelId,
+  getDefaultLanguageModel,
+  normalizeOverrides,
+  type AiOverrides,
+  type AiProviderId,
+} from "@/lib/ai/provider";
 export {
   blExtractionSchema,
   documentClassificationSchema,
@@ -23,13 +40,12 @@ export {
   type InvoiceExtraction,
   type PackingListExtraction,
 } from "@/lib/ai/schemas";
-export { classifyDocument } from "@/lib/ai/classify";
-export { extractBl } from "@/lib/ai/extract-bl";
-export { extractInvoice } from "@/lib/ai/extract-invoice";
-export { extractPackingList } from "@/lib/ai/extract-packing-list";
-export { getDocumentLanguageModel } from "@/lib/ai/document-model";
+export { classifyDocument } from "@/lib/ai/tasks/classify";
+export { extractBl } from "@/lib/ai/tasks/extract-bl";
+export { extractInvoice } from "@/lib/ai/tasks/extract-invoice";
+export { extractPackingList } from "@/lib/ai/tasks/extract-packing-list";
+export { getDocumentLanguageModel } from "@/lib/ai/tasks/document-model";
 export {
   extractAiTaskUsage,
-  sumAiTaskUsage,
   type AiTaskUsage,
 } from "@/lib/ai/usage";

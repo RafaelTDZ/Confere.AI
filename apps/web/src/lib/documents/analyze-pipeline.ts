@@ -1,13 +1,14 @@
-import { classifyDocument } from "@/lib/ai/classify";
-import { extractBl } from "@/lib/ai/extract-bl";
-import { extractInvoice } from "@/lib/ai/extract-invoice";
-import { extractPackingList } from "@/lib/ai/extract-packing-list";
+import { classifyDocument } from "@/lib/ai/tasks/classify";
+import { extractBl } from "@/lib/ai/tasks/extract-bl";
+import { extractInvoice } from "@/lib/ai/tasks/extract-invoice";
+import { extractPackingList } from "@/lib/ai/tasks/extract-packing-list";
 import {
   assertAllowedFile,
   normalizeMediaType,
   sha256Hex,
 } from "@/lib/ai/file-utils";
-import { getOpenRouterModel } from "@/lib/ai";
+import { getAiModelId, type AiOverrides } from "@/lib/ai";
+import { getAiOverrides } from "@/lib/settings/ai-settings";
 import type {
   BlExtraction,
   DocumentType,
@@ -61,9 +62,16 @@ export async function runAnalyzePipeline(params: {
   importId?: string;
 }): Promise<AnalyzePipelineResult> {
   const started = params.startedAt ?? Date.now();
+  // Config global de IA (provider/modelo); falha aqui não bloqueia (usa env).
+  let overrides: AiOverrides = {};
+  try {
+    overrides = await getAiOverrides();
+  } catch (overridesError) {
+    console.error("[analyze-pipeline] falha ao ler ai_overrides:", overridesError);
+  }
   const modelId = (() => {
     try {
-      return getOpenRouterModel();
+      return getAiModelId(overrides);
     } catch {
       return "unknown";
     }
@@ -78,7 +86,7 @@ export async function runAnalyzePipeline(params: {
 
   let classifyResult;
   try {
-    classifyResult = await classifyDocument(fileInput);
+    classifyResult = await classifyDocument(fileInput, overrides);
     await persistAiLog({
       tenantId: params.tenantId,
       capability: "classify",
@@ -117,7 +125,7 @@ export async function runAnalyzePipeline(params: {
 
   if (types.includes("invoice")) {
     try {
-      const extracted = await extractInvoice(fileInput);
+      const extracted = await extractInvoice(fileInput, overrides);
       invoice = extracted.invoice;
       invoiceModel = extracted.model;
       invoiceTokensUsed = extracted.tokensIn + extracted.tokensOut;
@@ -149,7 +157,7 @@ export async function runAnalyzePipeline(params: {
 
   if (types.includes("packing_list")) {
     try {
-      const extracted = await extractPackingList(fileInput);
+      const extracted = await extractPackingList(fileInput, overrides);
       packingList = extracted.packingList;
       packingListModel = extracted.model;
       packingListTokensUsed = extracted.tokensIn + extracted.tokensOut;
@@ -181,7 +189,7 @@ export async function runAnalyzePipeline(params: {
 
   if (types.includes("bill_of_lading")) {
     try {
-      const extracted = await extractBl(fileInput);
+      const extracted = await extractBl(fileInput, overrides);
       bl = extracted.bl;
       blModel = extracted.model;
       blTokensUsed = extracted.tokensIn + extracted.tokensOut;

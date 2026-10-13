@@ -20,13 +20,6 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export class MissingTenantError extends Error {
-  constructor() {
-    super("Usuario sem tenant associado");
-    this.name = "MissingTenantError";
-  }
-}
-
 /**
  * Resolve o estado de autenticacao a partir do JWT.
  * tenant_id/role vem de app_metadata (trigger de signup / hook).
@@ -71,9 +64,4 @@ export async function getAuthContext(): Promise<AuthContext> {
   }
 
   return state.context;
-}
-
-export async function getAuthContextOrNull(): Promise<AuthContext | null> {
-  const state = await resolveAuthState();
-  return state.status === "authenticated" ? state.context : null;
 }

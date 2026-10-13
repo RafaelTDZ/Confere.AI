@@ -3,8 +3,8 @@ import {
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
-} from "@/lib/ai/document-model";
-import { getOpenRouterModel } from "@/lib/ai/model-config";
+} from "@/lib/ai/tasks/document-model";
+import { getAiModelId, getAiProvider, type AiOverrides } from "@/lib/ai/provider";
 import {
   documentClassificationSchema,
   type DocumentClassification,
@@ -20,10 +20,11 @@ export type AnalyzeFileInput = {
 async function classifyOnce(
   file: AnalyzeFileInput,
   pdfEngine: PdfEngine,
+  overrides?: AiOverrides,
 ) {
   const isPdf = file.mediaType === "application/pdf";
   return generateText({
-    model: getDocumentLanguageModel({ isPdf, pdfEngine }),
+    model: getDocumentLanguageModel({ isPdf, pdfEngine, overrides }),
     output: Output.object({
       schema: documentClassificationSchema,
       name: "document_classification",
@@ -60,6 +61,7 @@ async function classifyOnce(
 
 export async function classifyDocument(
   file: AnalyzeFileInput,
+  overrides?: AiOverrides,
 ): Promise<{
   classification: DocumentClassification;
   model: string;
@@ -68,17 +70,21 @@ export async function classifyDocument(
   latencyMs: number;
   usage: AiTaskUsage;
 }> {
-  const modelId = getOpenRouterModel();
+  const modelId = getAiModelId(overrides);
   const isPdf = file.mediaType === "application/pdf";
   const started = Date.now();
 
   let result;
   try {
-    result = await classifyOnce(file, "native");
+    result = await classifyOnce(file, "native", overrides);
   } catch (error) {
-    if (isPdf && shouldFallbackPdfEngine(error)) {
+    if (
+      isPdf &&
+      getAiProvider(overrides) === "openrouter" &&
+      shouldFallbackPdfEngine(error)
+    ) {
       // Fallback: OCR via OpenRouter quando o processamento nativo falha
-      result = await classifyOnce(file, "mistral-ocr");
+      result = await classifyOnce(file, "mistral-ocr", overrides);
     } else {
       throw error;
     }

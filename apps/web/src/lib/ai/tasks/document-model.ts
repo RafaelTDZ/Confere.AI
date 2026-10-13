@@ -1,24 +1,43 @@
-import { createOpenRouterClient } from "@/lib/ai/openrouter";
+import { createFireworksClient } from "@/lib/ai/providers/fireworks";
+import { createOpenRouterClient } from "@/lib/ai/providers/openrouter";
+import { getOpenRouterReasoning } from "@/lib/ai/providers/openrouter-model";
 import {
-  getOpenRouterModel,
-  getOpenRouterReasoning,
-} from "@/lib/ai/model-config";
+  getAiModelId,
+  getAiProvider,
+  type AiOverrides,
+} from "@/lib/ai/provider";
 
 export type PdfEngine = "native" | "mistral-ocr";
 
 /**
- * Modelo OpenRouter para documentos.
- * PDFs usam native por padrão (modelos com input file, ex.: GPT Luna Latest).
- * mistral-ocr fica como fallback quando o processamento nativo falha.
+ * Modelo para documentos no provider ativo (AI_PROVIDER).
+ * - OpenRouter: plugins file-parser (PDF native) + response-healing + reasoning.
+ *   PDFs usam native por padrão; mistral-ocr fica como fallback quando o
+ *   processamento nativo falha.
+ * - Fireworks (GLM-5.3-Flash, nativamente multimodal para imagens): sem
+ *   reasoning/plugins (são opções só do OpenRouter). PDF direto não é
+ *   suportado pela API Fireworks — envie PNG/JPG ou use AI_PROVIDER=openrouter.
  */
 export function getDocumentLanguageModel(options?: {
   isPdf?: boolean;
   pdfEngine?: PdfEngine;
+  overrides?: AiOverrides;
 }) {
-  const openrouter = createOpenRouterClient();
-  const modelId = getOpenRouterModel();
-  const reasoning = getOpenRouterReasoning("document");
   const isPdf = options?.isPdf ?? false;
+  const overrides = options?.overrides;
+
+  if (getAiProvider(overrides) === "fireworks") {
+    if (isPdf) {
+      throw new Error(
+        "PDF direto não suportado pelo provider Fireworks; envie o documento como PNG/JPG ou troque AI_PROVIDER para openrouter.",
+      );
+    }
+    return createFireworksClient()(getAiModelId(overrides));
+  }
+
+  const openrouter = createOpenRouterClient();
+  const modelId = getAiModelId(overrides);
+  const reasoning = getOpenRouterReasoning("document");
   const pdfEngine = options?.pdfEngine ?? "native";
 
   return openrouter(modelId, {
@@ -89,7 +108,7 @@ export function shouldFallbackPdfEngine(error: unknown): boolean {
     /api key/i.test(text) ||
     /unauthorized/i.test(text) ||
     /forbidden/i.test(text) ||
-    /OPENROUTER_API_KEY/i.test(text) ||
+    /(OPENROUTER|FIREWORKS)_API_KEY/i.test(text) ||
     /rate.?limit/i.test(text)
   ) {
     return false;

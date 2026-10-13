@@ -1,4 +1,11 @@
-export class OpenRouterConfigError extends Error {
+export class AiConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiConfigError";
+  }
+}
+
+export class OpenRouterConfigError extends AiConfigError {
   constructor(message: string) {
     super(message);
     this.name = "OpenRouterConfigError";

@@ -26,6 +26,9 @@
     "typescript": "^5.6.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["supabase"]
+    "onlyBuiltDependencies": ["supabase"],
+    "overrides": {
+      "@ai-sdk/provider": "4.0.27"
+    }
   }
 }

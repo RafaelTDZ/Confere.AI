@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OpenRouterConfigError } from "@/lib/ai";
+import { AiConfigError } from "@/lib/ai";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   ImportNotFoundError,
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     if (error instanceof ImportValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    if (error instanceof OpenRouterConfigError) {
+    if (error instanceof AiConfigError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }
 

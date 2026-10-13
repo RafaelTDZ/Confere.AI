@@ -40,16 +40,23 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    # ou: pnpm dev
    ```
 
-### OpenRouter (IA)
+### Provedores de IA (`AI_PROVIDER=openrouter`|`fireworks`)
 
-- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `createOpenRouter` + modelo `OPENROUTER_MODEL` (default `~openai/gpt-luna-latest`).
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `provider.ts` seleciona o ativo (`getAiProvider`/`getAiModelId`/`getDefaultLanguageModel`).
+  - OpenRouter: `createOpenRouterClient` + `OPENROUTER_MODEL` (default `~openai/gpt-luna-latest`); reasoning via `OPENROUTER_REASONING_*`; PDFs com plugin file-parser (+ fallback mistral-ocr).
+  - Fireworks (`@ai-sdk/fireworks`): `createFireworksClient` + `FIREWORKS_MODEL` (default `accounts/fireworks/models/glm-5p3-flash`, multimodal p/ imagens; sem reasoning/plugins). **PDF direto não suportado** — `getDocumentLanguageModel` lança erro 400 orientando PNG/JPG ou `AI_PROVIDER=openrouter`.
 - Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
-  - Sem cookie → `401`; sem `OPENROUTER_API_KEY` → `503`; sucesso → `{ ok, model, text, latencyMs }`.
+  - Sem cookie → `401`; sem chave do provider ativo → `503`; sucesso → `{ ok, provider, model, text, latencyMs }`.
 - Análise de documento: `POST /api/ai/analyze` (multipart `file`).
   - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
   - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**.
-- Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
+- Chaves só no servidor: `OPENROUTER_API_KEY` / `FIREWORKS_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
+- Config global de IA (só allowlist `ADMIN_EMAILS` — todo signup vira owner do próprio
+  tenant, então role sozinha não restringe): página `/configuracoes` + `GET/PUT/DELETE /api/settings/ai`
+  (persiste tabela `app_settings` chave `ai` `{provider, model}` via service role, sem policies p/
+  anon/authenticated; NULL = padrão do env; vale para todos os tenants).
+  Pipeline (`runAnalyzePipeline`) e `/api/ai/health` usam a config global.
 - Packing List: extração limitada ao número de Invoice, quando explicitamente indicado.
 - BL: extrai campos próprios do conhecimento e empresas; não fornece número de Invoice.
 
@@ -62,6 +69,10 @@ supabase link --project-ref xmvypuwizexdhpwrgrao
 supabase db push          # aplica supabase/migrations/
 pnpm db:migration <nome>  # cria nova migration em supabase/migrations/
 ```
+
+Histórico cloud reconciliado com os arquivos locais em 13/10/2026 — `db push`
+só aplicará arquivos novos (inclui `drop_connection_test` e
+`repair_migration_history`, idempotentes).
 
 **RLS / grants:** a migration `20250731190000_grant_private_rls_functions.sql` concede
 `EXECUTE` nas funções `private.*` para `authenticated`. Sem ela, selects autenticados

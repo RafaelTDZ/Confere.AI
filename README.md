@@ -10,7 +10,7 @@ Nesta etapa o produto expõe autenticação (login/signup) e a página protegida
 |--------|------------|
 | Front-end | Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui |
 | Banco / Auth | Supabase cloud (PostgreSQL com RLS) |
-| IA | OpenRouter (`@openrouter/ai-sdk-provider` + AI SDK); modelo default `~openai/gpt-luna-latest` |
+| IA | OpenRouter (`@openrouter/ai-sdk-provider`) ou Fireworks (`@ai-sdk/fireworks`, GLM-5.3-Flash) via AI SDK; seleção por `AI_PROVIDER` |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Estrutura
@@ -21,7 +21,7 @@ apps/
     src/
       app/          Rotas e pages finas ((auth), (app), api, supabase proxy)
       components/   ui (shadcn) + auth + layout + analise
-      lib/          ai, auth, documents, supabase, tenant, utils
+      lib/          ai (providers/, tasks/), auth, documents, settings, supabase, utils
 packages/
   config/           tsconfig e eslint compartilhados
 supabase/
@@ -37,10 +37,11 @@ supabase/
 | `/login` | Público | Login em 2 etapas (email → senha) |
 | `/signup` | Público | Cadastro com nome, email e senha |
 | `/analise` | Protegido | Nova análise de importação (dropzone + orientações) |
+| `/configuracoes` | Super-admin (`ADMIN_EMAILS`) | Provedor e modelo de IA para todos os usuários + teste de conexão |
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
-| `/api/auth/save-user-info` | Autenticado | Atualiza nome/empresa do membro (legado) |
-| `/api/ai/health` | Autenticado | Smoke da integração OpenRouter (`generateText`) |
+| `/api/ai/health` | Autenticado | Smoke da integração de IA (`generateText` no provider ativo) |
 | `/api/ai/analyze` | Autenticado | Upload + classificação de tipos + extração de Invoice |
+| `/api/settings/ai` | Super-admin (`ADMIN_EMAILS`) | GET/PUT/DELETE da config global de IA (tabela `app_settings`, chave `ai`) |
 
 ## Setup local
 
@@ -138,8 +139,11 @@ pnpm db:migration <nome>   # cria nova migration
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
-| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para `/api/ai/health` e futuras chamadas de IA |
+| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória quando `AI_PROVIDER=openrouter` |
 | `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `~openai/gpt-luna-latest`) |
+| `AI_PROVIDER` | Não | Provedor de IA: `openrouter` (default) \| `fireworks` |
+| `FIREWORKS_API_KEY` | Não* | Chave Fireworks (servidor). *Obrigatória quando `AI_PROVIDER=fireworks` |
+| `FIREWORKS_MODEL` | Não | Modelo Fireworks (default: `accounts/fireworks/models/glm-5p3-flash`; multimodal p/ imagens, sem PDF direto) |
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |

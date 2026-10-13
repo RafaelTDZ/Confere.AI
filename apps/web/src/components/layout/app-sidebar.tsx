@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, Building2, Hash, Menu, Package, Sparkles, X } from "lucide-react";
+import { Boxes, Building2, Hash, Menu, Package, Settings, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -16,13 +16,22 @@ const NAV_ITEMS = [
   { href: "/produtos", label: "Produtos", icon: Boxes },
 ] as const;
 
+const ADMIN_NAV_ITEMS = [
+  { href: "/configuracoes", label: "Configurações", icon: Settings },
+] as const;
+
 type AppSidebarProps = {
   email: string;
+  isAdmin: boolean;
 };
 
-export function AppSidebar({ email }: AppSidebarProps) {
+export function AppSidebar({ email, isAdmin }: AppSidebarProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  const items = isAdmin
+    ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS]
+    : NAV_ITEMS;
 
   useEffect(() => {
     setOpen(false);
@@ -39,7 +48,7 @@ export function AppSidebar({ email }: AppSidebarProps) {
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      {items.map(({ href, label, icon: Icon }) => {
         const active =
           pathname === href || pathname.startsWith(`${href}/`);
         return (
