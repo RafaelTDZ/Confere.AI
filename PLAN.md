@@ -141,13 +141,13 @@ apps/web/src
 
 Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
 
-Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`)
+Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
   ├─ PostgreSQL + RLS         → schema multi-tenant (private.* com GRANT a authenticated)
   ├─ Storage                  → bucket `import-documents` (pasta raiz = tenant_id)
   └─ Triggers                 → provisionamento automático de tenant no signup
 
-OpenRouter                    → modelo default openai/gpt-5.6-luna (OPENROUTER_API_KEY)
+OpenRouter                    → modelos ~openai/gpt-luna-latest e meta/muse-spark-1.3 (OPENROUTER_API_KEY)
 ```
 
 ## Referências

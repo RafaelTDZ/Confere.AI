@@ -10,7 +10,7 @@ Nesta etapa o produto expõe autenticação (login/signup) e a página protegida
 |--------|------------|
 | Front-end | Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui |
 | Banco / Auth | Supabase cloud (PostgreSQL com RLS) |
-| IA | OpenRouter (`@openrouter/ai-sdk-provider`) ou Fireworks (`@ai-sdk/fireworks`, GLM-5.3-Flash) via AI SDK; seleção por `AI_PROVIDER` |
+| IA | OpenRouter (`@openrouter/ai-sdk-provider`) via AI SDK; modelos `~openai/gpt-luna-latest` e `meta/muse-spark-1.3` (troca em `/configuracoes`) |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Estrutura
@@ -63,7 +63,7 @@ O arquivo `.env` na raiz **não vem no repositório** (gitignored). O Next carre
 
 ### Projeto Supabase
 
-O projeto usa o Supabase cloud: `https://xmvypuwizexdhpwrgrao.supabase.co`.
+O projeto usa o Supabase cloud: `https://pavxbcsolcvekwslhzmf.supabase.co`.
 
 As chaves publishable (`sb_publishable_...`) estão no dashboard: **Settings → API Keys**.
 (Opcional legado: `anon` JWT em Legacy API Keys.)
@@ -77,7 +77,7 @@ Variáveis já exportadas no shell/CI com valor **vazio** (ex.: `NEXT_PUBLIC_SUP
 Para aplicar ou criar migrations no projeto cloud:
 
 ```bash
-supabase link --project-ref xmvypuwizexdhpwrgrao
+supabase link --project-ref pavxbcsolcvekwslhzmf
 supabase db push          # aplica supabase/migrations/
 pnpm db:migration <nome>  # cria nova migration em supabase/migrations/
 ```
@@ -90,7 +90,7 @@ Com as chaves reais do projeto:
 
 ```bash
 # Defina KEY com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do seu .env
-curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $KEY"  # JSON GoTrue
+curl -s https://pavxbcsolcvekwslhzmf.supabase.co/auth/v1/health -H "apikey: $KEY"  # JSON GoTrue
 curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $KEY"            # mesmo via proxy
 curl -sI http://localhost:3000/login | head -1                                      # HTTP 200
 curl -s -X POST http://localhost:3000/api/auth/check-email \
@@ -134,16 +134,13 @@ pnpm db:migration <nome>   # cria nova migration
 
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Sim | URL do projeto Supabase cloud (`https://xmvypuwizexdhpwrgrao.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Sim | URL do projeto Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`) |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Sim* | Chave publishable (`sb_publishable_...`). *Ou use `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legado) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
-| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória quando `AI_PROVIDER=openrouter` |
-| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `~openai/gpt-luna-latest`) |
-| `AI_PROVIDER` | Não | Provedor de IA: `openrouter` (default) \| `fireworks` |
-| `FIREWORKS_API_KEY` | Não* | Chave Fireworks (servidor). *Obrigatória quando `AI_PROVIDER=fireworks` |
-| `FIREWORKS_MODEL` | Não | Modelo Fireworks (default: `accounts/fireworks/models/glm-5p3-flash`; multimodal p/ imagens, sem PDF direto) |
+| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para IA (`/api/ai/health`, `/api/ai/analyze`) |
+| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `meta/muse-spark-1.3`; alternativo: `~openai/gpt-luna-latest`) |
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
@@ -178,11 +175,11 @@ O monorepo usa `vercel.json` na raiz. Com **Root Directory** vazio (raiz do repo
 Adicione as variáveis (Production + Preview):
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://pavxbcsolcvekwslhzmf.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SERVICE_ROLE_KEY=<service_role>
 OPENROUTER_API_KEY=<sk-or-v1-...>
-OPENROUTER_MODEL=~openai/gpt-luna-latest
+OPENROUTER_MODEL=meta/muse-spark-1.3
 ```
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.

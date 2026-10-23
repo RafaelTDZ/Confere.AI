@@ -13,7 +13,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "db:migration": "supabase migration new",
-    "db:push": "supabase link --project-ref xmvypuwizexdhpwrgrao && supabase db push",
+    "db:push": "supabase link --project-ref pavxbcsolcvekwslhzmf && supabase db push",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\" --ignore-path .gitignore"
   },
   "dependencies": {

@@ -8,7 +8,7 @@ Roadmap e estado do produto: `PLAN.md`.
 
 ### Serviços
 
-- **Supabase cloud**: `https://xmvypuwizexdhpwrgrao.supabase.co` — fornece DB e Auth.
+- **Supabase cloud**: `https://pavxbcsolcvekwslhzmf.supabase.co` — fornece DB e Auth.
 - **Web** (`apps/web`, Next.js): `http://localhost:3000`. Login/signup; app com sidebar (`/analise`, `/importacoes`, `/produtos`).
 
 ### Como rodar (sem Docker)
@@ -21,7 +21,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    cp .env.example .env
    ```
    Edite o `.env` na raiz e preencha (**uma chave por linha**):
-   - `NEXT_PUBLIC_SUPABASE_URL=https://xmvypuwizexdhpwrgrao.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_URL=https://pavxbcsolcvekwslhzmf.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
    - `OPENROUTER_API_KEY` — para smoke/IA (`https://openrouter.ai/settings/keys`); opcional até ligar o pipeline
 
@@ -40,18 +40,18 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    # ou: pnpm dev
    ```
 
-### Provedores de IA (`AI_PROVIDER=openrouter`|`fireworks`)
+### Provedor de IA (OpenRouter)
 
-- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `provider.ts` seleciona o ativo (`getAiProvider`/`getAiModelId`/`getDefaultLanguageModel`).
-  - OpenRouter: `createOpenRouterClient` + `OPENROUTER_MODEL` (default `~openai/gpt-luna-latest`); reasoning via `OPENROUTER_REASONING_*`; PDFs com plugin file-parser (+ fallback mistral-ocr).
-  - Fireworks (`@ai-sdk/fireworks`): `createFireworksClient` + `FIREWORKS_MODEL` (default `accounts/fireworks/models/glm-5p3-flash`, multimodal p/ imagens; sem reasoning/plugins). **PDF direto não suportado** — `getDocumentLanguageModel` lança erro 400 orientando PNG/JPG ou `AI_PROVIDER=openrouter`.
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `provider.ts` (`getAiModelId`/`getDefaultLanguageModel`), sempre OpenRouter.
+  - `createOpenRouterClient` + `OPENROUTER_MODEL`; reasoning via `OPENROUTER_REASONING_*`; PDFs com plugin file-parser (+ fallback mistral-ocr).
+  - Modelos no catálogo: `~openai/gpt-luna-latest` (GPT Luna Latest) e `meta/muse-spark-1.3` (Muse Spark 1.3); troca via dropdown em `/configuracoes`.
 - Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
   - Sem cookie → `401`; sem chave do provider ativo → `503`; sucesso → `{ ok, provider, model, text, latencyMs }`.
 - Análise de documento: `POST /api/ai/analyze` (multipart `file`).
   - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
   - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**.
-- Chaves só no servidor: `OPENROUTER_API_KEY` / `FIREWORKS_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
+- Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
 - Config global de IA (só allowlist `ADMIN_EMAILS` — todo signup vira owner do próprio
   tenant, então role sozinha não restringe): página `/configuracoes` + `GET/PUT/DELETE /api/settings/ai`
   (persiste tabela `app_settings` chave `ai` `{provider, model}` via service role, sem policies p/
@@ -65,7 +65,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
 Para aplicar ou criar migrations no projeto hospedado:
 
 ```bash
-supabase link --project-ref xmvypuwizexdhpwrgrao
+supabase link --project-ref pavxbcsolcvekwslhzmf
 supabase db push          # aplica supabase/migrations/
 pnpm db:migration <nome>  # cria nova migration em supabase/migrations/
 ```
@@ -120,7 +120,7 @@ Com as chaves reais do projeto cloud:
 
 ```bash
 # Defina KEY com NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY do .env
-curl -s https://xmvypuwizexdhpwrgrao.supabase.co/auth/v1/health -H "apikey: $KEY"
+curl -s https://pavxbcsolcvekwslhzmf.supabase.co/auth/v1/health -H "apikey: $KEY"
 curl -s http://localhost:3000/supabase/auth/v1/health -H "apikey: $KEY"
 curl -sI http://localhost:3000/login | head -1
 curl -s -X POST http://localhost:3000/api/auth/check-email \
