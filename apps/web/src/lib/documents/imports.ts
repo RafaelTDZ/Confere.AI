@@ -527,6 +527,7 @@ async function mergeImportInto(
   }
 
   await moveDocumentsToImport({
+    tenantId,
     sourceImportId: sourceId,
     targetImportId: targetId,
   });

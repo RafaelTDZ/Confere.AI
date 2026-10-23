@@ -25,6 +25,7 @@ export async function findDocumentsBySha256(params: {
 }
 
 async function nextDocumentVersions(
+  tenantId: string,
   importId: string,
   types: DocumentType[],
 ): Promise<Record<DocumentType, number>> {
@@ -32,6 +33,7 @@ async function nextDocumentVersions(
   const { data, error } = await admin
     .from("documents")
     .select("doc_type, version")
+    .eq("tenant_id", tenantId)
     .eq("import_id", importId)
     .in("doc_type", types);
 
@@ -63,7 +65,11 @@ export async function insertDocuments(params: {
   mediaType: string;
   sizeBytes: number;
 }): Promise<Array<{ id: string; docType: DocumentType }>> {
-  const versions = await nextDocumentVersions(params.importId, params.types);
+  const versions = await nextDocumentVersions(
+    params.tenantId,
+    params.importId,
+    params.types,
+  );
   const admin = createSupabaseAdminClient();
   const rows = params.types.map((docType) => ({
     tenant_id: params.tenantId,
@@ -129,6 +135,7 @@ export async function listImportStoragePaths(params: {
 }
 
 export async function moveDocumentsToImport(params: {
+  tenantId: string;
   sourceImportId: string;
   targetImportId: string;
 }): Promise<void> {
@@ -138,6 +145,7 @@ export async function moveDocumentsToImport(params: {
   const { data: sourceDocs, error: sourceError } = await admin
     .from("documents")
     .select("id, doc_type")
+    .eq("tenant_id", params.tenantId)
     .eq("import_id", params.sourceImportId)
     .order("created_at", { ascending: true });
 
@@ -152,6 +160,7 @@ export async function moveDocumentsToImport(params: {
   const { data: targetDocs, error: targetError } = await admin
     .from("documents")
     .select("doc_type, version")
+    .eq("tenant_id", params.tenantId)
     .eq("import_id", params.targetImportId)
     .in("doc_type", types);
 
@@ -177,7 +186,8 @@ export async function moveDocumentsToImport(params: {
         import_id: params.targetImportId,
         version: max[type],
       })
-      .eq("id", doc.id);
+      .eq("id", doc.id)
+      .eq("tenant_id", params.tenantId);
 
     if (error) {
       throw new Error(error.message || "Falha ao mover documento");
