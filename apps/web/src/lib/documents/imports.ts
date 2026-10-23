@@ -139,7 +139,14 @@ export async function deleteImportRecord(
   importId: string,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
-  const storagePaths = [...new Set(await listImportStoragePaths(importId))];
+  const storagePaths = [
+    ...new Set(
+      await listImportStoragePaths({
+        tenantId,
+        importId,
+      }),
+    ),
+  ];
   const { data, error } = await admin
     .from("imports")
     .delete()

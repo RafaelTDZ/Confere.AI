@@ -39,7 +39,12 @@ export async function buildUniqueStoragePath(params: {
     params.importId,
     params.filename,
   );
-  const existing = new Set(await listImportStoragePaths(params.importId));
+  const existing = new Set(
+    await listImportStoragePaths({
+      tenantId: params.tenantId,
+      importId: params.importId,
+    }),
+  );
   if (!existing.has(base)) return base;
 
   const safe = sanitizeFilename(params.filename);

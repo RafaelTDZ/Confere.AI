@@ -249,6 +249,7 @@ export async function runAnalyzePipeline(params: {
   }
 
   const existingByHash = await findDocumentsBySha256({
+    tenantId: params.tenantId,
     importId,
     sha256: digest,
   });
@@ -294,7 +295,11 @@ export async function runAnalyzePipeline(params: {
           tokensUsed: invoiceTokensUsed ?? undefined,
         });
         try {
-          await updateDocumentStatus(invoiceDoc.id, "extracted");
+          await updateDocumentStatus({
+            tenantId: params.tenantId,
+            documentId: invoiceDoc.id,
+            status: "extracted",
+          });
         } catch (statusErr) {
           console.error(
             "[analyze-pipeline] extração da invoice salva, mas falha ao atualizar status:",
@@ -307,7 +312,11 @@ export async function runAnalyzePipeline(params: {
           persistErr,
         );
         try {
-          await updateDocumentStatus(invoiceDoc.id, "failed");
+          await updateDocumentStatus({
+            tenantId: params.tenantId,
+            documentId: invoiceDoc.id,
+            status: "failed",
+          });
         } catch (failedErr) {
           console.error(
             "[analyze-pipeline] falha ao marcar invoice failed:",
@@ -326,14 +335,22 @@ export async function runAnalyzePipeline(params: {
           payload: packingList,
           tokensUsed: packingListTokensUsed ?? undefined,
         });
-        await updateDocumentStatus(packingListDoc.id, "extracted");
+        await updateDocumentStatus({
+          tenantId: params.tenantId,
+          documentId: packingListDoc.id,
+          status: "extracted",
+        });
       } catch (persistErr) {
         console.error(
           "[analyze-pipeline] falha ao salvar extração do Packing List:",
           persistErr,
         );
         try {
-          await updateDocumentStatus(packingListDoc.id, "failed");
+          await updateDocumentStatus({
+            tenantId: params.tenantId,
+            documentId: packingListDoc.id,
+            status: "failed",
+          });
         } catch (failedErr) {
           console.error(
             "[analyze-pipeline] falha ao marcar Packing List failed:",
@@ -353,7 +370,11 @@ export async function runAnalyzePipeline(params: {
           tokensUsed: blTokensUsed ?? undefined,
         });
         try {
-          await updateDocumentStatus(blDoc.id, "extracted");
+          await updateDocumentStatus({
+            tenantId: params.tenantId,
+            documentId: blDoc.id,
+            status: "extracted",
+          });
         } catch (statusErr) {
           console.error(
             "[analyze-pipeline] extração do BL salva, mas falha ao atualizar status:",
@@ -366,7 +387,11 @@ export async function runAnalyzePipeline(params: {
           persistErr,
         );
         try {
-          await updateDocumentStatus(blDoc.id, "failed");
+          await updateDocumentStatus({
+            tenantId: params.tenantId,
+            documentId: blDoc.id,
+            status: "failed",
+          });
         } catch (failedErr) {
           console.error(
             "[analyze-pipeline] falha ao marcar BL failed:",

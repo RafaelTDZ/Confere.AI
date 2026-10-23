@@ -2,6 +2,7 @@ import type { DocumentType } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function findDocumentsBySha256(params: {
+  tenantId: string;
   importId: string;
   sha256: string;
 }): Promise<Array<{ id: string; docType: DocumentType }>> {
@@ -9,6 +10,7 @@ export async function findDocumentsBySha256(params: {
   const { data, error } = await admin
     .from("documents")
     .select("id, doc_type")
+    .eq("tenant_id", params.tenantId)
     .eq("import_id", params.importId)
     .eq("sha256", params.sha256);
 
@@ -91,29 +93,33 @@ export async function insertDocuments(params: {
   }));
 }
 
-export async function updateDocumentStatus(
-  documentId: string,
-  status: "pending" | "extracted" | "failed",
-): Promise<void> {
+export async function updateDocumentStatus(params: {
+  tenantId: string;
+  documentId: string;
+  status: "pending" | "extracted" | "failed";
+}): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("documents")
-    .update({ status })
-    .eq("id", documentId);
+    .update({ status: params.status })
+    .eq("id", params.documentId)
+    .eq("tenant_id", params.tenantId);
 
   if (error) {
     throw new Error(error.message || "Falha ao atualizar documento");
   }
 }
 
-export async function listImportStoragePaths(
-  importId: string,
-): Promise<string[]> {
+export async function listImportStoragePaths(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<string[]> {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("documents")
     .select("storage_path")
-    .eq("import_id", importId);
+    .eq("tenant_id", params.tenantId)
+    .eq("import_id", params.importId);
 
   if (error) {
     throw new Error(error.message || "Falha ao listar arquivos da importação");
