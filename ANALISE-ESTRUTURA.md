@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 11 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01), 3 parciais (ENV-01, OBS-03, OPS-03) e 7 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (471 testes; `documents` 93,65% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 12 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01), 2 parciais (OBS-03, OPS-03) e 7 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (471 testes; `documents` 93,65% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -227,12 +227,12 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [x] Atualizar `README.md`, `AGENTS.md`, `PLAN.md` e `.env.example` para `pavxbcsolcvekwslhzmf`.
-- [ ] Adicionar um preflight no CI que valide o project ref esperado.
+- [x] Adicionar um preflight no CI que valide o project ref esperado.
 - [x] Documentar que o `.env` é local e não versionado.
 
 **Critério de aceite:** `grep` não encontra mais `xmvypuwizexdhpwrgrao` no repositório; um desenvolvedor novo consegue subir o app seguindo apenas o README.
 
-**Status (out/2026):** refs atualizados; falta apenas o preflight no CI.
+**Status (out/2026):** concluído — refs atualizados; o CI valida `pavxbcsolcvekwslhzmf` em `.env.example`/README/AGENTS e rejeita o ref antigo fora do `ANALISE-ESTRUTURA.md` (registro histórico).
 
 ---
 
