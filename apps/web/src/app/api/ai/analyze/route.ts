@@ -7,6 +7,11 @@ import {
   persistAiLog,
   runAnalyzePipeline,
 } from "@/lib/documents";
+import {
+  consumeRateLimit,
+  getAnalyzeRateLimit,
+  getAnalyzeRateWindowSeconds,
+} from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -41,6 +46,29 @@ export async function POST(request: Request) {
         { error: "Perfil viewer não pode enviar documentos" },
         { status: 403 },
       );
+    }
+
+    try {
+      const rateLimit = await consumeRateLimit({
+        bucket: `analyze:tenant:${auth.tenantId}`,
+        limit: getAnalyzeRateLimit(),
+        windowSeconds: getAnalyzeRateWindowSeconds(),
+      });
+
+      if (!rateLimit.allowed) {
+        return NextResponse.json(
+          {
+            error: "Muitas análises em pouco tempo. Tente novamente mais tarde.",
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+          },
+        );
+      }
+    } catch (error) {
+      // Fail-open: indisponibilidade do rate limiter não bloqueia a análise.
+      console.error("[api/ai/analyze] rate limit indisponível", error);
     }
 
     const form = await request.formData();

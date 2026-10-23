@@ -9,13 +9,20 @@ const mocks = vi.hoisted(() => ({
   getAuthContext: vi.fn(),
   runAnalyzePipeline: vi.fn(),
   persistAiLog: vi.fn(),
+  consumeRateLimit: vi.fn(),
+  getAnalyzeRateLimit: vi.fn(),
+  getAnalyzeRateWindowSeconds: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (
+      body: unknown,
+      init?: { status?: number; headers?: HeadersInit },
+    ) => ({
       status: init?.status ?? 200,
       body,
+      headers: new Headers(init?.headers),
       json: async () => body,
     }),
   },
@@ -69,6 +76,12 @@ vi.mock("@/lib/ai", () => {
   return { AiConfigError };
 });
 
+vi.mock("@/lib/security/rate-limit", () => ({
+  consumeRateLimit: mocks.consumeRateLimit,
+  getAnalyzeRateLimit: mocks.getAnalyzeRateLimit,
+  getAnalyzeRateWindowSeconds: mocks.getAnalyzeRateWindowSeconds,
+}));
+
 const TENANT_ID = "tenant-1";
 const USER_ID = "user-1";
 const IMPORT_ID = "3f2b8c1a-9d4e-4f7a-8b2c-1d5e6f7a8b9c";
@@ -105,9 +118,14 @@ function makeRequest(options: { file?: boolean; importId?: string } = {}) {
 
 async function readJson(response: {
   status: number;
+  headers: Headers;
   json: () => Promise<unknown>;
-}): Promise<{ status: number; body: unknown }> {
-  return { status: response.status, body: await response.json() };
+}): Promise<{ status: number; body: unknown; headers: Headers }> {
+  return {
+    status: response.status,
+    body: await response.json(),
+    headers: response.headers,
+  };
 }
 
 function pipelineParams() {
@@ -130,6 +148,14 @@ beforeEach(() => {
   });
   mocks.runAnalyzePipeline.mockResolvedValue(PIPELINE_RESULT);
   mocks.persistAiLog.mockResolvedValue(undefined);
+  mocks.consumeRateLimit.mockResolvedValue({
+    allowed: true,
+    remaining: 29,
+    resetAt: "2026-10-23T13:00:00.000Z",
+    retryAfterSeconds: 0,
+  });
+  mocks.getAnalyzeRateLimit.mockReturnValue(30);
+  mocks.getAnalyzeRateWindowSeconds.mockReturnValue(3600);
 });
 
 afterEach(() => {
@@ -160,6 +186,48 @@ describe("POST /api/ai/analyze", () => {
     expect(status).toBe(403);
     expect(body).toEqual({ error: "Perfil viewer não pode enviar documentos" });
     expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+  });
+
+  it("retorna 429 com Retry-After quando o rate limit bloqueia", async () => {
+    mocks.consumeRateLimit.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      resetAt: "2026-10-23T13:00:00.000Z",
+      retryAfterSeconds: 120,
+    });
+
+    const response = await POST(makeRequest());
+    const { status, body, headers } = await readJson(response);
+
+    expect(status).toBe(429);
+    expect(body).toEqual({
+      error: "Muitas análises em pouco tempo. Tente novamente mais tarde.",
+    });
+    expect(headers.get("Retry-After")).toBe("120");
+    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.consumeRateLimit).toHaveBeenCalledWith({
+      bucket: `analyze:tenant:${TENANT_ID}`,
+      limit: 30,
+      windowSeconds: 3600,
+    });
+  });
+
+  it("segue o fluxo quando o rate limiter lança erro (fail-open)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const failure = new Error("banco indisponível");
+    mocks.consumeRateLimit.mockRejectedValue(failure);
+
+    const { status, body } = await readJson(await POST(makeRequest()));
+
+    expect(status).toBe(200);
+    expect(body).toEqual(PIPELINE_RESULT);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[api/ai/analyze] rate limit indisponível",
+      failure,
+    );
+    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
   });
 
   it("retorna 400 quando o campo file está ausente", async () => {
