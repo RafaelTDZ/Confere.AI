@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 6 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01), 7 parciais (ENV-01, QUA-01, AI-02, SEC-01, SEC-02, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 7 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02), 6 parciais (ENV-01, QUA-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -372,11 +372,11 @@ Legenda de severidade:
 - [x] Aplicar o mesmo filtro em `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded` e `updateImportStatus` (`imports.ts`).
 - [x] Validar que `document_id` pertence ao tenant antes de persistir extração (via `assertDocumentOwnership`).
 - [x] Centralizar a checagem em um helper `assertDocumentOwnership`.
-- [ ] Filtrar por `tenant_id` os updates de `analysis_results`, `product_matches` e parties em `mergeImportInto`.
+- [x] Filtrar por `tenant_id` os updates de `analysis_results`, `product_matches` e parties em `mergeImportInto`.
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** parcial — `persistExtractionResult` valida o vínculo via `assertDocumentOwnership`; resta filtrar `analysis_results`/`product_matches`/parties em `mergeImportInto` para atender ao critério de nenhuma query administrativa sem tenant.
+**Status (out/2026):** concluído — todas as funções de `documents`/`imports` do escopo filtram `tenant_id`, `persistExtractionResult` valida o vínculo via `assertDocumentOwnership` e o `mergeImportInto` filtra as três queries que faltavam. Os testes cross-tenant ficam em QUA-01.
 
 ---
 
@@ -763,7 +763,7 @@ Legenda de severidade:
 
 - [x] Aplicar grants de `private.*` para `authenticated`.
 - [ ] SEC-01 — Migrar leituras para o client autenticado.
-- [ ] SEC-02 — Adicionar `tenant_id` em todas as funções administrativas.
+- [x] SEC-02 — Adicionar `tenant_id` em todas as funções administrativas.
 - [ ] SEC-03 — Adicionar `server-only`.
 - [ ] Adicionar testes de autorização por role (`viewer` não escreve).
 
