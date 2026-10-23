@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 7 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02), 6 parciais (ENV-01, QUA-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte de testes foi reiniciada com Vitest (39 testes puros) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 7 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02), 6 parciais (ENV-01, QUA-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (54 testes, incluindo isolamento por tenant) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 39 testes em 3 arquivos (Vitest 5.0.5) |
+| Testes | `pnpm test` | ✅ 54 testes em 4 arquivos (Vitest 5.0.5) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -273,14 +273,14 @@ Legenda de severidade:
 - [x] Remover a etapa "Testes" do CI e o script `test`, que executavam 0 tarefas.
 - [x] Adicionar Vitest (ou equivalente) em `apps/web`.
 - [x] Criar testes unitários para normalização/consolidação de Invoice/BL.
-- [ ] Criar testes de isolamento por tenant nas funções de `lib/documents`.
+- [x] Criar testes de isolamento por tenant nas funções de `lib/documents`.
 - [ ] Criar testes de route handlers com Supabase mockado.
 - [ ] Criar testes do pipeline com IA mockada (classify/extract).
 - [x] Fazer o CI falhar quando não houver testes executados (quando a suíte voltar).
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** parcial — Vitest 5.0.5 configurado, 39 testes de funções puras (`imports-shared`, `ncms-shared`, `parties-shared`), `pnpm test` no Turbo e step no CI. Faltam isolamento por tenant, route handlers, pipeline com IA mockada e cobertura mínima.
+**Status (out/2026):** parcial — Vitest 5.0.5, 54 testes em 4 arquivos: funções puras (`imports-shared`, `ncms-shared`, `parties-shared`) e isolamento por tenant em `documents`/`imports`/`extractions` com fake do client admin. Faltam route handlers, pipeline com IA mockada e cobertura mínima.
 
 ---
 
@@ -376,7 +376,7 @@ Legenda de severidade:
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** concluído — todas as funções de `documents`/`imports` do escopo filtram `tenant_id`, `persistExtractionResult` valida o vínculo via `assertDocumentOwnership` e o `mergeImportInto` filtra as três queries que faltavam. Os testes cross-tenant ficam em QUA-01.
+**Status (out/2026):** concluído — todas as funções de `documents`/`imports` do escopo filtram `tenant_id`, `persistExtractionResult` valida o vínculo via `assertDocumentOwnership` e o `mergeImportInto` filtra as três queries que faltavam. Os testes cross-tenant foram adicionados em QUA-01.
 
 ---
 
@@ -733,7 +733,7 @@ Legenda de severidade:
 
 - [x] QUA-01 — Configurar Vitest.
 - [x] Testar normalização de Invoice/BL e referências de importação.
-- [ ] Testar isolamento por tenant (cross-tenant deve falhar).
+- [x] Testar isolamento por tenant (cross-tenant deve falhar).
 - [ ] Testar pipeline com IA mockada.
 - [x] CI roda Vitest e falha se não houver testes.
 - [ ] Adicionar cobertura mínima (ex.: 60% em `lib/documents` e `lib/ai`).
