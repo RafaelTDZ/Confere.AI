@@ -535,6 +535,7 @@ async function mergeImportInto(
   const { error: analysisError } = await admin
     .from("analysis_results")
     .update({ import_id: targetId })
+    .eq("tenant_id", tenantId)
     .eq("import_id", sourceId);
   if (analysisError) {
     throw new Error(
@@ -545,6 +546,7 @@ async function mergeImportInto(
   const { error: matchesError } = await admin
     .from("product_matches")
     .update({ import_id: targetId })
+    .eq("tenant_id", tenantId)
     .eq("import_id", sourceId);
   if (matchesError) {
     throw new Error(
@@ -574,6 +576,7 @@ async function mergeImportInto(
     const { error: partyError } = await admin
       .from("imports")
       .update(partyPatch)
+      .eq("tenant_id", tenantId)
       .eq("id", targetId);
     if (partyError) {
       throw new Error(partyError.message || "Falha ao copiar partes");
