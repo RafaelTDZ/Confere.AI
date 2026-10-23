@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 8 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01), 5 parciais (ENV-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (404 testes; `documents` 90,75% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 9 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02), 4 parciais (ENV-01, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (423 testes; `documents` 91,78% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 404 testes em 25 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 93,05% lines; `documents` 90,75% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 423 testes em 26 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 93,65% lines; `documents` 91,78% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 404 testes em 25 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai` e tasks). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 90,75% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 423 testes em 26 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks e dedupe). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 91,78% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -321,14 +321,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Consultar `documents` por `tenant_id + sha256` antes de qualquer chamada de IA.
-- [ ] Reaproveitar `extraction_results` do documento existente.
-- [ ] Só chamar a IA se não houver extração válida.
-- [ ] Registrar no retorno que o resultado veio de cache/dedupe.
+- [x] Consultar `documents` por `tenant_id + sha256` antes de qualquer chamada de IA.
+- [x] Reaproveitar `extraction_results` do documento existente.
+- [x] Só chamar a IA se não houver extração válida.
+- [x] Registrar no retorno que o resultado veio de cache/dedupe.
 
 **Critério de aceite:** reenviar o mesmo arquivo no mesmo tenant não gera novas chamadas de IA.
 
-**Status (out/2026):** parcial — existe dedupe por `import_id + sha256`, mas ele roda depois da classificação/extração e não reaproveita `extraction_results`.
+**Status (out/2026):** concluído — a checagem por `tenant_id + sha256` roda antes de `getAiOverrides`/classify/extract. Upload completo é reutilizado sem IA; com `importId` de outro import, documentos + extrações são copiados e o storage é duplicado, também sem IA. O retorno traz `deduped: true`. Se faltar extração ou o status não for `extracted`, o pipeline cai no fluxo normal.
 
 ---
 
@@ -747,8 +747,8 @@ Legenda de severidade:
 
 **Objetivo:** reduzir custo, latência e risco de timeout.
 
-- [ ] AI-02 — Dedupe por `tenant_id + sha256` antes da IA.
-- [ ] Reaproveitar `extraction_results`.
+- [x] AI-02 — Dedupe por `tenant_id + sha256` antes da IA.
+- [x] Reaproveitar `extraction_results` (e copiar para outro import quando necessário).
 - [ ] AI-01 — Introduzir fila/processamento assíncrono.
 - [ ] Adicionar status de processamento e retry.
 - [ ] OBS-01 — Preencher `ai_logs.import_id`.
@@ -828,7 +828,7 @@ Estas decisões precisam ser tomadas antes de algumas correções. Duas já fora
 4. **O deploy continuará na raiz ou passará para `apps/web`?**
    - **Decidido (out/2026):** continua na raiz — `next`/`typescript` são necessários para o preview do v0. Configurar `Root Directory = apps/web` na Vercel fica opcional.
 5. **Qual o nível mínimo de cobertura de testes aceitável?**
-   - **Decidido (out/2026):** gate no CI — `documents` 88% (medido 90,75%) e `ai` 98% (medido 100%). A meta de 60% foi superada nos dois diretórios.
+   - **Decidido (out/2026):** gate no CI — `documents` 88% (medido 91,78%) e `ai` 98% (medido 100%). A meta de 60% foi superada nos dois diretórios.
    - Sugestão original: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
 6. **O `check-email` deve continuar revelando existência de conta?**
    - Trade-off de UX vs enumeração; documentar a decisão.
