@@ -204,6 +204,7 @@ async function createImportRecord(params: {
 }
 
 export async function fillImportKeysIfEmpty(params: {
+  tenantId: string;
   importId: string;
   invoiceNumber?: string | null;
   blNumber?: string | null;
@@ -214,6 +215,7 @@ export async function fillImportKeysIfEmpty(params: {
     .from("imports")
     .select("invoice_number, bl_number, supplier_name")
     .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId)
     .maybeSingle();
 
   if (error) {
@@ -237,19 +239,24 @@ export async function fillImportKeysIfEmpty(params: {
   const { error: updateError } = await admin
     .from("imports")
     .update(patch)
-    .eq("id", params.importId);
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId);
 
   if (updateError) {
     throw new Error(updateError.message || "Falha ao atualizar chaves da importação");
   }
 }
 
-export async function clearAutoReferenceIfNeeded(importId: string): Promise<void> {
+export async function clearAutoReferenceIfNeeded(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("imports")
     .select("reference_number, invoice_number, bl_number")
-    .eq("id", importId)
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId)
     .maybeSingle();
 
   if (error) {
@@ -261,7 +268,8 @@ export async function clearAutoReferenceIfNeeded(importId: string): Promise<void
   const { error: updateError } = await admin
     .from("imports")
     .update({ reference_number: null })
-    .eq("id", importId);
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId);
 
   if (updateError) {
     throw new Error(updateError.message || "Falha ao limpar referência automática");
@@ -278,13 +286,21 @@ export async function findOrCreateImport(params: {
   const existing = await findImportByKeys(params);
   if (existing) {
     await fillImportKeysIfEmpty({
+      tenantId: params.tenantId,
       importId: existing.id,
       invoiceNumber: params.invoiceNumber,
       blNumber: params.blNumber,
       supplierName: params.supplierName,
     });
-    await clearAutoReferenceIfNeeded(existing.id);
-    await updateImportStatus(existing.id, "processing");
+    await clearAutoReferenceIfNeeded({
+      tenantId: params.tenantId,
+      importId: existing.id,
+    });
+    await updateImportStatus({
+      tenantId: params.tenantId,
+      importId: existing.id,
+      status: "processing",
+    });
     return { importId: existing.id, created: false };
   }
 
@@ -292,21 +308,23 @@ export async function findOrCreateImport(params: {
   return { importId, created: true };
 }
 
-export async function updateImportStatus(
-  importId: string,
-  status: ImportStatus,
-  extra?: { supplierName?: string | null },
-): Promise<void> {
+export async function updateImportStatus(params: {
+  tenantId: string;
+  importId: string;
+  status: ImportStatus;
+  extra?: { supplierName?: string | null };
+}): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("imports")
     .update({
-      status,
-      ...(extra?.supplierName != null
-        ? { supplier_name: extra.supplierName }
+      status: params.status,
+      ...(params.extra?.supplierName != null
+        ? { supplier_name: params.extra.supplierName }
         : {}),
     })
-    .eq("id", importId);
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId);
 
   if (error) {
     throw new Error(error.message || "Falha ao atualizar importação");
@@ -534,6 +552,7 @@ async function mergeImportInto(
   }
 
   await fillImportKeysIfEmpty({
+    tenantId,
     importId: targetId,
     invoiceNumber: source.invoice_number as string | null,
     blNumber: source.bl_number as string | null,

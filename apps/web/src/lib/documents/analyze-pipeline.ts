@@ -230,12 +230,16 @@ export async function runAnalyzePipeline(params: {
   if (params.importId) {
     await getImportDetail(params.tenantId, params.importId);
     await fillImportKeysIfEmpty({
+      tenantId: params.tenantId,
       importId: params.importId,
       invoiceNumber,
       blNumber,
       supplierName,
     });
-    await clearAutoReferenceIfNeeded(params.importId);
+    await clearAutoReferenceIfNeeded({
+      tenantId: params.tenantId,
+      importId: params.importId,
+    });
     importId = params.importId;
   } else {
     const created = await findOrCreateImport({
@@ -402,6 +406,7 @@ export async function runAnalyzePipeline(params: {
     }
   } else {
     await fillImportKeysIfEmpty({
+      tenantId: params.tenantId,
       importId,
       invoiceNumber,
       blNumber,
@@ -410,7 +415,11 @@ export async function runAnalyzePipeline(params: {
   }
 
   try {
-    await updateImportStatus(importId, "awaiting_review");
+    await updateImportStatus({
+      tenantId: params.tenantId,
+      importId,
+      status: "awaiting_review",
+    });
   } catch (statusErr) {
     console.error(
       "[analyze-pipeline] falha ao atualizar status da importação:",
