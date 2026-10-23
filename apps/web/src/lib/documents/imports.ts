@@ -1,5 +1,6 @@
 import type { BlExtraction, InvoiceExtraction } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 import { ImportNotFoundError } from "@/lib/documents/parties";
 import {
   displayImportReference,
@@ -67,8 +68,8 @@ async function findImportByColumn(
   column: "bl_number" | "invoice_number" | "reference_number",
   value: string,
 ): Promise<ImportLookupRow | null> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select(
       "id, reference_number, supplier_name, invoice_number, bl_number",
@@ -111,17 +112,14 @@ async function findImportByKeys(params: {
 }
 
 /**
- * Lista imports do tenant.
- * Usa service role + tenant_id do JWT (mesmo padrão de /api/ai/analyze)
- * porque o grant EXECUTE em private.* pode ainda não estar no cloud —
- * sem ele, select autenticado falha com permission denied for function
- * current_tenant_id.
+ * Lista imports do tenant com o client do usuário (RLS aplicado).
+ * O filtro por tenant_id permanece como defesa em profundidade.
  */
 export async function listTenantImports(
   tenantId: string,
 ): Promise<ImportRow[]> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select(IMPORT_LIST_SELECT)
     .eq("tenant_id", tenantId)
@@ -210,8 +208,8 @@ export async function fillImportKeysIfEmpty(params: {
   blNumber?: string | null;
   supplierName?: string | null;
 }): Promise<void> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select("invoice_number, bl_number, supplier_name")
     .eq("id", params.importId)
@@ -236,6 +234,7 @@ export async function fillImportKeysIfEmpty(params: {
 
   if (Object.keys(patch).length === 0) return;
 
+  const admin = createSupabaseAdminClient();
   const { error: updateError } = await admin
     .from("imports")
     .update(patch)
@@ -251,8 +250,8 @@ export async function clearAutoReferenceIfNeeded(params: {
   tenantId: string;
   importId: string;
 }): Promise<void> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select("reference_number, invoice_number, bl_number")
     .eq("id", params.importId)
@@ -265,6 +264,7 @@ export async function clearAutoReferenceIfNeeded(params: {
   if (!data?.reference_number) return;
   if (displayImportReference(data) !== "") return;
 
+  const admin = createSupabaseAdminClient();
   const { error: updateError } = await admin
     .from("imports")
     .update({ reference_number: null })
@@ -336,8 +336,8 @@ async function getPartySummary(
   partyId: string | null,
 ): Promise<ImportPartySummary | null> {
   if (!partyId) return null;
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("parties")
     .select("id, name")
     .eq("tenant_id", tenantId)
@@ -355,8 +355,8 @@ export async function getImportDetail(
   tenantId: string,
   id: string,
 ): Promise<ImportDetail> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select(IMPORT_DETAIL_SELECT)
     .eq("tenant_id", tenantId)
@@ -370,7 +370,7 @@ export async function getImportDetail(
     throw new ImportNotFoundError();
   }
 
-  const { data: documents, error: docsError } = await admin
+  const { data: documents, error: docsError } = await supabase
     .from("documents")
     .select("id, doc_type, original_filename, status, version, created_at")
     .eq("import_id", id)
@@ -391,7 +391,7 @@ export async function getImportDetail(
     documentIds: string[],
   ): Promise<T | null> {
     if (documentIds.length === 0) return null;
-    const { data: extraction, error: extractionError } = await admin
+    const { data: extraction, error: extractionError } = await supabase
       .from("extraction_results")
       .select("payload")
       .in("document_id", documentIds)
@@ -496,7 +496,8 @@ async function mergeImportInto(
   }
 
   const admin = createSupabaseAdminClient();
-  const { data: source, error: sourceError } = await admin
+  const supabase = await getReadClient();
+  const { data: source, error: sourceError } = await supabase
     .from("imports")
     .select(
       "invoice_number, bl_number, supplier_name, consignee_id, notify_id",
@@ -512,7 +513,7 @@ async function mergeImportInto(
     throw new ImportNotFoundError();
   }
 
-  const { data: target, error: targetError } = await admin
+  const { data: target, error: targetError } = await supabase
     .from("imports")
     .select("consignee_id, notify_id")
     .eq("tenant_id", tenantId)

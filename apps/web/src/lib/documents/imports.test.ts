@@ -14,10 +14,23 @@ import {
 import { ImportNotFoundError } from "@/lib/documents/parties";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 const TENANT_A = "tenant-a";
@@ -344,10 +357,16 @@ function seedAdmin(): FakeSupabase {
 }
 
 let admin: FakeSupabase;
+let adminClient: FakeSupabase;
+let readClient: FakeSupabase;
 
 beforeEach(() => {
   admin = seedAdmin();
-  mocks.admin = admin;
+  adminClient = admin;
+  readClient = admin;
+  mocks.adminClient = adminClient;
+  mocks.readClient = readClient;
+  mocks.failAdminClient = false;
 });
 
 afterEach(() => {
@@ -400,7 +419,7 @@ describe("listTenantImports", () => {
   });
 
   it("propaga erro do banco ao listar", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "conexão indisponível" },
       { table: "imports", operation: "select" },
     );
@@ -408,6 +427,15 @@ describe("listTenantImports", () => {
     await expect(listTenantImports(TENANT_A)).rejects.toThrow(
       "conexão indisponível",
     );
+  });
+
+  it("lista importações sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const imports = await listTenantImports(TENANT_A);
+
+    expect(imports.map((row) => row.id)).toContain("import-detail");
+    expect(imports.map((row) => row.id)).not.toContain("import-b-by-bl");
   });
 });
 
@@ -458,7 +486,7 @@ describe("deleteImportRecord", () => {
   });
 
   it("propaga erro do banco ao remover", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao excluir" },
       { table: "imports", operation: "delete" },
     );
@@ -559,7 +587,7 @@ describe("findOrCreateImport", () => {
   });
 
   it("propaga erro ao buscar importação existente", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao buscar" },
       { table: "imports", operation: "select" },
     );
@@ -630,7 +658,7 @@ describe("getImportDetail", () => {
   });
 
   it("propaga erro ao listar documentos", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao listar documentos" },
       { table: "documents", operation: "select" },
     );
@@ -641,7 +669,7 @@ describe("getImportDetail", () => {
   });
 
   it("propaga erro ao buscar extração", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao buscar extração" },
       { table: "extraction_results", operation: "select" },
     );
@@ -652,7 +680,7 @@ describe("getImportDetail", () => {
   });
 
   it("propaga erro ao buscar partes", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao buscar parte" },
       { table: "parties", operation: "select" },
     );
@@ -660,6 +688,21 @@ describe("getImportDetail", () => {
     await expect(getImportDetail(TENANT_A, "import-detail")).rejects.toThrow(
       "falha ao buscar parte",
     );
+  });
+
+  it("carrega o detalhe sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const detail = await getImportDetail(TENANT_A, "import-detail");
+
+    expect(detail).toMatchObject({
+      id: "import-detail",
+      reference_number: "PO-DETAIL",
+      consignee: { id: "party-a-consignee", name: "Consignatário A" },
+      notify: { id: "party-a-notify", name: "Notify A" },
+    });
+    expect(detail.invoice).toEqual({ number: "INV-NEW" });
+    expect(detail.bl).toEqual({ number: "BL-DETAIL" });
   });
 });
 
@@ -740,7 +783,7 @@ describe("updateImportRecord", () => {
   });
 
   it("faz merge da importação de origem na importação de referência duplicada", async () => {
-    admin.failNext(
+    adminClient.failNext(
       {
         code: "23505",
         message: "duplicate key value violates unique constraint",
@@ -780,7 +823,7 @@ describe("updateImportRecord", () => {
   });
 
   it("lança ImportConflictError quando a referência duplicada é a própria importação", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { code: "23505", message: "duplicate key" },
       { table: "imports", operation: "update" },
     );
@@ -793,7 +836,7 @@ describe("updateImportRecord", () => {
   });
 
   it("lança ImportConflictError quando a referência duplicada não é encontrada", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { code: "23505", message: "duplicate key" },
       { table: "imports", operation: "update" },
     );
@@ -806,7 +849,7 @@ describe("updateImportRecord", () => {
   });
 
   it("propaga erro genérico do update", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao atualizar" },
       { table: "imports", operation: "update" },
     );
@@ -819,11 +862,11 @@ describe("updateImportRecord", () => {
   });
 
   it("propaga erro ao mover resultados da análise durante o merge", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { code: "23505", message: "duplicate key" },
       { table: "imports", operation: "update" },
     );
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao mover análise" },
       { table: "analysis_results", operation: "update" },
     );
@@ -836,11 +879,11 @@ describe("updateImportRecord", () => {
   });
 
   it("propaga erro ao mover correspondências durante o merge", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { code: "23505", message: "duplicate key" },
       { table: "imports", operation: "update" },
     );
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao mover correspondências" },
       { table: "product_matches", operation: "update" },
     );
@@ -853,11 +896,11 @@ describe("updateImportRecord", () => {
   });
 
   it("propaga erro ao remover a importação de origem durante o merge", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { code: "23505", message: "duplicate key" },
       { table: "imports", operation: "update" },
     );
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao excluir origem" },
       { table: "imports", operation: "delete" },
     );
@@ -891,7 +934,7 @@ describe("fillImportKeysIfEmpty", () => {
   });
 
   it("propaga erro de select", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao buscar chaves" },
       { table: "imports", operation: "select" },
     );
@@ -906,7 +949,7 @@ describe("fillImportKeysIfEmpty", () => {
   });
 
   it("propaga erro de update", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao atualizar chaves" },
       { table: "imports", operation: "update" },
     );
@@ -958,7 +1001,7 @@ describe("clearAutoReferenceIfNeeded", () => {
   });
 
   it("propaga erro de select", async () => {
-    admin.failNext(
+    readClient.failNext(
       { message: "falha ao buscar referência" },
       { table: "imports", operation: "select" },
     );
@@ -972,7 +1015,7 @@ describe("clearAutoReferenceIfNeeded", () => {
   });
 
   it("propaga erro de update", async () => {
-    admin.failNext(
+    adminClient.failNext(
       { message: "falha ao limpar referência" },
       { table: "imports", operation: "update" },
     );

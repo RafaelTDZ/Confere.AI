@@ -15,10 +15,23 @@ import {
 import { assertDocumentOwnership } from "@/lib/documents/ownership";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 function importSeed(params: { tenantId: string; status?: string }): FakeRow {
@@ -149,10 +162,16 @@ function seedAdmin(): FakeSupabase {
 }
 
 let admin: FakeSupabase;
+let adminClient: FakeSupabase;
+let readClient: FakeSupabase;
 
 beforeEach(() => {
   admin = seedAdmin();
-  mocks.admin = admin;
+  adminClient = admin;
+  readClient = admin;
+  mocks.adminClient = adminClient;
+  mocks.readClient = readClient;
+  mocks.failAdminClient = false;
 });
 
 function findRow(table: string, id: string): FakeRow {
