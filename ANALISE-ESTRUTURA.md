@@ -452,7 +452,7 @@ Legenda de severidade:
 - A tabela de rotas do README não inclui `/importacoes`, `/empresas`, `/ncm`, `/produtos` nem APIs de imports/parties/ncms.
 - A tabela de variáveis do README não inclui `ADMIN_EMAILS`.
 - README diz Node >= 20, mas `@openrouter/ai-sdk-provider@3.0.0` exige **Node >= 22**.
-- README diz default `meta/muse-spark-1.3`, mas o código usa `~openai/gpt-luna-latest` (`openrouter-model.ts:1`).
+- README dizia default `meta/muse-spark-1.3`, mas o código usa `~openai/gpt-luna-latest` (`openrouter-model.ts:1`). Alinhado em out/2026: ambos usam `~openai/gpt-luna-latest`.
 
 **Impacto:** onboarding e decisões técnicas baseadas em informação errada.
 
@@ -465,7 +465,7 @@ Legenda de severidade:
 
 **Critério de aceite:** documentação revisada contra o build atual; nenhuma afirmação contradiz o código.
 
-**Status (out/2026):** parcial — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis e a distinção entre fallback do código e valor do `.env.example`. Resta o Node, tratado em DEP-01.
+**Status (out/2026):** parcial — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis e o modelo padrão (`~openai/gpt-luna-latest`, também no `.env.example`). Resta o Node, tratado em DEP-01.
 
 ---
 
