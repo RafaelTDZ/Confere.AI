@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 10 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01), 3 parciais (ENV-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (462 testes; `documents` 93,52% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 11 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01), 3 parciais (ENV-01, OBS-03, OPS-03) e 7 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (471 testes; `documents` 93,65% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 462 testes em 27 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 94,97% lines; `documents` 93,52% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 471 testes em 27 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 95,06% lines; `documents` 93,65% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 462 testes em 27 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe e leituras RLS). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,52% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 471 testes em 27 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS e vínculo de `ai_logs`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,65% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -504,13 +504,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Criar a importação antes das extrações ou atualizar os logs depois.
-- [ ] Passar `importId` em todas as chamadas de `persistAiLog`.
+- [x] Criar a importação antes das extrações ou atualizar os logs depois.
+- [x] Passar `importId` em todas as chamadas de `persistAiLog`.
 - [ ] Opcional: criar view/materialized view de custo por importação.
 
 **Critério de aceite:** novas linhas de `ai_logs` de extração têm `import_id` preenchido quando a importação já existe.
 
-**Status (out/2026):** `persistAiLog` já aceita `importId`, mas nenhuma chamada passa o campo — segue aberto.
+**Status (out/2026):** concluído — `persistAiLog` retorna o id e o pipeline coleta os logs de classify/extract e os vincula à importação assim que ela é criada/resolvida. O log genérico da rota também recebe o `importId` do form. Logs de falhas que ocorrem antes de a importação existir seguem com `import_id: null` (esperado).
 
 ---
 
@@ -751,7 +751,7 @@ Legenda de severidade:
 - [x] Reaproveitar `extraction_results` (e copiar para outro import quando necessário).
 - [ ] AI-01 — Introduzir fila/processamento assíncrono.
 - [ ] Adicionar status de processamento e retry.
-- [ ] OBS-01 — Preencher `ai_logs.import_id`.
+- [x] OBS-01 — Preencher `ai_logs.import_id`.
 - [ ] OBS-02 — Rate limit e quota por tenant.
 
 **Saída esperada:** upload responde rápido; reenvio não custa IA; falhas são reprocessáveis.
@@ -884,7 +884,7 @@ Considerar a correção concluída quando:
 - [ ] Merge/delete/pipeline são atômicos ou idempotentes.
 - [ ] `database.types.ts` é gerado e usado.
 - [x] README/AGENTS/PLAN refletem o estado real.
-- [ ] Sentry/OTEL integrados e `ai_logs` com `import_id`.
+- [ ] Sentry/OTEL integrados (o `ai_logs.import_id` já foi concluído).
 - [ ] Rate limit/quota configurados.
 - [x] `git status` limpo e migrations aplicadas.
 
@@ -907,7 +907,7 @@ Considerar a correção concluída quando:
 | `parties` | Consignee/notify | Ativo |
 | `ncms` | Catálogo NCM | Ativo |
 | `audit_logs` | Auditoria | Não usado |
-| `ai_logs` | Logs/custo de IA | Ativo (sem `import_id`) |
+| `ai_logs` | Logs/custo de IA | Ativo (com `import_id` quando vinculado) |
 
 ### Funções auxiliares
 
