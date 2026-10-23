@@ -12,6 +12,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
     "db:migration": "supabase migration new",
     "db:push": "supabase link --project-ref pavxbcsolcvekwslhzmf && supabase db push",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\" --ignore-path .gitignore"

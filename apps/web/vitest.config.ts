@@ -10,5 +10,25 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text"],
+      include: ["src/lib/documents/**/*.ts", "src/lib/ai/**/*.ts"],
+      exclude: ["**/*.test.ts", "**/*.d.ts"],
+      thresholds: {
+        "src/lib/documents/**": {
+          lines: 34,
+          functions: 33,
+          statements: 34,
+          branches: 23,
+        },
+        "src/lib/ai/**": {
+          lines: 2.65,
+          functions: 5.14,
+          statements: 2.2,
+          branches: 1.98,
+        },
+      },
+    },
   },
 });
