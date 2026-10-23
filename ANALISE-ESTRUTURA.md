@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 12 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01), 2 parciais (OBS-03, OPS-03) e 7 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (471 testes; `documents` 93,65% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 13 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02), 2 parciais (OBS-03, OPS-03) e 6 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, PERF-01). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (533 testes; `documents` 93,73% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -54,7 +54,7 @@ O `.cursor/mcp.json` do repositório apontava para `pavxbcsolcvekwslhzmf` (arqui
 | Validação | Zod 3.25.76 |
 | Monorepo | pnpm 10 + Turborepo 2.10.7 |
 | Código-fonte | 84 arquivos TS/TSX em `apps/web/src` (~270 KB) |
-| Banco | 18 migrations |
+| Banco | 19 migrations |
 | Build | 24 rotas; First Load JS entre 103 kB e 179 kB |
 | Node declarado | `>=22.12` na raiz (alinhado em out/2026 com o provider e o Vitest) |
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 471 testes em 27 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 95,06% lines; `documents` 93,65% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 533 testes em 29 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -254,7 +254,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `get_project_url` retorna `https://pavxbcsolcvekwslhzmf.supabase.co` e `list_migrations` mostra as migrations do Confere.ia.
 
-**Status (out/2026):** concluído — MCP aponta para `pavxbcsolcvekwslhzmf`; `get_project_url` e `list_migrations` (18 migrations) validados em 23/10/2026.
+**Status (out/2026):** concluído — MCP aponta para `pavxbcsolcvekwslhzmf`; `get_project_url` e `list_migrations` (19 migrations) validados em 23/10/2026.
 
 ---
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 471 testes em 27 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS e vínculo de `ai_logs`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,65% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 533 testes em 29 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit e quota). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,73% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -526,12 +526,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Rate limit por IP/tenant nas rotas de IA e de email.
-- [ ] Quota mensal de tokens/custo por tenant.
-- [ ] Alerta quando o custo passar de um limiar.
-- [ ] Avaliar mitigação de enumeração no `check-email` (resposta genérica + verificação no servidor).
+- [x] Rate limit por IP/tenant nas rotas de IA e de email.
+- [x] Quota mensal de tokens/custo por tenant.
+- [ ] Alerta quando o custo passar de um limiar (o bloqueio por quota já existe; alerta fica como melhoria).
+- [x] Avaliar mitigação de enumeração no `check-email` — adotado rate limit por IP; a resposta `exists` foi mantida por UX.
 
 **Critério de aceite:** limites configurados e testados; consumo anômalo gera alerta/bloqueio.
+
+**Status (out/2026):** concluído — rate limit por tenant em `/api/ai/analyze` (30/h) e por IP em `/api/auth/check-email` (10/min), com quota mensal de 10M tokens por tenant. Migration `20261023201029_rate_limits.sql` aplicada no cloud; RPC `consume_rate_limit` validado (true, true, false para limite 2) e smoke do check-email retornando 429 no 11º request. O alerta de custo fica como melhoria incremental.
 
 ---
 
@@ -598,7 +600,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `git status` limpo; migrations aplicadas; configuração de IA salvando/lendo corretamente.
 
-**Status (out/2026):** concluído — git limpo; 18/18 migrations aplicadas (última `20261014140000`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Smoke autenticado de `/api/ai/health` em 23/10/2026: 200, `ok=true`, `source=global`, `latencyMs=2214`; sem cookie → 401. A UI de `/configuracoes` não foi exercitada neste smoke.
+**Status (out/2026):** concluído — git limpo; 19/19 migrations aplicadas (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Smoke autenticado de `/api/ai/health` em 23/10/2026: 200, `ok=true`, `source=global`, `latencyMs=2214`; sem cookie → 401. A UI de `/configuracoes` não foi exercitada neste smoke.
 
 ---
 
@@ -752,7 +754,7 @@ Legenda de severidade:
 - [ ] AI-01 — Introduzir fila/processamento assíncrono.
 - [ ] Adicionar status de processamento e retry.
 - [x] OBS-01 — Preencher `ai_logs.import_id`.
-- [ ] OBS-02 — Rate limit e quota por tenant.
+- [x] OBS-02 — Rate limit e quota por tenant.
 
 **Saída esperada:** upload responde rápido; reenvio não custa IA; falhas são reprocessáveis.
 
@@ -885,7 +887,7 @@ Considerar a correção concluída quando:
 - [ ] `database.types.ts` é gerado e usado.
 - [x] README/AGENTS/PLAN refletem o estado real.
 - [ ] Sentry/OTEL integrados (o `ai_logs.import_id` já foi concluído).
-- [ ] Rate limit/quota configurados.
+- [x] Rate limit/quota configurados.
 - [x] `git status` limpo e migrations aplicadas.
 
 ---
@@ -908,6 +910,7 @@ Considerar a correção concluída quando:
 | `ncms` | Catálogo NCM | Ativo |
 | `audit_logs` | Auditoria | Não usado |
 | `ai_logs` | Logs/custo de IA | Ativo (com `import_id` quando vinculado) |
+| `rate_limit_buckets` | Buckets de rate limit (janela fixa) | `/api/ai/analyze` e `/api/auth/check-email` |
 
 ### Funções auxiliares
 

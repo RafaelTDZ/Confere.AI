@@ -116,6 +116,7 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 | `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
 | `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha no `.env` da raiz e reinicie o Next |
 | `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env` (Dashboard → API Keys) |
+| `/api/ai/analyze` → 429 | Rate limit por tenant ou quota mensal de tokens atingida | Ajuste `AI_ANALYZE_RATE_LIMIT` / `AI_MONTHLY_TOKEN_QUOTA` ou aguarde a janela/mês |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/proxy |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor). O `/api/ai/analyze` já grava via service role e não depende desse grant |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
@@ -145,6 +146,9 @@ pnpm db:migration <nome>   # cria nova migration
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
+| `AI_ANALYZE_RATE_LIMIT` / `AI_ANALYZE_RATE_WINDOW_SECONDS` | Não | Rate limit por tenant no `/api/ai/analyze` (default: 30 req / 3600 s) |
+| `AI_MONTHLY_TOKEN_QUOTA` | Não | Quota mensal de tokens de IA por tenant (default: 10.000.000) |
+| `CHECK_EMAIL_RATE_LIMIT` / `CHECK_EMAIL_RATE_WINDOW_SECONDS` | Não | Rate limit por IP no `/api/auth/check-email` (default: 10 req / 60 s) |
 
 O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).
 

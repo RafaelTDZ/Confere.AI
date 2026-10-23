@@ -52,6 +52,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
   - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
   - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**. Leituras de domínio via **RLS** (`getReadClient`).
+  - Rate limit por tenant em `/api/ai/analyze` (30/h) e quota mensal de 10M tokens; `/api/auth/check-email` limitado por IP (10/min).
 - Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
 - Config global de IA (só allowlist `ADMIN_EMAILS` — todo signup vira owner do próprio
   tenant, então role sozinha não restringe): página `/configuracoes` + `GET/PUT/DELETE /api/settings/ai`
