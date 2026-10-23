@@ -544,11 +544,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Remover `apps/worker/`.
-- [ ] Remover o diretório vazio `save-user-info/`.
-- [ ] Rodar `pnpm install` para limpar o store, se necessário.
+- [x] Remover `apps/worker/`.
+- [x] Remover o diretório vazio `save-user-info/`.
+- [x] Rodar `pnpm install` para limpar o store, se necessário.
 
 **Critério de aceite:** `apps/` contém apenas `web`; não há diretórios vazios em `src/app/api`.
+
+**Status (out/2026):** concluído — `apps/` contém apenas `web` e o diretório vazio foi removido.
 
 ---
 
