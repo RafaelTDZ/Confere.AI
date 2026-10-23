@@ -16,7 +16,7 @@ function clearAuthCookies(response: NextResponse, request: NextRequest) {
 }
 
 /** Refresh de sessao em toda request (padrao @supabase/ssr). */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
