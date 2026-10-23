@@ -30,10 +30,23 @@ import {
 } from "@/lib/documents/parties-shared";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 const CNPJ_EXISTENTE = "11222333000181";
@@ -275,10 +288,16 @@ function seedAdmin(): FakeSupabase {
 }
 
 let admin: FakeSupabase;
+let adminClient: FakeSupabase;
+let readClient: FakeSupabase;
 
 beforeEach(() => {
   admin = seedAdmin();
-  mocks.admin = admin;
+  adminClient = admin;
+  readClient = admin;
+  mocks.adminClient = adminClient;
+  mocks.readClient = readClient;
+  mocks.failAdminClient = false;
 });
 
 function findRow(table: string, id: string): FakeRow {
@@ -534,6 +553,17 @@ describe("listTenantParties", () => {
       expect.objectContaining({ id: "party-b" }),
     );
   });
+
+  it("lista empresas sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const parties = await listTenantParties("tenant-a");
+
+    expect(parties.map((party) => party.id)).toEqual([
+      "party-a",
+      "party-a-late",
+    ]);
+  });
 });
 
 describe("getPartyById", () => {
@@ -659,7 +689,7 @@ describe("updateParty", () => {
   );
 
   it("converte violação de unicidade (23505) em PartyValidationError", async () => {
-    admin.failNext({
+    adminClient.failNext({
       code: "23505",
       message: "duplicate key value violates unique constraint",
     });

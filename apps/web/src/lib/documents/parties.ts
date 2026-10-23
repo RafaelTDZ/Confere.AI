@@ -4,6 +4,7 @@ import type {
   InvoiceParty,
 } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 import {
   EMPTY_PARTY_ADDRESS,
   formatAddressLine,
@@ -156,8 +157,8 @@ async function findPartyByCnpj(
   const digits = normalizeCnpjDigits(cnpj);
   if (!isValidCnpjDigits(digits)) return null;
 
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("parties")
     .select("id")
     .eq("tenant_id", tenantId)
@@ -205,8 +206,8 @@ async function upsertParty(params: {
 }
 
 export async function listTenantParties(tenantId: string): Promise<PartyRow[]> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("parties")
     .select(PARTY_SELECT)
     .eq("tenant_id", tenantId)
@@ -223,8 +224,8 @@ export async function getPartyById(
   tenantId: string,
   id: string,
 ): Promise<PartyRow> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("parties")
     .select(PARTY_SELECT)
     .eq("tenant_id", tenantId)
@@ -481,8 +482,8 @@ export async function resolveBlParties(params: {
 }
 
 async function getImportRow(tenantId: string, importId: string) {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("imports")
     .select("id, consignee_id, notify_id")
     .eq("id", importId)
@@ -502,8 +503,8 @@ async function getImportRow(tenantId: string, importId: string) {
 async function getInvoiceExtractionForImport(
   importId: string,
 ): Promise<InvoiceExtraction | null> {
-  const admin = createSupabaseAdminClient();
-  const { data: documents, error: docsError } = await admin
+  const supabase = await getReadClient();
+  const { data: documents, error: docsError } = await supabase
     .from("documents")
     .select("id")
     .eq("import_id", importId)
@@ -516,7 +517,7 @@ async function getInvoiceExtractionForImport(
   const documentIds = (documents ?? []).map((row) => row.id as string);
   if (documentIds.length === 0) return null;
 
-  const { data, error } = await admin
+  const { data, error } = await supabase
     .from("extraction_results")
     .select("payload")
     .in("document_id", documentIds)
@@ -534,8 +535,8 @@ async function getInvoiceExtractionForImport(
 async function getBlExtractionForImport(
   importId: string,
 ): Promise<BlExtraction | null> {
-  const admin = createSupabaseAdminClient();
-  const { data: documents, error: docsError } = await admin
+  const supabase = await getReadClient();
+  const { data: documents, error: docsError } = await supabase
     .from("documents")
     .select("id")
     .eq("import_id", importId)
@@ -548,7 +549,7 @@ async function getBlExtractionForImport(
   const documentIds = (documents ?? []).map((row) => row.id as string);
   if (documentIds.length === 0) return null;
 
-  const { data, error } = await admin
+  const { data, error } = await supabase
     .from("extraction_results")
     .select("payload")
     .in("document_id", documentIds)

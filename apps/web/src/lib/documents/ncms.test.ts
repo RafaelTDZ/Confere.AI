@@ -10,10 +10,23 @@ import {
 } from "@/lib/documents/ncms";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 function ncmSeed(params: {
@@ -43,10 +56,16 @@ function seedAdmin(): FakeSupabase {
 }
 
 let admin: FakeSupabase;
+let adminClient: FakeSupabase;
+let readClient: FakeSupabase;
 
 beforeEach(() => {
   admin = seedAdmin();
-  mocks.admin = admin;
+  adminClient = admin;
+  readClient = admin;
+  mocks.adminClient = adminClient;
+  mocks.readClient = readClient;
+  mocks.failAdminClient = false;
 });
 
 function findRow(table: string, id: string): FakeRow {
@@ -87,11 +106,19 @@ describe("listTenantNcms", () => {
   });
 
   it("propaga erro do banco ao listar", async () => {
-    admin.failNext({ message: "conexão indisponível" });
+    readClient.failNext({ message: "conexão indisponível" });
 
     await expect(listTenantNcms("tenant-a")).rejects.toThrow(
       "conexão indisponível",
     );
+  });
+
+  it("lista NCMs sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const ncms = await listTenantNcms("tenant-a");
+
+    expect(ncms.map((ncm) => ncm.id)).toEqual(["ncm-a-1", "ncm-a-2"]);
   });
 });
 
@@ -153,7 +180,7 @@ describe("createNcm", () => {
   });
 
   it("converte violação de unicidade (23505) em NcmValidationError", async () => {
-    admin.failNext({
+    adminClient.failNext({
       code: "23505",
       message: "duplicate key value violates unique constraint",
     });
@@ -164,7 +191,7 @@ describe("createNcm", () => {
   });
 
   it("não insere a NCM quando o banco retorna erro genérico", async () => {
-    admin.failNext({ message: "falha ao inserir" });
+    adminClient.failNext({ message: "falha ao inserir" });
     const before = admin.rows("ncms").length;
 
     await expect(createNcm("tenant-a", validPayload())).rejects.toThrow(
@@ -222,7 +249,7 @@ describe("updateNcm", () => {
   });
 
   it("converte violação de unicidade (23505) em NcmValidationError", async () => {
-    admin.failNext({
+    adminClient.failNext({
       code: "23505",
       message: "duplicate key value violates unique constraint",
     });

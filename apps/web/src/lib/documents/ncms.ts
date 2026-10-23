@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 import { normalizeNcmCode } from "@/lib/documents/ncms-shared";
 
 export { formatNcmCode } from "@/lib/documents/ncms-shared";
@@ -47,8 +48,8 @@ function validateNcmPayload(params: { code: string; description: string }): {
 }
 
 export async function listTenantNcms(tenantId: string): Promise<NcmRow[]> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("ncms")
     .select(NCM_SELECT)
     .eq("tenant_id", tenantId)
@@ -65,8 +66,8 @@ export async function getNcmById(
   tenantId: string,
   id: string,
 ): Promise<NcmRow> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("ncms")
     .select(NCM_SELECT)
     .eq("tenant_id", tenantId)
