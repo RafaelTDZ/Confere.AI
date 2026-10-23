@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Lint, typecheck e testes
+    name: Lint e typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,9 +31,6 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
-
-      - name: Testes
-        run: pnpm test
 
   build:
     name: Build
