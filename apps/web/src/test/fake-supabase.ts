@@ -16,9 +16,14 @@ export type FakeQueryLog = {
   filters: FakeFilter[];
 };
 
+export type FakeError = {
+  code?: string;
+  message: string;
+};
+
 export type FakeResponse = {
   data: unknown;
-  error: null;
+  error: FakeError | null;
 };
 
 type Operation = FakeQueryLog["operation"];
@@ -33,6 +38,7 @@ type Operation = FakeQueryLog["operation"];
 export class FakeSupabase {
   readonly tables: FakeTables;
   readonly queries: FakeQueryLog[] = [];
+  private readonly pendingErrors: FakeError[] = [];
 
   constructor(tables: FakeTables = {}) {
     this.tables = tables;
@@ -43,6 +49,21 @@ export class FakeSupabase {
       this.tables[table] = [];
     }
     return new FakeQueryBuilder(this, table);
+  }
+
+  /**
+   * Enfileira um erro para a próxima query executada (uma única vez).
+   * A query falha sem alterar as tabelas.
+   */
+  failNext(error: FakeError | string): this {
+    this.pendingErrors.push(
+      typeof error === "string" ? { message: error } : error,
+    );
+    return this;
+  }
+
+  takePendingError(): FakeError | null {
+    return this.pendingErrors.shift() ?? null;
   }
 
   /** Linhas da tabela para asserções, criando-a vazia se necessário. */
@@ -116,12 +137,20 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
-  maybeSingle(): Promise<{ data: FakeRow | null; error: null }> {
-    return Promise.resolve({ data: this.firstRow(), error: null });
+  maybeSingle(): Promise<{
+    data: FakeRow | null;
+    error: FakeError | null;
+  }> {
+    const result = this.execute();
+    return Promise.resolve({ data: this.firstRow(result), error: result.error });
   }
 
-  single(): Promise<{ data: FakeRow | null; error: null }> {
-    return Promise.resolve({ data: this.firstRow(), error: null });
+  single(): Promise<{
+    data: FakeRow | null;
+    error: FakeError | null;
+  }> {
+    const result = this.execute();
+    return Promise.resolve({ data: this.firstRow(result), error: result.error });
   }
 
   then<TResult1 = FakeResponse, TResult2 = never>(
@@ -132,16 +161,26 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return Promise.resolve(this.execute()).then(onfulfilled, onrejected);
   }
 
-  private firstRow(): FakeRow | null {
-    const { data } = this.execute();
-    if (Array.isArray(data)) {
-      return (data[0] as FakeRow | undefined) ?? null;
+  private firstRow(result: FakeResponse = this.execute()): FakeRow | null {
+    if (Array.isArray(result.data)) {
+      return (result.data[0] as FakeRow | undefined) ?? null;
     }
-    return (data as FakeRow | null) ?? null;
+    return (result.data as FakeRow | null) ?? null;
   }
 
   private execute(): FakeResponse {
     if (this.response) return this.response;
+
+    const failure = this.db.takePendingError();
+    if (failure) {
+      this.db.queries.push({
+        table: this.table,
+        operation: this.operation,
+        filters: [...this.filters],
+      });
+      this.response = { data: null, error: failure };
+      return this.response;
+    }
 
     const rows = this.db.rows(this.table);
     const matched = rows.filter((row) => this.matches(row));
