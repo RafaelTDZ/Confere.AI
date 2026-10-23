@@ -25,6 +25,7 @@
       "persistent": true
     },
     "lint": {},
+    "test": {},
     "typecheck": {
       "dependsOn": ["^build"]
     }

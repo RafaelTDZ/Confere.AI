@@ -4,13 +4,14 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
     "db:migration": "supabase migration new",
     "db:push": "supabase link --project-ref pavxbcsolcvekwslhzmf && supabase db push",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\" --ignore-path .gitignore"

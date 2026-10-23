@@ -45,7 +45,7 @@ supabase/
 
 ## Setup local
 
-Pré-requisitos: Node >= 22, pnpm 10. O projeto usa **Supabase cloud** — não é necessário Docker nem Supabase local.
+Pré-requisitos: Node >= 22.12, pnpm 10. O projeto usa **Supabase cloud** — não é necessário Docker nem Supabase local.
 
 ### Passo a passo
 
