@@ -370,12 +370,13 @@ Legenda de severidade:
 
 - [x] Adicionar `tenantId` e filtro `.eq("tenant_id", tenantId)` em `updateDocumentStatus`, `findDocumentsBySha256` e `listImportStoragePaths`.
 - [x] Aplicar o mesmo filtro em `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded` e `updateImportStatus` (`imports.ts`).
-- [ ] Validar que `document_id` pertence ao tenant antes de persistir extração.
-- [ ] Centralizar a checagem em um helper `assertTenantOwnership`.
+- [x] Validar que `document_id` pertence ao tenant antes de persistir extração (via `assertDocumentOwnership`).
+- [x] Centralizar a checagem em um helper `assertDocumentOwnership`.
+- [ ] Filtrar por `tenant_id` os updates de `analysis_results`, `product_matches` e parties em `mergeImportInto`.
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** parcial — todas as funções de `documents` e `imports` do escopo agora filtram `tenant_id`; restam a validação de vínculo em `persistExtractionResult` e o helper `assertTenantOwnership`. `mergeImportInto` ainda atualiza `analysis_results`/`product_matches`/parties só por `import_id`/`id`.
+**Status (out/2026):** parcial — `persistExtractionResult` valida o vínculo via `assertDocumentOwnership`; resta filtrar `analysis_results`/`product_matches`/parties em `mergeImportInto` para atender ao critério de nenhuma query administrativa sem tenant.
 
 ---
 
