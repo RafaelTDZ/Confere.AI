@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 9 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02), 4 parciais (ENV-01, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (423 testes; `documents` 91,78% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 10 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01), 3 parciais (ENV-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (462 testes; `documents` 93,52% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 423 testes em 26 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 93,65% lines; `documents` 91,78% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 462 testes em 27 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 94,97% lines; `documents` 93,52% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 423 testes em 26 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks e dedupe). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 91,78% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 462 testes em 27 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe e leituras RLS). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,52% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -345,13 +345,13 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [x] Aplicar os grants de `private.*` para `authenticated` no projeto correto.
-- [ ] Migrar leituras para o client do usuário (RLS) onde possível.
-- [ ] Manter `service_role` apenas para escritas administrativas e jobs.
-- [ ] Adicionar teste de isolamento por tenant para cada função de leitura.
+- [x] Migrar leituras para o client do usuário (RLS) onde possível.
+- [x] Manter `service_role` apenas para escritas administrativas e jobs.
+- [x] Adicionar teste de isolamento por tenant para cada função de leitura.
 
 **Critério de aceite:** leituras de `imports`, `documents`, `parties` e `ncms` funcionam com o client autenticado e RLS ativo; `service_role` fica restrito ao servidor/jobs.
 
-**Status (out/2026):** grants aplicados (migration `20250731190000` no cloud). As leituras continuam via `service_role`.
+**Status (out/2026):** concluído — `getReadClient()` (JWT + RLS) é usado nas leituras de `imports`, `documents`, `extraction_results`, `parties` e `ncms`; escritas, Storage e jobs seguem com `service_role`. O teste `rls-reads.test.ts` falha se qualquer leitura usar o admin client.
 
 ---
 
@@ -763,7 +763,7 @@ Legenda de severidade:
 **Objetivo:** reduzir dependência de `service_role` e eliminar risco de vazamento.
 
 - [x] Aplicar grants de `private.*` para `authenticated`.
-- [ ] SEC-01 — Migrar leituras para o client autenticado.
+- [x] SEC-01 — Migrar leituras para o client autenticado.
 - [x] SEC-02 — Adicionar `tenant_id` em todas as funções administrativas.
 - [ ] SEC-03 — Adicionar `server-only`.
 - [ ] Adicionar testes de autorização por role (`viewer` não escreve).
@@ -816,7 +816,7 @@ Legenda de severidade:
 
 ## 10. Decisões pendentes
 
-Estas decisões precisam ser tomadas antes de algumas correções. Duas já foram tomadas em out/2026: a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi reiniciada com Vitest (item 5).
+Estas decisões precisam ser tomadas antes de algumas correções. Três já foram tomadas em out/2026: leituras via RLS (item 3), a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi reiniciada com Vitest (item 5).
 
 1. **Invoice/BL são 1:1 por tenant?**
    - Se sim: índices únicos parciais.
@@ -824,7 +824,7 @@ Estas decisões precisam ser tomadas antes de algumas correções. Duas já fora
 2. **Qual infraestrutura de fila usar?**
    - pg-boss (Postgres), Inngest, QStash ou worker próprio.
 3. **Leituras devem voltar para RLS ou continuar via service role?**
-   - Recomendação: RLS para leitura; service role apenas para jobs/escritas administrativas.
+   - **Decidido (out/2026):** leituras via RLS com `getReadClient()`; `service_role` fica restrito a escritas administrativas, Storage e jobs.
 4. **O deploy continuará na raiz ou passará para `apps/web`?**
    - **Decidido (out/2026):** continua na raiz — `next`/`typescript` são necessários para o preview do v0. Configurar `Root Directory = apps/web` na Vercel fica opcional.
 5. **Qual o nível mínimo de cobertura de testes aceitável?**
@@ -880,7 +880,7 @@ Considerar a correção concluída quando:
 - [x] Todos os project refs apontam para `pavxbcsolcvekwslhzmf` e o MCP está alinhado.
 - [x] Existe uma suíte real de testes e o CI falha sem testes.
 - [ ] Upload de PDF não bloqueia por mais de poucos segundos; reenvio não gera custo de IA.
-- [ ] Leituras usam RLS (ou têm filtro de tenant explícito e testado).
+- [x] Leituras usam RLS (ou têm filtro de tenant explícito e testado).
 - [ ] Merge/delete/pipeline são atômicos ou idempotentes.
 - [ ] `database.types.ts` é gerado e usado.
 - [x] README/AGENTS/PLAN refletem o estado real.

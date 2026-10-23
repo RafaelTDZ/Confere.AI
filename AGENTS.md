@@ -51,7 +51,7 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
 - Análise de documento: `POST /api/ai/analyze` (multipart `file`).
   - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
-  - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**.
+  - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**. Leituras de domínio via **RLS** (`getReadClient`).
 - Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
 - Config global de IA (só allowlist `ADMIN_EMAILS` — todo signup vira owner do próprio
   tenant, então role sozinha não restringe): página `/configuracoes` + `GET/PUT/DELETE /api/settings/ai`
@@ -105,16 +105,16 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | Dropzone → `/api/ai/analyze` (Storage + classify + extract Invoice persistido) |
-| Página `/importacoes` | Lista `imports` do tenant (admin + tenant_id do JWT) |
-| Página `/empresas` | Lista as parties do tenant; edição em `/empresas/[id]` |
-| Página `/ncm` | Lista/cria/edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
+| Página `/importacoes` | Lista `imports` do tenant (RLS com o client autenticado) |
+| Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
+| Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
 | Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
 | Classificação + extração | `/api/ai/analyze`; Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Nenhum — script `test` e etapa do CI removidos; sem suíte no `apps/web` |
+| Testes automatizados | Vitest 5.0.5 — 462 testes; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 

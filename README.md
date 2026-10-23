@@ -159,10 +159,11 @@ O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são apl
 
 ## Banco de dados
 
-Schema multi-tenant com RLS em todas as tabelas. Tabelas de domínio já existem nas migrations, mas a UI ainda não as utiliza:
+Schema multi-tenant com RLS em todas as tabelas. O app usa:
 
 - **Auth/tenant**: `tenants`, `tenant_members`, `tenant_settings`
-- **Domínio** (futuro): `products`, `imports`, `documents`, `extraction_results`, `analysis_results`, `product_matches`
+- **Domínio**: `imports`, `documents`, `extraction_results`, `parties`, `ncms` (leitura via RLS; escritas administrativas via service role)
+- **Produto (futuro)**: `products`, `analysis_results`, `product_matches`
 - **Auditoria**: `audit_logs`, `ai_logs` (tokens, `cost_usd`, `reasoning_tokens` e `import_id` por chamada de IA — para relatórios futuros)
 
 Ver `PLAN.md` para o roadmap completo.

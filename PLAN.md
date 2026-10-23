@@ -35,7 +35,7 @@ divergências entre documentos.
   - Cards "Como funciona" e "Documentos necessários"
   - Barra de progresso de documentos recebidos (atualizada pelos tipos classificados)
 - [x] **Página `/importacoes`**
-  - Lista `imports` do tenant (service role + `tenant_id` do JWT; grants RLS `private.*` ainda recomendados para selects autenticados)
+  - Lista `imports` do tenant com RLS (`getReadClient`); `service_role` só em escritas/jobs
 - [x] **Página `/produtos`**
   - Placeholder (CRUD ainda não implementado)
 - [x] **Migrations** — schema completo do domínio já criado no banco
