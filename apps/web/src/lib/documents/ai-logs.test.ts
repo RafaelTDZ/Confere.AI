@@ -2,14 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   attachAiLogsToImport,
+  getMonthlyTokenUsage,
   persistAiLog,
 } from "@/lib/documents/ai-logs";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  admin: undefined as unknown,
+  readClient: undefined as unknown,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => mocks.admin,
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 let admin: FakeSupabase;
@@ -20,8 +28,21 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+function createReadClient(result: {
+  data: Array<{ tokens_in: number | null; tokens_out: number | null }> | null;
+  error: { message: string } | null;
+}) {
+  const gte = vi.fn().mockResolvedValue(result);
+  const eq = vi.fn().mockReturnValue({ gte });
+  const select = vi.fn().mockReturnValue({ eq });
+  const from = vi.fn().mockReturnValue({ select });
+
+  return { from, select, eq, gte };
+}
 
 function baseParams() {
   return {
@@ -125,6 +146,71 @@ describe("persistAiLog", () => {
     };
 
     await expect(persistAiLog(baseParams())).resolves.toBeNull();
+  });
+});
+
+describe("getMonthlyTokenUsage", () => {
+  it("soma tokens de entrada e saída do tenant no mês atual UTC", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T12:00:00.000Z"));
+    const readClient = createReadClient({
+      data: [
+        { tokens_in: 120, tokens_out: 40 },
+        { tokens_in: 10, tokens_out: 5 },
+      ],
+      error: null,
+    });
+    mocks.readClient = readClient;
+
+    await expect(getMonthlyTokenUsage("tenant-a")).resolves.toBe(175);
+
+    expect(readClient.from).toHaveBeenCalledWith("ai_logs");
+    expect(readClient.select).toHaveBeenCalledWith("tokens_in, tokens_out");
+    expect(readClient.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(readClient.gte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-10-01T00:00:00.000Z",
+    );
+  });
+
+  it("trata tokens nulos como zero", async () => {
+    mocks.readClient = createReadClient({
+      data: [
+        { tokens_in: null, tokens_out: 20 },
+        { tokens_in: 5, tokens_out: null },
+      ],
+      error: null,
+    });
+
+    await expect(getMonthlyTokenUsage("tenant-a")).resolves.toBe(25);
+  });
+
+  it("retorna 0 quando não há logs no mês", async () => {
+    mocks.readClient = createReadClient({ data: null, error: null });
+
+    await expect(getMonthlyTokenUsage("tenant-a")).resolves.toBe(0);
+  });
+
+  it("propaga o erro quando a consulta falha", async () => {
+    mocks.readClient = createReadClient({
+      data: null,
+      error: { message: "consulta recusada" },
+    });
+
+    await expect(getMonthlyTokenUsage("tenant-a")).rejects.toThrow(
+      "consulta recusada",
+    );
+  });
+
+  it("usa a mensagem padrão quando o erro vem sem texto", async () => {
+    mocks.readClient = createReadClient({
+      data: null,
+      error: { message: "" },
+    });
+
+    await expect(getMonthlyTokenUsage("tenant-a")).rejects.toThrow(
+      "Falha ao calcular uso mensal de IA",
+    );
   });
 });
 

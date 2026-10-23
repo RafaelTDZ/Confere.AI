@@ -4,6 +4,9 @@ import {
   consumeRateLimit,
   getAnalyzeRateLimit,
   getAnalyzeRateWindowSeconds,
+  getCheckEmailRateLimit,
+  getCheckEmailRateWindowSeconds,
+  getMonthlyTokenQuota,
 } from "@/lib/security/rate-limit";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -15,6 +18,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 const ENV_KEYS = [
   "AI_ANALYZE_RATE_LIMIT",
   "AI_ANALYZE_RATE_WINDOW_SECONDS",
+  "CHECK_EMAIL_RATE_LIMIT",
+  "CHECK_EMAIL_RATE_WINDOW_SECONDS",
+  "AI_MONTHLY_TOKEN_QUOTA",
 ] as const;
 
 let envBackup: Record<string, string | undefined>;
@@ -236,6 +242,69 @@ describe("getAnalyzeRateWindowSeconds", () => {
       process.env.AI_ANALYZE_RATE_WINDOW_SECONDS = value;
 
       expect(getAnalyzeRateWindowSeconds()).toBe(3600);
+    },
+  );
+});
+
+describe("getCheckEmailRateLimit", () => {
+  it("usa 10 como default quando a variável não está definida", () => {
+    expect(getCheckEmailRateLimit()).toBe(10);
+  });
+
+  it("usa o valor do env quando é um inteiro positivo", () => {
+    process.env.CHECK_EMAIL_RATE_LIMIT = " 5 ";
+
+    expect(getCheckEmailRateLimit()).toBe(5);
+  });
+
+  it.each(["0", "-1", "abc", "2.5", ""])(
+    "usa o default quando o valor é inválido (%s)",
+    (value) => {
+      process.env.CHECK_EMAIL_RATE_LIMIT = value;
+
+      expect(getCheckEmailRateLimit()).toBe(10);
+    },
+  );
+});
+
+describe("getCheckEmailRateWindowSeconds", () => {
+  it("usa 60 como default quando a variável não está definida", () => {
+    expect(getCheckEmailRateWindowSeconds()).toBe(60);
+  });
+
+  it("usa o valor do env quando é um inteiro positivo", () => {
+    process.env.CHECK_EMAIL_RATE_WINDOW_SECONDS = "120";
+
+    expect(getCheckEmailRateWindowSeconds()).toBe(120);
+  });
+
+  it.each(["0", "-60", "um minuto", "0.5", ""])(
+    "usa o default quando o valor é inválido (%s)",
+    (value) => {
+      process.env.CHECK_EMAIL_RATE_WINDOW_SECONDS = value;
+
+      expect(getCheckEmailRateWindowSeconds()).toBe(60);
+    },
+  );
+});
+
+describe("getMonthlyTokenQuota", () => {
+  it("usa 10_000_000 como default quando a variável não está definida", () => {
+    expect(getMonthlyTokenQuota()).toBe(10_000_000);
+  });
+
+  it("usa o valor do env quando é um inteiro positivo", () => {
+    process.env.AI_MONTHLY_TOKEN_QUOTA = "2500000";
+
+    expect(getMonthlyTokenQuota()).toBe(2_500_000);
+  });
+
+  it.each(["0", "-100", "muitos", "10.5", ""])(
+    "usa o default quando o valor é inválido (%s)",
+    (value) => {
+      process.env.AI_MONTHLY_TOKEN_QUOTA = value;
+
+      expect(getMonthlyTokenQuota()).toBe(10_000_000);
     },
   );
 });

@@ -9,6 +9,9 @@ export type RateLimitResult = {
 
 const DEFAULT_ANALYZE_RATE_LIMIT = 30;
 const DEFAULT_ANALYZE_RATE_WINDOW_SECONDS = 3600;
+const DEFAULT_CHECK_EMAIL_RATE_LIMIT = 10;
+const DEFAULT_CHECK_EMAIL_RATE_WINDOW_SECONDS = 60;
+const DEFAULT_MONTHLY_TOKEN_QUOTA = 10_000_000;
 
 /** Lê um inteiro positivo do env; qualquer valor inválido cai no default. */
 function readPositiveInt(
@@ -36,6 +39,30 @@ export function getAnalyzeRateWindowSeconds(): number {
   return readPositiveInt(
     process.env.AI_ANALYZE_RATE_WINDOW_SECONDS,
     DEFAULT_ANALYZE_RATE_WINDOW_SECONDS,
+  );
+}
+
+/** Limite de verificações de email por IP na janela configurada. */
+export function getCheckEmailRateLimit(): number {
+  return readPositiveInt(
+    process.env.CHECK_EMAIL_RATE_LIMIT,
+    DEFAULT_CHECK_EMAIL_RATE_LIMIT,
+  );
+}
+
+/** Duração da janela do rate limit de verificação de email, em segundos. */
+export function getCheckEmailRateWindowSeconds(): number {
+  return readPositiveInt(
+    process.env.CHECK_EMAIL_RATE_WINDOW_SECONDS,
+    DEFAULT_CHECK_EMAIL_RATE_WINDOW_SECONDS,
+  );
+}
+
+/** Quota mensal de tokens de IA por tenant. */
+export function getMonthlyTokenQuota(): number {
+  return readPositiveInt(
+    process.env.AI_MONTHLY_TOKEN_QUOTA,
+    DEFAULT_MONTHLY_TOKEN_QUOTA,
   );
 }
 

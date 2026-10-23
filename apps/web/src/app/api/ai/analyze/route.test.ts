@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => ({
   getAuthContext: vi.fn(),
   runAnalyzePipeline: vi.fn(),
   persistAiLog: vi.fn(),
+  getMonthlyTokenUsage: vi.fn(),
   consumeRateLimit: vi.fn(),
   getAnalyzeRateLimit: vi.fn(),
   getAnalyzeRateWindowSeconds: vi.fn(),
+  getMonthlyTokenQuota: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -60,6 +62,7 @@ vi.mock("@/lib/documents", () => {
   return {
     ImportNotFoundError,
     ImportValidationError,
+    getMonthlyTokenUsage: mocks.getMonthlyTokenUsage,
     persistAiLog: mocks.persistAiLog,
     runAnalyzePipeline: mocks.runAnalyzePipeline,
   };
@@ -80,6 +83,7 @@ vi.mock("@/lib/security/rate-limit", () => ({
   consumeRateLimit: mocks.consumeRateLimit,
   getAnalyzeRateLimit: mocks.getAnalyzeRateLimit,
   getAnalyzeRateWindowSeconds: mocks.getAnalyzeRateWindowSeconds,
+  getMonthlyTokenQuota: mocks.getMonthlyTokenQuota,
 }));
 
 const TENANT_ID = "tenant-1";
@@ -156,9 +160,12 @@ beforeEach(() => {
   });
   mocks.getAnalyzeRateLimit.mockReturnValue(30);
   mocks.getAnalyzeRateWindowSeconds.mockReturnValue(3600);
+  mocks.getMonthlyTokenUsage.mockResolvedValue(0);
+  mocks.getMonthlyTokenQuota.mockReturnValue(10_000_000);
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -227,6 +234,54 @@ describe("POST /api/ai/analyze", () => {
       "[api/ai/analyze] rate limit indisponível",
       failure,
     );
+    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+  });
+
+  it("retorna 429 com Retry-After quando a quota mensal é atingida", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T12:00:00.000Z"));
+    mocks.getMonthlyTokenUsage.mockResolvedValue(10_000_000);
+    mocks.getMonthlyTokenQuota.mockReturnValue(10_000_000);
+
+    const response = await POST(makeRequest());
+    const { status, body, headers } = await readJson(response);
+
+    expect(status).toBe(429);
+    expect(body).toEqual({
+      error: "Quota mensal de IA atingida. Tente novamente no próximo mês.",
+    });
+    expect(headers.get("Retry-After")).toBe("734400");
+    expect(mocks.getMonthlyTokenUsage).toHaveBeenCalledWith(TENANT_ID);
+    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.consumeRateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("segue o fluxo quando o cálculo de quota lança erro (fail-open)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const failure = new Error("ai_logs indisponível");
+    mocks.getMonthlyTokenUsage.mockRejectedValue(failure);
+
+    const { status, body } = await readJson(await POST(makeRequest()));
+
+    expect(status).toBe(200);
+    expect(body).toEqual(PIPELINE_RESULT);
+    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[api/ai/analyze] quota indisponível",
+      failure,
+    );
+  });
+
+  it("retorna 200 quando o uso está abaixo da quota", async () => {
+    mocks.getMonthlyTokenUsage.mockResolvedValue(999);
+    mocks.getMonthlyTokenQuota.mockReturnValue(1000);
+
+    const { status, body } = await readJson(await POST(makeRequest()));
+
+    expect(status).toBe(200);
+    expect(body).toEqual(PIPELINE_RESULT);
     expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
   });
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { AiConfigError } from "@/lib/ai";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
+  getMonthlyTokenUsage,
   ImportNotFoundError,
   ImportValidationError,
   persistAiLog,
@@ -11,6 +12,7 @@ import {
   consumeRateLimit,
   getAnalyzeRateLimit,
   getAnalyzeRateWindowSeconds,
+  getMonthlyTokenQuota,
 } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
@@ -18,6 +20,16 @@ export const maxDuration = 120;
 
 const IMPORT_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Segundos até a virada do mês seguinte em UTC (quando a quota reinicia). */
+function getSecondsUntilNextMonthUtc(now = new Date()): number {
+  const nextMonthMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth() + 1,
+    1,
+  );
+  return Math.max(0, Math.ceil((nextMonthMs - now.getTime()) / 1000));
+}
 
 function parseOptionalImportId(
   value: FormDataEntryValue | null,
@@ -69,6 +81,29 @@ export async function POST(request: Request) {
     } catch (error) {
       // Fail-open: indisponibilidade do rate limiter não bloqueia a análise.
       console.error("[api/ai/analyze] rate limit indisponível", error);
+    }
+
+    try {
+      const usage = await getMonthlyTokenUsage(auth.tenantId);
+      const quota = getMonthlyTokenQuota();
+
+      if (usage >= quota) {
+        return NextResponse.json(
+          {
+            error:
+              "Quota mensal de IA atingida. Tente novamente no próximo mês.",
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(getSecondsUntilNextMonthUtc()),
+            },
+          },
+        );
+      }
+    } catch (error) {
+      // Fail-open: falha ao calcular o uso não bloqueia a análise.
+      console.error("[api/ai/analyze] quota indisponível", error);
     }
 
     const form = await request.formData();

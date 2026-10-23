@@ -1,4 +1,10 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
+
+type AiLogTokenRow = {
+  tokens_in: number | null;
+  tokens_out: number | null;
+};
 
 export async function persistAiLog(params: {
   tenantId: string;
@@ -43,6 +49,36 @@ export async function persistAiLog(params: {
     console.error("[ai_logs] falha ao persistir:", err);
     return null;
   }
+}
+
+/**
+ * Soma os tokens (entrada + saída) consumidos pelo tenant no mês corrente UTC.
+ * Leitura via RLS: a policy de `ai_logs` restringe ao tenant do usuário.
+ */
+export async function getMonthlyTokenUsage(
+  tenantId: string,
+): Promise<number> {
+  const now = new Date();
+  const startOfMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
+    .from("ai_logs")
+    .select("tokens_in, tokens_out")
+    .eq("tenant_id", tenantId)
+    .gte("created_at", startOfMonth);
+
+  if (error) {
+    throw new Error(error.message || "Falha ao calcular uso mensal de IA");
+  }
+
+  const rows = (data ?? []) as AiLogTokenRow[];
+  return rows.reduce(
+    (total, row) => total + (row.tokens_in ?? 0) + (row.tokens_out ?? 0),
+    0,
+  );
 }
 
 export async function attachAiLogsToImport(params: {
