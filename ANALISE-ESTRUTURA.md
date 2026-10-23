@@ -8,7 +8,7 @@
 > **Método:** leitura do código, `typecheck`, `lint`, `build`, `test`, health check read-only no Supabase e inspeção do schema via REST.
 > **Nenhum arquivo de código foi alterado durante a análise.** Este documento é o único artefato criado.
 >
-> **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. As referências ao ref antigo abaixo permanecem como registro histórico.
+> **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 
 ---
 
@@ -36,7 +36,7 @@ Há **três referências de projeto Supabase** em jogo:
 | `.env` local (gitignored) | `pavxbcsolcvekwslhzmf` | **Ativo** — Auth responde 200 e o schema do Confere.ia existe |
 | MCP Supabase ativo nesta sessão | `bsczvemaqvladupmdpgl` | **Outro projeto** — migrations de `excel_imports`, sem relação com este app |
 
-O `.cursor/mcp.json` do repositório aponta para `pavxbcsolcvekwslhzmf`, então a divergência do MCP pode ser específica da configuração do ambiente de execução. De qualquer forma, **não use o MCP atual para aplicar migrations neste repositório** antes de alinhar a conexão.
+O `.cursor/mcp.json` do repositório apontava para `pavxbcsolcvekwslhzmf` (arquivo removido em 23/10/2026, pois o Cursor não é mais usado); a divergência do MCP, portanto, era específica da configuração do ambiente de execução. De qualquer forma, **não use o MCP atual para aplicar migrations neste repositório** antes de alinhar a conexão.
 
 **Impacto:** qualquer pessoa seguindo o README configura um projeto inexistente; `supabase link --project-ref xmvypuwizexdhpwrgrao` falha; ferramentas MCP podem aplicar migrations no banco errado.
 
