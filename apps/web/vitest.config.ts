@@ -17,10 +17,10 @@ export default defineConfig({
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       thresholds: {
         "src/lib/documents/**": {
-          lines: 68,
-          functions: 77,
-          statements: 68,
-          branches: 49,
+          lines: 88,
+          functions: 96,
+          statements: 88,
+          branches: 70,
         },
         "src/lib/ai/**": {
           lines: 2.65,
