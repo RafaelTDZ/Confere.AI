@@ -369,13 +369,13 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [x] Adicionar `tenantId` e filtro `.eq("tenant_id", tenantId)` em `updateDocumentStatus`, `findDocumentsBySha256` e `listImportStoragePaths`.
-- [ ] Aplicar o mesmo filtro em `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded` e `updateImportStatus` (`imports.ts`).
+- [x] Aplicar o mesmo filtro em `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded` e `updateImportStatus` (`imports.ts`).
 - [ ] Validar que `document_id` pertence ao tenant antes de persistir extração.
 - [ ] Centralizar a checagem em um helper `assertTenantOwnership`.
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** parcial — as três funções de `documents` agora recebem `tenantId` e filtram `tenant_id`; `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded`, `updateImportStatus`, `nextDocumentVersions` e `moveDocumentsToImport` ainda operam só por `importId`/`id`, e o helper `assertTenantOwnership` segue pendente.
+**Status (out/2026):** parcial — as três funções de `documents` e as três de `imports` agora recebem `tenantId` e filtram `tenant_id`; `nextDocumentVersions`, `moveDocumentsToImport` e a validação de vínculo em `persistExtractionResult` seguem pendentes, assim como o helper `assertTenantOwnership`.
 
 ---
 
