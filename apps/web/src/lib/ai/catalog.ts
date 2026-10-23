@@ -1,6 +1,7 @@
 import type { AiProviderId } from "@/lib/ai/provider";
-import { DEFAULT_FIREWORKS_MODEL } from "@/lib/ai/providers/fireworks-config";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
+
+export const MUSE_SPARK_OPENROUTER_MODEL = "meta/muse-spark-1.3";
 
 export type ModelPreset = {
   id: string;
@@ -26,23 +27,10 @@ export const AI_PROVIDER_CATALOG: ProviderInfo[] = [
         label: "GPT Luna Latest",
         hint: "Padrão do servidor",
       },
-    ],
-  },
-  {
-    id: "fireworks",
-    name: "Fireworks",
-    description:
-      "Inferência serverless. GLM-5.3-Flash é multimodal (imagens, sem PDF direto).",
-    models: [
       {
-        id: DEFAULT_FIREWORKS_MODEL,
-        label: "GLM-5.3-Flash",
-        hint: "Padrão · multimodal · thinking nativo",
-      },
-      {
-        id: "accounts/fireworks/models/glm-5p3",
-        label: "GLM-5.3",
-        hint: "Maior · texto (sem imagem)",
+        id: MUSE_SPARK_OPENROUTER_MODEL,
+        label: "Muse Spark 1.3",
+        hint: "Multimodal · reasoning nativo",
       },
     ],
   },

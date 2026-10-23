@@ -13,13 +13,6 @@ export {
   type OpenRouterReasoningEffort,
 } from "@/lib/ai/providers/openrouter-model";
 export {
-  createFireworksClient,
-  getFireworksApiKey,
-  getFireworksModel,
-  FireworksConfigError,
-  DEFAULT_FIREWORKS_MODEL,
-} from "@/lib/ai/providers/fireworks";
-export {
   getAiProvider,
   getAiModelId,
   getDefaultLanguageModel,

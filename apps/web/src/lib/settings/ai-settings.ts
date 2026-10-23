@@ -14,7 +14,7 @@ export type { AiOverrides };
 const AI_SETTINGS_KEY = "ai";
 
 export const aiOverridesSchema = z.object({
-  provider: z.enum(["openrouter", "fireworks"]),
+  provider: z.enum(["openrouter"]),
   model: z
     .string()
     .trim()
@@ -94,8 +94,8 @@ export async function saveAiOverrides(
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const message =
-      issue?.code === "invalid_enum_value"
-        ? "Provedor inválido (use openrouter ou fireworks)"
+      issue?.code === "invalid_value"
+        ? "Provedor inválido (use openrouter)"
         : (issue?.message ?? "Configuração de IA inválida");
     throw new Error(message);
   }
@@ -138,6 +138,5 @@ export async function clearAiOverrides(): Promise<EffectiveAiConfig> {
 export function getServerKeysStatus() {
   return {
     openrouterConfigured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
-    fireworksConfigured: Boolean(process.env.FIREWORKS_API_KEY?.trim()),
   };
 }

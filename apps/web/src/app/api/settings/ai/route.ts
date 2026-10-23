@@ -72,7 +72,7 @@ export async function PUT(request: Request) {
 
     const config = await saveAiOverrides(
       {
-        provider: body.provider as "openrouter" | "fireworks",
+        provider: body.provider as "openrouter",
         model: typeof body.model === "string" ? body.model : undefined,
       },
       gate.auth.userId,
