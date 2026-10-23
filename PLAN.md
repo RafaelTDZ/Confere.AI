@@ -17,11 +17,11 @@ divergências entre documentos.
   - Login em 2 etapas (verifica email → senha)
   - Signup com nome, email e senha
   - Logout
-  - Middleware de refresh de sessão (`@supabase/ssr`)
-  - Cookie fixo `sb-confere-auth-token` (browser/server/middleware)
+  - Proxy de refresh de sessão (`proxy.ts` + `@supabase/ssr`)
+  - Cookie fixo `sb-confere-auth-token` (browser/server/proxy)
   - Proxy same-origin `/supabase` (route handler com filtro de headers hop-by-hop → Supabase cloud)
   - Chave pública: `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`; fallback `ANON_KEY` legado)
-  - check-email sem cookies de sessão; middleware limpa JWT inválido
+  - check-email sem cookies de sessão; proxy limpa JWT inválido
 - [x] **Multi-tenant**
   - Schema com RLS por `tenant_id` (claim em `app_metadata`)
   - Provisionamento automático no signup (trigger `on_auth_user_created`)
@@ -139,7 +139,7 @@ apps/web/src
   ├─ components/              → ui + auth + layout + analise
   └─ lib/                     → ai (providers/, tasks/), auth, documents, settings, supabase
 
-Next.js middleware             → refresh de sessão; limpa cookie se JWT inválido
+Next.js proxy                  → refresh de sessão; limpa cookie se JWT inválido
 
 Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`)
   ├─ Auth (GoTrue)            → JWT com app_metadata.tenant_id
@@ -153,6 +153,6 @@ OpenRouter                    → modelos ~openai/gpt-luna-latest e meta/muse-sp
 ## Referências
 
 - [`README.md`](README.md) — setup, variáveis de ambiente, rotas
-- [`AGENTS.md`](AGENTS.md) — instruções para agentes (Cursor Cloud, auth)
+- [`AGENTS.md`](AGENTS.md) — instruções para agentes (auth)
 - [`.env.example`](.env.example) — variáveis de ambiente
 - [`supabase/migrations/`](supabase/migrations/) — schema do banco

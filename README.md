@@ -115,11 +115,11 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 | `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
 | `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha no `.env` da raiz e reinicie o Next |
 | `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env` (Dashboard → API Keys) |
-| Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/middleware |
+| Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/proxy |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor). O `/api/ai/analyze` já grava via service role e não depende desse grant |
 | Migrations / RPC `email_registered` missing | Banco cloud sem o schema | `supabase link` + `supabase db push` |
 
-Detalhes para agentes (Cursor Cloud): [`AGENTS.md`](AGENTS.md).
+Detalhes para agentes: [`AGENTS.md`](AGENTS.md).
 
 Comandos úteis:
 
@@ -151,7 +151,7 @@ O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são apl
 
 - **Login em 2 etapas**: `/api/auth/check-email` chama RPC `email_registered` com client **público** (sem cookies); se o email existir, pede senha; senão redireciona para signup.
 - **Signup**: cria conta no Supabase Auth; trigger `on_auth_user_created` provisiona tenant, membro (owner) e settings automaticamente.
-- **Sessão**: cookie fixo `sb-confere-auth-token` compartilhado entre browser, server e middleware. Middleware limpa o cookie se `getUser()` falhar (JWT de outro projeto).
+- **Sessão**: cookie fixo `sb-confere-auth-token` compartilhado entre browser, server e proxy. O proxy limpa o cookie se `getUser()` falhar (JWT de outro projeto).
 - **Proxy same-origin**: o browser chama `/supabase/*` via route handler em `apps/web/src/app/supabase/[...path]/route.ts` (bufferiza o body e filtra headers hop-by-hop). Destino: `SUPABASE_INTERNAL_URL` → `NEXT_PUBLIC_SUPABASE_URL`.
 - **Publishable key**: use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). `createSupabaseFetch` evita enviá-la em `Authorization: Bearer` (não é JWT).
 - **Claims**: `tenant_id` e `tenant_role` em `app_metadata` (nunca `user_metadata`).

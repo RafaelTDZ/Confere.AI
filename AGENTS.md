@@ -1,15 +1,16 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Instruções para agentes
 
 Confere.ia é um monorepo pnpm + Turborepo (web + Supabase cloud).
-Comandos padrão (lint/typecheck/test/build/dev) estão no `README.md` e no `package.json` raiz — use-os.
+Comandos padrão (lint/typecheck/build/dev) estão no `README.md` e no `package.json` raiz — use-os.
 Roadmap e estado do produto: `PLAN.md`.
+Auditoria de código morto e exports: `pnpm dlx knip` (esperado: 0 issues).
 
 ### Serviços
 
 - **Supabase cloud**: `https://pavxbcsolcvekwslhzmf.supabase.co` — fornece DB e Auth.
-- **Web** (`apps/web`, Next.js): `http://localhost:3000`. Login/signup; app com sidebar (`/analise`, `/importacoes`, `/produtos`).
+- **Web** (`apps/web`, Next.js): `http://localhost:3000`. Login/signup; app com sidebar (`/analise`, `/importacoes`, `/empresas`, `/ncm`, `/produtos`; `/configuracoes` só para admin).
 
 ### Como rodar (sem Docker)
 
@@ -89,9 +90,9 @@ preview/túnel remoto). O Next faz proxy same-origin:
   - Sem o filtro, o login na senha quebra com `Failed to fetch` (headers do Cloudflare)
 - Destino: `SUPABASE_INTERNAL_URL` (se não vazio) → `NEXT_PUBLIC_SUPABASE_URL`
 - Browser client usa `window.location.origin + "/supabase"` ([`apps/web/src/lib/supabase/client.ts`](apps/web/src/lib/supabase/client.ts))
-- Server/middleware usam `NEXT_PUBLIC_SUPABASE_URL` diretamente
-- Middleware ignora `/supabase` no matcher; limpa `sb-confere-auth-token*` se `getUser()` falhar
-- Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/middleware)
+- Server/proxy usam `NEXT_PUBLIC_SUPABASE_URL` diretamente
+- Proxy ignora `/supabase` no matcher; limpa `sb-confere-auth-token*` se `getUser()` falhar
+- Cookie de sessão com nome fixo `sb-confere-auth-token` nos três clientes (browser/server/proxy)
 - `/api/auth/check-email` usa [`createSupabasePublicClient`](apps/web/src/lib/supabase/public-client.ts) (**sem cookies**)
   — evita JWT antigo (ex.: Supabase local) contaminar a RPC `email_registered`
 - Publishable key: [`createSupabaseFetch`](apps/web/src/lib/supabase/fetch.ts) remove `Authorization: Bearer sb_publishable_...`
@@ -105,12 +106,15 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | Dropzone → `/api/ai/analyze` (Storage + classify + extract Invoice persistido) |
 | Página `/importacoes` | Lista `imports` do tenant (admin + tenant_id do JWT) |
+| Página `/empresas` | Lista as parties do tenant; edição em `/empresas/[id]` |
+| Página `/ncm` | Lista/cria/edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
+| Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
 | Página `/produtos` | Placeholder (CRUD pendente) |
-| Shell autenticado | Sidebar: Nova análise, Importações, Produtos |
+| Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
 | Classificação + extração | `/api/ai/analyze`; Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Nenhum (pacotes `domain` e `infrastructure` removidos) |
+| Testes automatizados | Nenhum — script `test` e etapa do CI removidos; sem suíte no `apps/web` |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
@@ -139,7 +143,7 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Publishable key (`sb_publishable_...`)**: não é JWT. Sem `createSupabaseFetch`, o PostgREST
   responde `PGRST301` e a UI mostra "Erro ao verificar email".
 - **Cookie JWT de outro projeto** (ex.: stack local antiga): quebra check-email/RPC com `PGRST301`.
-  check-email ignora cookies; middleware limpa auth inválida. Hard refresh / limpar
+  check-email ignora cookies; proxy limpa auth inválida. Hard refresh / limpar
   `sb-confere-auth-token*` se o browser ainda falhar.
 - **Proxy `/supabase`**: não use rewrite do `next.config` (404 no App Router). O route handler
   deve filtrar hop-by-hop — senão "Failed to fetch" no login (senha).
