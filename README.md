@@ -183,7 +183,7 @@ OPENROUTER_MODEL=~openai/gpt-luna-latest
 
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.
 
-> Preferível a médio prazo: Root Directory = `apps/web` no dashboard (padrão Turborepo) e remover `next` da raiz.
+> Root Directory = `apps/web` no dashboard (padrão Turborepo) segue opcional; `next` e `typescript` permanecem na raiz por causa do preview do v0.
 
 ## Segurança
 
