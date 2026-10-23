@@ -83,6 +83,7 @@ const PIPELINE_RESULT = {
   pendingParties: [],
   model: "model-x",
   latencyMs: 42,
+  deduped: false,
 };
 
 function makeRequest(options: { file?: boolean; importId?: string } = {}) {

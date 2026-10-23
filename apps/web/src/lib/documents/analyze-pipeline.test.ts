@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   getAiOverrides: vi.fn(),
   persistAiLog: vi.fn(),
   findDocumentsBySha256: vi.fn(),
+  findTenantDocumentsBySha256: vi.fn(),
   insertDocuments: vi.fn(),
   updateDocumentStatus: vi.fn(),
   findOrCreateImport: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   getImportDetail: vi.fn(),
   updateImportStatus: vi.fn(),
   persistExtractionResult: vi.fn(),
+  findLatestExtractionsByDocumentIds: vi.fn(),
   buildUniqueStoragePath: vi.fn(),
   uploadImportFile: vi.fn(),
   resolveInvoiceParties: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock("@/lib/documents/ai-logs", () => ({
 
 vi.mock("@/lib/documents/documents", () => ({
   findDocumentsBySha256: mocks.findDocumentsBySha256,
+  findTenantDocumentsBySha256: mocks.findTenantDocumentsBySha256,
   insertDocuments: mocks.insertDocuments,
   updateDocumentStatus: mocks.updateDocumentStatus,
 }));
@@ -82,6 +85,7 @@ vi.mock("@/lib/documents/imports", () => ({
 
 vi.mock("@/lib/documents/extractions", () => ({
   persistExtractionResult: mocks.persistExtractionResult,
+  findLatestExtractionsByDocumentIds: mocks.findLatestExtractionsByDocumentIds,
 }));
 
 vi.mock("@/lib/documents/storage", () => ({
@@ -190,6 +194,93 @@ function makeExtractionResult(
   };
 }
 
+type TenantDocumentByShaFixture = {
+  id: string;
+  docType: DocumentType;
+  importId: string;
+  storagePath: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  status: string;
+  version: number;
+  createdAt: string;
+};
+
+function makeTenantDoc(
+  overrides: Partial<TenantDocumentByShaFixture> &
+    Pick<TenantDocumentByShaFixture, "id" | "docType">,
+): TenantDocumentByShaFixture {
+  return {
+    importId: "import-old",
+    storagePath: "tenant-a/import-old/invoice.pdf",
+    filename: "invoice.pdf",
+    mediaType: "application/pdf",
+    sizeBytes: FILE_BYTES.byteLength,
+    status: "extracted",
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+type LatestExtractionFixture = {
+  id: string;
+  documentId: string;
+  model: string;
+  payload: unknown;
+  tokensUsed: number | null;
+  createdAt: string;
+};
+
+function makeLatestExtraction(
+  overrides: Partial<LatestExtractionFixture> &
+    Pick<LatestExtractionFixture, "id" | "documentId" | "payload">,
+): LatestExtractionFixture {
+  return {
+    model: "cache-model",
+    tokensUsed: 28,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeReuseExtractions(
+  invoice: InvoiceExtraction,
+  packingList: PackingListExtraction,
+  bl: BlExtraction,
+) {
+  return new Map([
+    [
+      "old-invoice",
+      makeLatestExtraction({
+        id: "old-extraction-invoice",
+        documentId: "old-invoice",
+        model: "invoice-model",
+        payload: invoice,
+      }),
+    ],
+    [
+      "old-pl",
+      makeLatestExtraction({
+        id: "old-extraction-pl",
+        documentId: "old-pl",
+        model: "packing-list-model",
+        payload: packingList,
+      }),
+    ],
+    [
+      "old-bl",
+      makeLatestExtraction({
+        id: "old-extraction-bl",
+        documentId: "old-bl",
+        model: "bl-model",
+        payload: bl,
+      }),
+    ],
+  ]);
+}
+
 function logEntries(): AiLogEntry[] {
   return mocks.persistAiLog.mock.calls.map((call) => call[0] as AiLogEntry);
 }
@@ -245,6 +336,8 @@ function setDefaultMocks() {
     created: true,
   });
   mocks.findDocumentsBySha256.mockResolvedValue([]);
+  mocks.findTenantDocumentsBySha256.mockResolvedValue([]);
+  mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(new Map());
   mocks.buildUniqueStoragePath.mockResolvedValue(
     "tenant-a/import-1/invoice.pdf",
   );
@@ -296,9 +389,14 @@ describe("runAnalyzePipeline", () => {
       invoice,
       extractionResultId: "extraction-1",
       model: "classify-model",
+      deduped: false,
     });
     expect(result.latencyMs).toEqual(expect.any(Number));
 
+    expect(mocks.findTenantDocumentsBySha256).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      sha256: FILE_DIGEST,
+    });
     expect(mocks.findOrCreateImport).toHaveBeenCalledTimes(1);
     expect(mocks.findOrCreateImport).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
@@ -414,6 +512,7 @@ describe("runAnalyzePipeline", () => {
     ]);
     expect(result.invoice).toBe(invoice);
     expect(result.extractionResultId).toBe("extraction-1");
+    expect(result.deduped).toBe(false);
 
     expect(mocks.extractInvoice).toHaveBeenCalledTimes(1);
     expect(mocks.extractPackingList).toHaveBeenCalledTimes(1);
@@ -479,6 +578,7 @@ describe("runAnalyzePipeline", () => {
       { id: "existing-doc", docType: "invoice" },
     ]);
     expect(result.extractionResultId).toBeNull();
+    expect(result.deduped).toBe(false);
 
     expect(mocks.buildUniqueStoragePath).not.toHaveBeenCalled();
     expect(mocks.uploadImportFile).not.toHaveBeenCalled();
@@ -500,13 +600,422 @@ describe("runAnalyzePipeline", () => {
       status: "awaiting_review",
     });
 
-    // Comportamento atual: a IA roda antes da checagem de dedupe.
+    // Fallback de corrida: a IA roda e o dedupe por import evita duplicar
+    // storage/persistência quando o documento apareceu durante a análise.
     expect(mocks.classifyDocument).toHaveBeenCalledTimes(1);
     expect(mocks.extractInvoice).toHaveBeenCalledTimes(1);
     expect(logSummary()).toEqual([
       "classify:success",
       "extract_invoice:success",
     ]);
+  });
+
+  it("reaproveita upload completo de outra importação sem chamar IA", async () => {
+    const invoice = makeInvoice();
+    const packingList = makePackingList();
+    const bl = makeBl();
+    const invoicePending: PendingParty[] = [
+      {
+        roles: ["consignee"],
+        name: "Importador",
+        cnpj: null,
+        address: emptyAddress(),
+      },
+    ];
+    const blPending: PendingParty[] = [
+      {
+        roles: ["notify"],
+        name: "Notify",
+        cnpj: null,
+        address: emptyAddress(),
+      },
+    ];
+
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({ id: "old-invoice", docType: "invoice" }),
+      makeTenantDoc({ id: "old-pl", docType: "packing_list" }),
+      makeTenantDoc({ id: "old-bl", docType: "bill_of_lading" }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      makeReuseExtractions(invoice, packingList, bl),
+    );
+    mocks.resolveInvoiceParties.mockResolvedValue(invoicePending);
+    mocks.resolveBlParties.mockResolvedValue(blPending);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result).toMatchObject({
+      importId: "import-old",
+      types: ["invoice", "packing_list", "bill_of_lading"],
+      documents: [
+        { id: "old-invoice", docType: "invoice" },
+        { id: "old-pl", docType: "packing_list" },
+        { id: "old-bl", docType: "bill_of_lading" },
+      ],
+      invoice,
+      extractionResultId: "old-extraction-invoice",
+      pendingParties: [...invoicePending, ...blPending],
+      model: "invoice-model",
+      deduped: true,
+    });
+    expect(result.latencyMs).toEqual(expect.any(Number));
+
+    expect(mocks.findTenantDocumentsBySha256).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      sha256: FILE_DIGEST,
+    });
+    expect(mocks.findLatestExtractionsByDocumentIds).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      documentIds: ["old-invoice", "old-pl", "old-bl"],
+    });
+
+    expect(mocks.getAiOverrides).not.toHaveBeenCalled();
+    expect(mocks.getAiModelId).not.toHaveBeenCalled();
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(mocks.extractInvoice).not.toHaveBeenCalled();
+    expect(mocks.extractPackingList).not.toHaveBeenCalled();
+    expect(mocks.extractBl).not.toHaveBeenCalled();
+    expect(mocks.persistAiLog).not.toHaveBeenCalled();
+    expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
+    expect(mocks.getImportDetail).not.toHaveBeenCalled();
+    expect(mocks.buildUniqueStoragePath).not.toHaveBeenCalled();
+    expect(mocks.uploadImportFile).not.toHaveBeenCalled();
+    expect(mocks.insertDocuments).not.toHaveBeenCalled();
+    expect(mocks.persistExtractionResult).not.toHaveBeenCalled();
+    expect(mocks.updateDocumentStatus).not.toHaveBeenCalled();
+    expect(mocks.updateImportStatus).not.toHaveBeenCalled();
+
+    expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-old",
+      invoice,
+    });
+    expect(mocks.resolveBlParties).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-old",
+      bl,
+    });
+  });
+
+  it("reaproveita documentos quando o upload já pertence à importação informada", async () => {
+    const invoice = makeInvoice();
+
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({
+        id: "old-invoice",
+        docType: "invoice",
+        importId: "import-existing",
+      }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      new Map([
+        [
+          "old-invoice",
+          makeLatestExtraction({
+            id: "old-extraction-invoice",
+            documentId: "old-invoice",
+            model: "invoice-model",
+            payload: invoice,
+          }),
+        ],
+      ]),
+    );
+
+    const result = await runAnalyzePipeline({
+      ...baseParams(),
+      importId: "import-existing",
+    });
+
+    expect(result).toMatchObject({
+      importId: "import-existing",
+      types: ["invoice"],
+      documents: [{ id: "old-invoice", docType: "invoice" }],
+      invoice,
+      extractionResultId: "old-extraction-invoice",
+      model: "invoice-model",
+      deduped: true,
+    });
+
+    expect(mocks.getImportDetail).toHaveBeenCalledWith(
+      TENANT_ID,
+      "import-existing",
+    );
+    expect(mocks.buildUniqueStoragePath).not.toHaveBeenCalled();
+    expect(mocks.uploadImportFile).not.toHaveBeenCalled();
+    expect(mocks.insertDocuments).not.toHaveBeenCalled();
+    expect(mocks.persistExtractionResult).not.toHaveBeenCalled();
+    expect(mocks.updateDocumentStatus).not.toHaveBeenCalled();
+    expect(mocks.updateImportStatus).not.toHaveBeenCalled();
+    expect(mocks.findDocumentsBySha256).not.toHaveBeenCalled();
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(mocks.extractInvoice).not.toHaveBeenCalled();
+
+    expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-existing",
+      invoice,
+    });
+    expect(mocks.resolveBlParties).not.toHaveBeenCalled();
+  });
+
+  it("copia documentos e extrações para outro import sem chamar IA", async () => {
+    const invoice = makeInvoice();
+    const packingList = makePackingList();
+    const bl = makeBl();
+    const newDocs = [
+      { id: "new-invoice", docType: "invoice" as DocumentType },
+      { id: "new-pl", docType: "packing_list" as DocumentType },
+      { id: "new-bl", docType: "bill_of_lading" as DocumentType },
+    ];
+
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({ id: "old-invoice", docType: "invoice" }),
+      makeTenantDoc({ id: "old-pl", docType: "packing_list" }),
+      makeTenantDoc({ id: "old-bl", docType: "bill_of_lading" }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      makeReuseExtractions(invoice, packingList, bl),
+    );
+    mocks.buildUniqueStoragePath.mockResolvedValue(
+      "tenant-a/import-new/invoice.pdf",
+    );
+    mocks.insertDocuments.mockResolvedValue(newDocs);
+    mocks.persistExtractionResult
+      .mockResolvedValueOnce("new-extraction-invoice")
+      .mockResolvedValueOnce("new-extraction-pl")
+      .mockResolvedValueOnce("new-extraction-bl");
+
+    const result = await runAnalyzePipeline({
+      ...baseParams(),
+      importId: "import-new",
+    });
+
+    expect(result).toMatchObject({
+      importId: "import-new",
+      types: ["invoice", "packing_list", "bill_of_lading"],
+      documents: newDocs,
+      invoice,
+      extractionResultId: "new-extraction-invoice",
+      model: "invoice-model",
+      deduped: true,
+    });
+
+    expect(mocks.getImportDetail).toHaveBeenCalledWith(TENANT_ID, "import-new");
+    expect(mocks.buildUniqueStoragePath).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+      filename: "invoice.pdf",
+      digest: FILE_DIGEST,
+    });
+    expect(mocks.uploadImportFile).toHaveBeenCalledWith({
+      storagePath: "tenant-a/import-new/invoice.pdf",
+      bytes: expect.any(Uint8Array),
+      mediaType: "application/pdf",
+    });
+    expect(mocks.insertDocuments).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+      types: ["invoice", "packing_list", "bill_of_lading"],
+      storagePath: "tenant-a/import-new/invoice.pdf",
+      sha256: FILE_DIGEST,
+      filename: "invoice.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: FILE_BYTES.byteLength,
+    });
+
+    expect(mocks.persistExtractionResult).toHaveBeenNthCalledWith(1, {
+      tenantId: TENANT_ID,
+      documentId: "new-invoice",
+      model: "invoice-model",
+      payload: invoice,
+      tokensUsed: 28,
+    });
+    expect(mocks.persistExtractionResult).toHaveBeenNthCalledWith(2, {
+      tenantId: TENANT_ID,
+      documentId: "new-pl",
+      model: "packing-list-model",
+      payload: packingList,
+      tokensUsed: 28,
+    });
+    expect(mocks.persistExtractionResult).toHaveBeenNthCalledWith(3, {
+      tenantId: TENANT_ID,
+      documentId: "new-bl",
+      model: "bl-model",
+      payload: bl,
+      tokensUsed: 28,
+    });
+
+    expect(documentStatusUpdates()).toEqual([
+      { tenantId: TENANT_ID, documentId: "new-invoice", status: "extracted" },
+      { tenantId: TENANT_ID, documentId: "new-pl", status: "extracted" },
+      { tenantId: TENANT_ID, documentId: "new-bl", status: "extracted" },
+    ]);
+    expect(mocks.updateImportStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+      status: "awaiting_review",
+    });
+    expect(mocks.fillImportKeysIfEmpty).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+      invoiceNumber: "INV-001",
+      blNumber: "BL-001",
+      supplierName: "Exporter Ltd",
+    });
+    expect(mocks.clearAutoReferenceIfNeeded).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+    });
+
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(mocks.extractInvoice).not.toHaveBeenCalled();
+    expect(mocks.extractPackingList).not.toHaveBeenCalled();
+    expect(mocks.extractBl).not.toHaveBeenCalled();
+    expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
+    expect(mocks.findDocumentsBySha256).not.toHaveBeenCalled();
+  });
+
+  it("usa fallback de partes no reuso quando a resolução falha", async () => {
+    const invoice = makeInvoice();
+    const bl = makeBl();
+    const invoicePending: PendingParty[] = [
+      {
+        roles: ["consignee"],
+        name: "Importador",
+        cnpj: null,
+        address: emptyAddress(),
+      },
+    ];
+    const blPending: PendingParty[] = [
+      {
+        roles: ["notify"],
+        name: "Notify",
+        cnpj: null,
+        address: emptyAddress(),
+      },
+    ];
+
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({ id: "old-invoice", docType: "invoice" }),
+      makeTenantDoc({ id: "old-bl", docType: "bill_of_lading" }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      new Map([
+        [
+          "old-invoice",
+          makeLatestExtraction({
+            id: "old-extraction-invoice",
+            documentId: "old-invoice",
+            model: "invoice-model",
+            payload: invoice,
+          }),
+        ],
+        [
+          "old-bl",
+          makeLatestExtraction({
+            id: "old-extraction-bl",
+            documentId: "old-bl",
+            model: "bl-model",
+            payload: bl,
+          }),
+        ],
+      ]),
+    );
+    mocks.resolveInvoiceParties.mockRejectedValue(new Error("party falhou"));
+    mocks.resolveBlParties.mockRejectedValue(new Error("bl party falhou"));
+    mocks.pendingPartiesFromInvoice.mockReturnValue(invoicePending);
+    mocks.pendingPartiesFromBl.mockReturnValue(blPending);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.pendingParties).toEqual([...invoicePending, ...blPending]);
+    expect(result.deduped).toBe(true);
+    expect(mocks.pendingPartiesFromInvoice).toHaveBeenCalledWith(invoice);
+    expect(mocks.pendingPartiesFromBl).toHaveBeenCalledWith(bl);
+    expect(mocks.combinePendingParties).toHaveBeenCalledWith([
+      ...invoicePending,
+      ...blPending,
+    ]);
+    expect(console.error).toHaveBeenCalledTimes(2);
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+  });
+
+  it("segue para a IA quando falta extração de algum documento do upload", async () => {
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({ id: "old-invoice", docType: "invoice" }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(new Map());
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.deduped).toBe(false);
+    expect(result.importId).toBe("import-1");
+    expect(mocks.classifyDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.extractInvoice).toHaveBeenCalledTimes(1);
+    expect(mocks.findOrCreateImport).toHaveBeenCalledTimes(1);
+  });
+
+  it("segue para a IA quando o documento reutilizável não está extraído", async () => {
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({
+        id: "old-invoice",
+        docType: "invoice",
+        status: "pending",
+      }),
+    ]);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.deduped).toBe(false);
+    expect(result.importId).toBe("import-1");
+    expect(mocks.findLatestExtractionsByDocumentIds).not.toHaveBeenCalled();
+    expect(mocks.classifyDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.findOrCreateImport).toHaveBeenCalledTimes(1);
+  });
+
+  it("reaproveita upload anterior completo quando o mais recente está incompleto", async () => {
+    const invoice = makeInvoice();
+
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({
+        id: "new-invoice",
+        docType: "invoice",
+        importId: "import-new",
+        storagePath: "tenant-a/import-new/invoice.pdf",
+        status: "pending",
+      }),
+      makeTenantDoc({
+        id: "old-invoice",
+        docType: "invoice",
+        importId: "import-old",
+        storagePath: "tenant-a/import-old/invoice.pdf",
+      }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      new Map([
+        [
+          "old-invoice",
+          makeLatestExtraction({
+            id: "old-extraction-invoice",
+            documentId: "old-invoice",
+            model: "invoice-model",
+            payload: invoice,
+          }),
+        ],
+      ]),
+    );
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.deduped).toBe(true);
+    expect(result.importId).toBe("import-old");
+    expect(result.invoice).toEqual(invoice);
+    expect(mocks.findLatestExtractionsByDocumentIds).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      documentIds: ["old-invoice"],
+    });
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(mocks.extractInvoice).not.toHaveBeenCalled();
   });
 
   it("reaproveita a importação informada e não cria outra", async () => {
@@ -516,6 +1025,7 @@ describe("runAnalyzePipeline", () => {
     });
 
     expect(result.importId).toBe("import-existing");
+    expect(result.deduped).toBe(false);
     expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
     expect(mocks.getImportDetail).toHaveBeenCalledWith(
       TENANT_ID,
@@ -606,6 +1116,7 @@ describe("runAnalyzePipeline", () => {
       { id: "doc-invoice", docType: "invoice" },
       { id: "doc-packing-list", docType: "packing_list" },
     ]);
+    expect(result.deduped).toBe(false);
     expect(persistedDocumentIds()).toEqual(["doc-invoice"]);
     expect(mocks.persistExtractionResult).toHaveBeenCalledTimes(1);
     expect(mocks.persistExtractionResult).toHaveBeenCalledWith({
@@ -694,6 +1205,7 @@ describe("runAnalyzePipeline", () => {
 
     expect(result.invoice).toBe(invoice);
     expect(result.pendingParties).toBe(sentinel);
+    expect(result.deduped).toBe(false);
     expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
       importId: "import-1",

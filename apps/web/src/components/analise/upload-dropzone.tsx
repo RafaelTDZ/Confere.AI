@@ -33,6 +33,7 @@ type AnalyzeResponse = {
   pendingParties?: PendingParty[];
   model: string;
   latencyMs: number;
+  deduped?: boolean;
   error?: string;
 };
 

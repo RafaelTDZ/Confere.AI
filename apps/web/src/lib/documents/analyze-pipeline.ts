@@ -18,8 +18,10 @@ import type {
 import { persistAiLog } from "@/lib/documents/ai-logs";
 import {
   findDocumentsBySha256,
+  findTenantDocumentsBySha256,
   insertDocuments,
   updateDocumentStatus,
+  type TenantDocumentBySha,
 } from "@/lib/documents/documents";
 import {
   findOrCreateImport,
@@ -28,8 +30,15 @@ import {
   getImportDetail,
   updateImportStatus,
 } from "@/lib/documents/imports";
-import { normalizeImportKey } from "@/lib/documents/imports-shared";
-import { persistExtractionResult } from "@/lib/documents/extractions";
+import {
+  IMPORT_DOCUMENT_TYPES,
+  normalizeImportKey,
+} from "@/lib/documents/imports-shared";
+import {
+  findLatestExtractionsByDocumentIds,
+  persistExtractionResult,
+  type LatestExtraction,
+} from "@/lib/documents/extractions";
 import {
   combinePendingParties,
   pendingPartiesFromBl,
@@ -52,7 +61,245 @@ export type AnalyzePipelineResult = {
   pendingParties: PendingParty[];
   model: string;
   latencyMs: number;
+  deduped: boolean;
 };
+
+type AnalyzePipelineParams = {
+  tenantId: string;
+  userId: string;
+  file: File;
+  startedAt?: number;
+  importId?: string;
+};
+
+type ReusableUpload = {
+  latestImportId: string;
+  docs: TenantDocumentBySha[];
+  extractions: Map<string, LatestExtraction>;
+};
+
+async function findReusableUpload(
+  tenantId: string,
+  sha256: string,
+): Promise<ReusableUpload | null> {
+  const docs = await findTenantDocumentsBySha256({ tenantId, sha256 });
+  if (docs.length === 0) return null;
+
+  // Agrupa por storage_path (cada upload tem um path próprio). A ordem é
+  // created_at desc, então o upload mais recente é testado primeiro; se ele
+  // estiver incompleto, ainda podemos reaproveitar um upload anterior válido.
+  const groups = new Map<string, TenantDocumentBySha[]>();
+  for (const doc of docs) {
+    const group = groups.get(doc.storagePath);
+    if (group) {
+      group.push(doc);
+    } else {
+      groups.set(doc.storagePath, [doc]);
+    }
+  }
+
+  for (const group of groups.values()) {
+    const latestDoc = group[0];
+    if (!latestDoc) continue;
+    if (group.some((d) => d.status !== "extracted")) continue;
+
+    const extractions = await findLatestExtractionsByDocumentIds({
+      tenantId,
+      documentIds: group.map((d) => d.id),
+    });
+    if (group.some((d) => !extractions.has(d.id))) continue;
+
+    return { latestImportId: latestDoc.importId, docs: group, extractions };
+  }
+
+  return null;
+}
+
+function extractionForType(
+  docs: TenantDocumentBySha[],
+  extractions: Map<string, LatestExtraction>,
+  docType: DocumentType,
+): LatestExtraction | null {
+  const doc = docs.find((d) => d.docType === docType);
+  if (!doc) return null;
+  return extractions.get(doc.id) ?? null;
+}
+
+async function buildReusableResult(
+  params: AnalyzePipelineParams,
+  reusable: ReusableUpload,
+  file: {
+    buffer: Uint8Array;
+    digest: string;
+    filename: string;
+    mediaType: string;
+  },
+  started: number,
+): Promise<AnalyzePipelineResult> {
+  const { docs, extractions } = reusable;
+  const types = IMPORT_DOCUMENT_TYPES.filter((type) =>
+    docs.some((doc) => doc.docType === type),
+  );
+  const invoiceExtraction = extractionForType(docs, extractions, "invoice");
+  const packingListExtraction = extractionForType(
+    docs,
+    extractions,
+    "packing_list",
+  );
+  const blExtraction = extractionForType(docs, extractions, "bill_of_lading");
+  const invoice = (invoiceExtraction?.payload as InvoiceExtraction) ?? null;
+  const packingList =
+    (packingListExtraction?.payload as PackingListExtraction) ?? null;
+  const bl = (blExtraction?.payload as BlExtraction) ?? null;
+  const model =
+    invoiceExtraction?.model ??
+    extractions.values().next().value?.model ??
+    "cache";
+  let extractionResultId = invoiceExtraction?.id ?? null;
+
+  let importId: string;
+  let documents: Array<{ id: string; docType: DocumentType }>;
+
+  if (!params.importId) {
+    importId = reusable.latestImportId;
+    documents = docs.map(({ id, docType }) => ({ id, docType }));
+  } else {
+    await getImportDetail(params.tenantId, params.importId);
+    importId = params.importId;
+
+    if (reusable.latestImportId === params.importId) {
+      documents = docs.map(({ id, docType }) => ({ id, docType }));
+    } else {
+      const storagePath = await buildUniqueStoragePath({
+        tenantId: params.tenantId,
+        importId,
+        filename: file.filename,
+        digest: file.digest,
+      });
+      await uploadImportFile({
+        storagePath,
+        bytes: file.buffer,
+        mediaType: file.mediaType,
+      });
+
+      const newDocs = await insertDocuments({
+        tenantId: params.tenantId,
+        importId,
+        types,
+        storagePath,
+        sha256: file.digest,
+        filename: file.filename,
+        mediaType: file.mediaType,
+        sizeBytes: file.buffer.byteLength,
+      });
+
+      for (const newDoc of newDocs) {
+        const extraction = extractionForType(
+          docs,
+          extractions,
+          newDoc.docType,
+        );
+        if (!extraction) continue;
+
+        const newExtractionId = await persistExtractionResult({
+          tenantId: params.tenantId,
+          documentId: newDoc.id,
+          model: extraction.model,
+          payload: extraction.payload,
+          tokensUsed: extraction.tokensUsed ?? undefined,
+        });
+        if (newDoc.docType === "invoice") {
+          extractionResultId = newExtractionId;
+        }
+        await updateDocumentStatus({
+          tenantId: params.tenantId,
+          documentId: newDoc.id,
+          status: "extracted",
+        });
+      }
+
+      documents = newDocs;
+
+      const invoiceNumber =
+        normalizeImportKey(invoice?.number) ??
+        normalizeImportKey(packingList?.invoiceNumber);
+      const blNumber =
+        normalizeImportKey(bl?.number) ?? normalizeImportKey(invoice?.blNumber);
+      const supplierName =
+        invoice?.exporter.name?.trim() || bl?.shipper?.trim() || null;
+
+      await fillImportKeysIfEmpty({
+        tenantId: params.tenantId,
+        importId,
+        invoiceNumber,
+        blNumber,
+        supplierName,
+      });
+      await clearAutoReferenceIfNeeded({
+        tenantId: params.tenantId,
+        importId,
+      });
+
+      await updateImportStatus({
+        tenantId: params.tenantId,
+        importId,
+        status: "awaiting_review",
+      });
+    }
+  }
+
+  let pendingParties: PendingParty[] = [];
+  if (invoice) {
+    try {
+      pendingParties = await resolveInvoiceParties({
+        tenantId: params.tenantId,
+        importId,
+        invoice,
+      });
+    } catch (partyErr) {
+      console.error(
+        "[analyze-pipeline] falha ao resolver consignee/notify (cache):",
+        partyErr,
+      );
+      pendingParties = pendingPartiesFromInvoice(invoice);
+    }
+  }
+
+  if (bl) {
+    try {
+      const blPendingParties = await resolveBlParties({
+        tenantId: params.tenantId,
+        importId,
+        bl,
+      });
+      pendingParties = combinePendingParties([
+        ...pendingParties,
+        ...blPendingParties,
+      ]);
+    } catch (partyErr) {
+      console.error(
+        "[analyze-pipeline] falha ao resolver consignee/notify do BL (cache):",
+        partyErr,
+      );
+      pendingParties = combinePendingParties([
+        ...pendingParties,
+        ...pendingPartiesFromBl(bl),
+      ]);
+    }
+  }
+
+  return {
+    importId,
+    types,
+    documents,
+    invoice,
+    extractionResultId,
+    pendingParties,
+    model,
+    latencyMs: Date.now() - started,
+    deduped: true,
+  };
+}
 
 export async function runAnalyzePipeline(params: {
   tenantId: string;
@@ -62,6 +309,24 @@ export async function runAnalyzePipeline(params: {
   importId?: string;
 }): Promise<AnalyzePipelineResult> {
   const started = params.startedAt ?? Date.now();
+
+  const filename = params.file.name || "documento";
+  const mediaType = normalizeMediaType(params.file.type, filename);
+  const buffer = new Uint8Array(await params.file.arrayBuffer());
+  assertAllowedFile(buffer.byteLength, mediaType);
+  const digest = sha256Hex(buffer);
+  const fileInput = { bytes: buffer, mediaType, filename };
+
+  const reusable = await findReusableUpload(params.tenantId, digest);
+  if (reusable) {
+    return buildReusableResult(
+      params,
+      reusable,
+      { buffer, digest, filename, mediaType },
+      started,
+    );
+  }
+
   // Config global de IA (provider/modelo); falha aqui não bloqueia (usa env).
   let overrides: AiOverrides = {};
   try {
@@ -76,13 +341,6 @@ export async function runAnalyzePipeline(params: {
       return "unknown";
     }
   })();
-
-  const filename = params.file.name || "documento";
-  const mediaType = normalizeMediaType(params.file.type, filename);
-  const buffer = new Uint8Array(await params.file.arrayBuffer());
-  assertAllowedFile(buffer.byteLength, mediaType);
-  const digest = sha256Hex(buffer);
-  const fileInput = { bytes: buffer, mediaType, filename };
 
   let classifyResult;
   try {
@@ -476,5 +734,6 @@ export async function runAnalyzePipeline(params: {
     pendingParties,
     model: classifyResult.model,
     latencyMs: Date.now() - started,
+    deduped: false,
   };
 }
