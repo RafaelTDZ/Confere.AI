@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, CircleAlert, CircleDashed, Loader2 } from "lucide-react";
+import { CircleCheck, CircleAlert, CircleDashed, LoaderCircle } from "lucide-react";
 import { UploadDropzone } from "@/components/analise/upload-dropzone";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -249,7 +249,7 @@ export function ImportacaoForm({
                   )}
                 >
                   {present ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <CircleCheck className="h-3.5 w-3.5" />
                   ) : (
                     <CircleDashed className="h-3.5 w-3.5" />
                   )}
@@ -542,7 +542,7 @@ export function ImportacaoForm({
           <Button type="submit" disabled={loading}>
             {loading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <LoaderCircle className="h-4 w-4 animate-spin" />
                 Salvando...
               </>
             ) : (

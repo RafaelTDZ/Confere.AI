@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { CheckCircle2, Package } from "lucide-react";
+import { CircleCheck, Package } from "lucide-react";
 import { ImportacaoForm } from "@/components/importacoes/importacao-form";
 import { BackButton } from "@/components/layout/back-button";
 import { getAuthContext } from "@/lib/auth";
@@ -33,7 +33,7 @@ export default async function ImportacaoDetailPage({
       <BackButton fallbackHref="/importacoes" />
       {query.merged === "ok" && (
         <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
           Documentos reunidos nesta importação.
         </p>
       )}

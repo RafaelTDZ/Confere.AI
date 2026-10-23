@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CircleAlert, Loader2 } from "lucide-react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -124,7 +124,7 @@ export function NcmForm({
           <Button type="submit" disabled={loading}>
             {loading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <LoaderCircle className="h-4 w-4 animate-spin" />
                 Salvando...
               </>
             ) : (

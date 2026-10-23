@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ensureUserTenant, toUserFacingError } from "@/lib/auth/tenant";
@@ -12,19 +12,15 @@ import { ChevronRight, ArrowLeft } from "lucide-react";
 export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
+  const [email] = useState(() => {
+    const emailParam = searchParams.get("email");
+    return emailParam ? decodeURIComponent(emailParam) : "";
+  });
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const emailParam = searchParams.get("email");
-    if (emailParam) {
-      setEmail(decodeURIComponent(emailParam));
-    }
-  }, [searchParams]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

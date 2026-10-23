@@ -34,10 +34,6 @@ export function AppSidebar({ email, isAdmin }: AppSidebarProps) {
     : NAV_ITEMS;
 
   useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
@@ -55,6 +51,7 @@ export function AppSidebar({ email, isAdmin }: AppSidebarProps) {
           <Link
             key={href}
             href={href}
+            onClick={() => setOpen(false)}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               active

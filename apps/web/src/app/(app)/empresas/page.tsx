@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, CheckCircle2 } from "lucide-react";
+import { Building2, CircleCheck } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -33,7 +33,7 @@ export default async function EmpresasPage({
     <div className="mx-auto w-full max-w-5xl space-y-6">
       {params.saved === "ok" && (
         <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
           Empresa atualizada com sucesso.
         </p>
       )}

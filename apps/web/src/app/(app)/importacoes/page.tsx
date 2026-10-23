@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, Package } from "lucide-react";
+import { CircleCheck, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -39,7 +39,7 @@ export default async function ImportacoesPage({
     <div className="mx-auto w-full max-w-5xl space-y-6">
       {params.saved === "ok" && (
         <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
           Importação atualizada com sucesso.
         </p>
       )}

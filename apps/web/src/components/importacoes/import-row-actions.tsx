@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2 } from "lucide-react";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ImportRowActions({
@@ -59,7 +59,7 @@ export function ImportRowActions({
           className="text-destructive hover:bg-destructive/10 hover:text-destructive"
         >
           {deleting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <LoaderCircle className="h-4 w-4 animate-spin" />
           ) : (
             <Trash2 className="h-4 w-4" />
           )}

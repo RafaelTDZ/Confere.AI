@@ -3,11 +3,11 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CheckCircle2,
+  CircleCheck,
   CircleAlert,
   CircleDashed,
   CloudUpload,
-  Loader2,
+  LoaderCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -138,7 +138,7 @@ export function UploadDropzone({
         {loading ? (
           <>
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <LoaderCircle className="h-7 w-7 animate-spin text-primary" />
             </span>
             <div className="space-y-1">
               <p className="text-sm font-medium">Analisando com IA...</p>
@@ -216,7 +216,7 @@ export function UploadDropzone({
                   )}
                 >
                   {present ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <CircleCheck className="h-3.5 w-3.5" />
                   ) : (
                     <CircleDashed className="h-3.5 w-3.5" />
                   )}

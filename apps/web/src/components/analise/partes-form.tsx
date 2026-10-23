@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert, Loader2 } from "lucide-react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -121,7 +121,7 @@ export function PartesForm({
         <Button type="submit" disabled={loading}>
           {loading ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <LoaderCircle className="h-4 w-4 animate-spin" />
               Salvando...
             </>
           ) : (
