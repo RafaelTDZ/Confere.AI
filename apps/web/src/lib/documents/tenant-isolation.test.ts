@@ -194,6 +194,22 @@ function findImport(id: string, tenantId: string): FakeRow {
   return row;
 }
 
+/** Delega ao fake e injeta erro somente na segunda consulta (destino). */
+function readClientWithSecondSelectFailure(message: string): unknown {
+  const db = seedAdmin();
+  const originalFrom = db.from.bind(db);
+  let calls = 0;
+  return {
+    from(table: string) {
+      calls += 1;
+      if (calls === 2) {
+        db.failNext({ message }, { table, operation: "select" });
+      }
+      return originalFrom(table);
+    },
+  };
+}
+
 describe("findDocumentsBySha256", () => {
   it("retorna somente o documento do tenant informado", async () => {
     const documents = await findDocumentsBySha256({
@@ -213,6 +229,33 @@ describe("findDocumentsBySha256", () => {
     });
 
     expect(documents).toEqual([]);
+  });
+
+  it("propaga erro do banco ao ler", async () => {
+    readClient.failNext(
+      { message: "falha ao buscar documentos" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      findDocumentsBySha256({
+        tenantId: "tenant-a",
+        importId: "import-shared",
+        sha256: "sha-same",
+      }),
+    ).rejects.toThrow("falha ao buscar documentos");
+  });
+
+  it("lê documentos sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const documents = await findDocumentsBySha256({
+      tenantId: "tenant-a",
+      importId: "import-shared",
+      sha256: "sha-same",
+    });
+
+    expect(documents).toEqual([{ id: "doc-a-invoice", docType: "invoice" }]);
   });
 });
 
@@ -237,6 +280,21 @@ describe("updateDocumentStatus", () => {
 
     expect(findRow("documents", "doc-b-invoice").status).toBe("pending");
   });
+
+  it("propaga erro do banco ao escrever", async () => {
+    adminClient.failNext(
+      { message: "falha ao atualizar documento" },
+      { table: "documents", operation: "update" },
+    );
+
+    await expect(
+      updateDocumentStatus({
+        tenantId: "tenant-a",
+        documentId: "doc-a-invoice",
+        status: "extracted",
+      }),
+    ).rejects.toThrow("falha ao atualizar documento");
+  });
 });
 
 describe("listImportStoragePaths", () => {
@@ -248,6 +306,31 @@ describe("listImportStoragePaths", () => {
 
     expect(paths.sort()).toEqual(["tenant-a/bl.pdf", "tenant-a/invoice.pdf"]);
     expect(paths).not.toContain("tenant-b/invoice.pdf");
+  });
+
+  it("propaga erro do banco ao listar", async () => {
+    readClient.failNext(
+      { message: "falha ao listar arquivos" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      listImportStoragePaths({
+        tenantId: "tenant-a",
+        importId: "import-shared",
+      }),
+    ).rejects.toThrow("falha ao listar arquivos");
+  });
+
+  it("lista paths sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const paths = await listImportStoragePaths({
+      tenantId: "tenant-a",
+      importId: "import-shared",
+    });
+
+    expect(paths.sort()).toEqual(["tenant-a/bl.pdf", "tenant-a/invoice.pdf"]);
   });
 });
 
@@ -268,6 +351,31 @@ describe("assertDocumentOwnership", () => {
         documentId: "doc-b-invoice",
       }),
     ).rejects.toThrow("Documento não pertence ao tenant");
+  });
+
+  it("propaga erro do banco ao validar", async () => {
+    readClient.failNext(
+      { message: "falha ao validar documento" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      assertDocumentOwnership({
+        tenantId: "tenant-a",
+        documentId: "doc-a-invoice",
+      }),
+    ).rejects.toThrow("falha ao validar documento");
+  });
+
+  it("valida a posse sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    await expect(
+      assertDocumentOwnership({
+        tenantId: "tenant-a",
+        documentId: "doc-a-invoice",
+      }),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -309,6 +417,38 @@ describe("persistExtractionResult", () => {
       tokens_used: 42,
     });
     expect(extraction.payload).toEqual({ invoice_number: "INV-A" });
+  });
+
+  it("propaga erro do banco ao validar a posse", async () => {
+    readClient.failNext(
+      { message: "falha ao validar posse" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      persistExtractionResult({
+        tenantId: "tenant-a",
+        documentId: "doc-a-invoice",
+        model: "modelo-teste",
+        payload: {},
+      }),
+    ).rejects.toThrow("falha ao validar posse");
+  });
+
+  it("propaga erro do banco ao inserir a extração", async () => {
+    adminClient.failNext(
+      { message: "falha ao salvar extração" },
+      { table: "extraction_results", operation: "insert" },
+    );
+
+    await expect(
+      persistExtractionResult({
+        tenantId: "tenant-a",
+        documentId: "doc-a-invoice",
+        model: "modelo-teste",
+        payload: {},
+      }),
+    ).rejects.toThrow("falha ao salvar extração");
   });
 });
 
@@ -419,6 +559,65 @@ describe("insertDocuments", () => {
     });
     expect(findRow("documents", "doc-b-insert").version).toBe(5);
   });
+
+  it("propaga erro ao ler as versões existentes", async () => {
+    readClient.failNext(
+      { message: "falha ao versionar" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      insertDocuments({
+        tenantId: "tenant-a",
+        importId: "import-insert",
+        types: ["invoice"],
+        storagePath: "tenant-a/novo.pdf",
+        sha256: "sha-novo",
+        filename: "novo.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 321,
+      }),
+    ).rejects.toThrow("falha ao versionar");
+  });
+
+  it("incrementa a versão a partir do maior valor existente do tenant", async () => {
+    const inserted = await insertDocuments({
+      tenantId: "tenant-a",
+      importId: "import-shared",
+      types: ["invoice", "bill_of_lading"],
+      storagePath: "tenant-a/revisao.pdf",
+      sha256: "sha-revisao",
+      filename: "revisao.pdf",
+      mediaType: "application/pdf",
+      sizeBytes: 2048,
+    });
+
+    expect(inserted).toHaveLength(2);
+    for (const document of inserted) {
+      expect(findRow("documents", document.id).version).toBe(2);
+    }
+    expect(findRow("documents", "doc-b-invoice").version).toBe(5);
+  });
+
+  it("propaga erro ao gravar os documentos", async () => {
+    adminClient.failNext(
+      { message: "falha ao registrar documentos" },
+      { table: "documents", operation: "insert" },
+    );
+
+    await expect(
+      insertDocuments({
+        tenantId: "tenant-a",
+        importId: "import-insert",
+        types: ["invoice"],
+        storagePath: "tenant-a/novo.pdf",
+        sha256: "sha-novo",
+        filename: "novo.pdf",
+        mediaType: "application/pdf",
+        sizeBytes: 321,
+      }),
+    ).rejects.toThrow("falha ao registrar documentos");
+  });
 });
 
 describe("moveDocumentsToImport", () => {
@@ -441,5 +640,63 @@ describe("moveDocumentsToImport", () => {
       import_id: "import-target",
       version: 10,
     });
+  });
+
+  it("propaga erro ao listar os documentos da origem", async () => {
+    readClient.failNext(
+      { message: "falha ao listar documentos da origem" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(
+      moveDocumentsToImport({
+        tenantId: "tenant-a",
+        sourceImportId: "import-source",
+        targetImportId: "import-target",
+      }),
+    ).rejects.toThrow("falha ao listar documentos da origem");
+  });
+
+  it("propaga erro ao mover os documentos no destino", async () => {
+    adminClient.failNext(
+      { message: "falha ao mover documento" },
+      { table: "documents", operation: "update" },
+    );
+
+    await expect(
+      moveDocumentsToImport({
+        tenantId: "tenant-a",
+        sourceImportId: "import-source",
+        targetImportId: "import-target",
+      }),
+    ).rejects.toThrow("falha ao mover documento");
+  });
+
+  it("não altera nada quando a origem não possui documentos", async () => {
+    await moveDocumentsToImport({
+      tenantId: "tenant-a",
+      sourceImportId: "import-sem-documentos",
+      targetImportId: "import-target",
+    });
+
+    expect(findRow("documents", "doc-a-target").version).toBe(2);
+  });
+
+  it("propaga erro ao versionar os documentos no destino", async () => {
+    mocks.readClient = readClientWithSecondSelectFailure(
+      "falha ao versionar no destino",
+    );
+
+    await expect(
+      moveDocumentsToImport({
+        tenantId: "tenant-a",
+        sourceImportId: "import-source",
+        targetImportId: "import-target",
+      }),
+    ).rejects.toThrow("falha ao versionar no destino");
+
+    expect(findRow("documents", "doc-a-source").import_id).toBe(
+      "import-source",
+    );
   });
 });

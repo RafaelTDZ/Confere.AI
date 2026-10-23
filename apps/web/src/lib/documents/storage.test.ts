@@ -6,10 +6,23 @@ import {
 } from "@/lib/documents/storage";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 const storage = vi.hoisted(() => ({
@@ -59,11 +72,14 @@ beforeEach(() => {
   storage.bucket = null;
   storage.upload.mockReset();
   storage.upload.mockResolvedValue({ data: { path: "ok" }, error: null });
+  mocks.readClient = seedAdmin();
+  mocks.adminClient = makeAdmin(seedAdmin());
+  mocks.failAdminClient = false;
 });
 
 describe("buildUniqueStoragePath", () => {
   it("usa o caminho base quando não há colisão", async () => {
-    mocks.admin = seedAdmin();
+    mocks.readClient = seedAdmin();
 
     await expect(
       buildUniqueStoragePath({
@@ -76,7 +92,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("adiciona o prefixo do digest quando o caminho exato já existe", async () => {
-    mocks.admin = seedAdmin(["tenant-a/import-1/arquivo.pdf"]);
+    mocks.readClient = seedAdmin(["tenant-a/import-1/arquivo.pdf"]);
 
     await expect(
       buildUniqueStoragePath({
@@ -89,7 +105,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("incrementa o sufixo quando o caminho com digest também existe", async () => {
-    mocks.admin = seedAdmin([
+    mocks.readClient = seedAdmin([
       "tenant-a/import-1/arquivo.pdf",
       "tenant-a/import-1/arquivo-abcdef.pdf",
     ]);
@@ -105,7 +121,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("continua incrementando até encontrar um caminho livre", async () => {
-    mocks.admin = seedAdmin([
+    mocks.readClient = seedAdmin([
       "tenant-a/import-1/arquivo.pdf",
       "tenant-a/import-1/arquivo-abcdef.pdf",
       "tenant-a/import-1/arquivo-abcdef-2.pdf",
@@ -122,7 +138,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("sanitiza caracteres inválidos do filename", async () => {
-    mocks.admin = seedAdmin();
+    mocks.readClient = seedAdmin();
 
     await expect(
       buildUniqueStoragePath({
@@ -135,7 +151,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("preserva os caracteres permitidos no filename", async () => {
-    mocks.admin = seedAdmin();
+    mocks.readClient = seedAdmin();
 
     await expect(
       buildUniqueStoragePath({
@@ -148,7 +164,7 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("adiciona o sufixo ao final quando o arquivo não tem extensão", async () => {
-    mocks.admin = seedAdmin(["tenant-a/import-1/arquivo"]);
+    mocks.readClient = seedAdmin(["tenant-a/import-1/arquivo"]);
 
     await expect(
       buildUniqueStoragePath({
@@ -161,8 +177,8 @@ describe("buildUniqueStoragePath", () => {
   });
 
   it("ignora paths de outro tenant ao detectar colisão", async () => {
-    const admin = seedAdmin();
-    admin.rows("documents").push(
+    const db = seedAdmin();
+    db.rows("documents").push(
       documentSeed({
         id: "doc-outro-tenant",
         tenantId: "tenant-b",
@@ -170,7 +186,20 @@ describe("buildUniqueStoragePath", () => {
         storagePath: "tenant-a/import-1/arquivo.pdf",
       }),
     );
-    mocks.admin = admin;
+    mocks.readClient = db;
+
+    await expect(
+      buildUniqueStoragePath({
+        tenantId: "tenant-a",
+        importId: "import-1",
+        filename: "arquivo.pdf",
+        digest: "abcdef1234567890",
+      }),
+    ).resolves.toBe("tenant-a/import-1/arquivo.pdf");
+  });
+
+  it("resolve o caminho sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
 
     await expect(
       buildUniqueStoragePath({
@@ -185,7 +214,7 @@ describe("buildUniqueStoragePath", () => {
 
 describe("uploadImportFile", () => {
   it("envia o arquivo ao bucket import-documents sem upsert", async () => {
-    mocks.admin = makeAdmin(seedAdmin());
+    mocks.adminClient = makeAdmin(seedAdmin());
     const bytes = new Uint8Array([1, 2, 3, 4]);
 
     await expect(
@@ -206,7 +235,7 @@ describe("uploadImportFile", () => {
   });
 
   it("propaga a mensagem de erro do Storage", async () => {
-    mocks.admin = makeAdmin(seedAdmin());
+    mocks.adminClient = makeAdmin(seedAdmin());
     storage.upload.mockResolvedValue({
       data: null,
       error: { message: "bucket indisponível" },
@@ -222,7 +251,7 @@ describe("uploadImportFile", () => {
   });
 
   it("usa mensagem padrão quando o Storage retorna erro sem mensagem", async () => {
-    mocks.admin = makeAdmin(seedAdmin());
+    mocks.adminClient = makeAdmin(seedAdmin());
     storage.upload.mockResolvedValue({
       data: null,
       error: { message: "" },

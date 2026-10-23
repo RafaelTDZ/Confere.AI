@@ -1,11 +1,11 @@
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 
 export async function assertDocumentOwnership(params: {
   tenantId: string;
   documentId: string;
 }): Promise<void> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("documents")
     .select("id")
     .eq("id", params.documentId)

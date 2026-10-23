@@ -4,10 +4,23 @@ import { findTenantDocumentsBySha256 } from "@/lib/documents/documents";
 import { findLatestExtractionsByDocumentIds } from "@/lib/documents/extractions";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }));
+const mocks = vi.hoisted(() => ({
+  adminClient: undefined as unknown,
+  readClient: undefined as unknown,
+  failAdminClient: false,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createSupabaseAdminClient: () => mocks.admin,
+  createSupabaseAdminClient: () => {
+    if (mocks.failAdminClient) {
+      throw new Error("admin não deveria ser usado");
+    }
+    return mocks.adminClient;
+  },
+}));
+
+vi.mock("@/lib/supabase/read-client", () => ({
+  getReadClient: async () => mocks.readClient,
 }));
 
 function documentSeed(params: {
@@ -140,11 +153,13 @@ function seedAdmin(): FakeSupabase {
   });
 }
 
-let admin: FakeSupabase;
+let readClient: FakeSupabase;
 
 beforeEach(() => {
-  admin = seedAdmin();
-  mocks.admin = admin;
+  readClient = seedAdmin();
+  mocks.readClient = readClient;
+  mocks.adminClient = readClient;
+  mocks.failAdminClient = false;
 });
 
 describe("findTenantDocumentsBySha256", () => {
@@ -226,7 +241,7 @@ describe("findTenantDocumentsBySha256", () => {
   });
 
   it("propaga erro do banco", async () => {
-    admin.failNext({ message: "conexão indisponível" });
+    readClient.failNext({ message: "conexão indisponível" });
 
     await expect(
       findTenantDocumentsBySha256({
@@ -234,6 +249,20 @@ describe("findTenantDocumentsBySha256", () => {
         sha256: "sha-compartilhada",
       }),
     ).rejects.toThrow("conexão indisponível");
+  });
+
+  it("lê documentos sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const documents = await findTenantDocumentsBySha256({
+      tenantId: "tenant-a",
+      sha256: "sha-compartilhada",
+    });
+
+    expect(documents.map((document) => document.id)).toEqual([
+      "doc-a-novo",
+      "doc-a-antigo",
+    ]);
   });
 });
 
@@ -245,7 +274,7 @@ describe("findLatestExtractionsByDocumentIds", () => {
     });
 
     expect(latest.size).toBe(0);
-    expect(admin.queries).toEqual([]);
+    expect(readClient.queries).toEqual([]);
   });
 
   it("retorna a extração mais recente de cada documento", async () => {
@@ -289,7 +318,7 @@ describe("findLatestExtractionsByDocumentIds", () => {
   });
 
   it("propaga erro do banco", async () => {
-    admin.failNext({ message: "falha ao buscar extrações" });
+    readClient.failNext({ message: "falha ao buscar extrações" });
 
     await expect(
       findLatestExtractionsByDocumentIds({
@@ -297,5 +326,16 @@ describe("findLatestExtractionsByDocumentIds", () => {
         documentIds: ["doc-a-antigo"],
       }),
     ).rejects.toThrow("falha ao buscar extrações");
+  });
+
+  it("busca extrações sem usar o admin client", async () => {
+    mocks.failAdminClient = true;
+
+    const latest = await findLatestExtractionsByDocumentIds({
+      tenantId: "tenant-a",
+      documentIds: ["doc-a-antigo"],
+    });
+
+    expect(latest.get("doc-a-antigo")?.id).toBe("extracao-a-nova");
   });
 });

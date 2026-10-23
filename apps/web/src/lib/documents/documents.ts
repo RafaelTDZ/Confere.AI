@@ -1,5 +1,6 @@
 import type { DocumentType } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 
 export type TenantDocumentBySha = {
   id: string;
@@ -18,8 +19,8 @@ export async function findTenantDocumentsBySha256(params: {
   tenantId: string;
   sha256: string;
 }): Promise<TenantDocumentBySha[]> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("documents")
     .select(
       "id, doc_type, import_id, storage_path, original_filename, content_type, size_bytes, status, version, created_at",
@@ -52,8 +53,8 @@ export async function findDocumentsBySha256(params: {
   importId: string;
   sha256: string;
 }): Promise<Array<{ id: string; docType: DocumentType }>> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("documents")
     .select("id, doc_type")
     .eq("tenant_id", params.tenantId)
@@ -75,8 +76,8 @@ async function nextDocumentVersions(
   importId: string,
   types: DocumentType[],
 ): Promise<Record<DocumentType, number>> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("documents")
     .select("doc_type, version")
     .eq("tenant_id", tenantId)
@@ -166,8 +167,8 @@ export async function listImportStoragePaths(params: {
   tenantId: string;
   importId: string;
 }): Promise<string[]> {
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("documents")
     .select("storage_path")
     .eq("tenant_id", params.tenantId)
@@ -187,8 +188,9 @@ export async function moveDocumentsToImport(params: {
 }): Promise<void> {
   if (params.sourceImportId === params.targetImportId) return;
 
+  const read = await getReadClient();
   const admin = createSupabaseAdminClient();
-  const { data: sourceDocs, error: sourceError } = await admin
+  const { data: sourceDocs, error: sourceError } = await read
     .from("documents")
     .select("id, doc_type")
     .eq("tenant_id", params.tenantId)
@@ -203,7 +205,7 @@ export async function moveDocumentsToImport(params: {
   const types = [
     ...new Set(sourceDocs.map((row) => row.doc_type as DocumentType)),
   ];
-  const { data: targetDocs, error: targetError } = await admin
+  const { data: targetDocs, error: targetError } = await read
     .from("documents")
     .select("doc_type, version")
     .eq("tenant_id", params.tenantId)

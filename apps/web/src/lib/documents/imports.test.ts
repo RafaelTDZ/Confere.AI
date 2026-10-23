@@ -498,6 +498,20 @@ describe("deleteImportRecord", () => {
     expect(findImport("import-shared", TENANT_A)).toBeDefined();
     expect(admin.storage.removals).toHaveLength(0);
   });
+
+  it("propaga erro ao listar os arquivos da importação", async () => {
+    readClient.failNext(
+      { message: "falha ao listar arquivos" },
+      { table: "documents", operation: "select" },
+    );
+
+    await expect(deleteImportRecord(TENANT_A, "import-shared")).rejects.toThrow(
+      "falha ao listar arquivos",
+    );
+
+    expect(findImport("import-shared", TENANT_A)).toBeDefined();
+    expect(admin.storage.removals).toHaveLength(0);
+  });
 });
 
 describe("findOrCreateImport", () => {

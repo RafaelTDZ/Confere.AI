@@ -1,5 +1,6 @@
 import { assertDocumentOwnership } from "@/lib/documents/ownership";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getReadClient } from "@/lib/supabase/read-client";
 
 export type LatestExtraction = {
   id: string;
@@ -18,8 +19,8 @@ export async function findLatestExtractionsByDocumentIds(params: {
     return new Map();
   }
 
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  const supabase = await getReadClient();
+  const { data, error } = await supabase
     .from("extraction_results")
     .select("id, document_id, model, payload, tokens_used, created_at")
     .eq("tenant_id", params.tenantId)
