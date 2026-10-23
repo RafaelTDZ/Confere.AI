@@ -48,11 +48,3 @@ export function assertAllowedFile(sizeBytes: number, mediaType: string) {
 export function sha256Hex(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
-
-export function toBase64(data: Uint8Array): string {
-  return Buffer.from(data).toString("base64");
-}
-
-export function buildDataUrl(mediaType: string, base64: string): string {
-  return `data:${mediaType};base64,${base64}`;
-}

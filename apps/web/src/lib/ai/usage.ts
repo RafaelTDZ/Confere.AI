@@ -19,17 +19,11 @@ type ProviderMetadata = {
       cost?: number;
     };
   };
-  fireworks?: {
-    usage?: {
-      cost?: number;
-    };
-  };
 };
 
 function readProviderCost(providerMetadata: unknown): number | null {
   const metadata = providerMetadata as ProviderMetadata | undefined;
-  const cost =
-    metadata?.openrouter?.usage?.cost ?? metadata?.fireworks?.usage?.cost;
+  const cost = metadata?.openrouter?.usage?.cost;
   return typeof cost === "number" && Number.isFinite(cost) ? cost : null;
 }
 
