@@ -16,6 +16,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validar project ref do Supabase
+        run: |
+          set -euo pipefail
+          expected="pavxbcsolcvekwslhzmf"
+          old="xmvypuwizexdhpwr""grao"
+          # Ignora apenas o registro histórico; o ref antigo é montado em partes
+          # para não casar com este próprio workflow.
+          if grep -RIn --exclude-dir=node_modules --exclude-dir=.git \
+            --exclude=ANALISE-ESTRUTURA.md "$old" .; then
+            echo "::error::Project ref antigo ($old) encontrado no repositório"
+            exit 1
+          fi
+          if ! grep -q "NEXT_PUBLIC_SUPABASE_URL=https://${expected}.supabase.co" .env.example; then
+            echo "::error::.env.example não aponta para o project ref $expected"
+            exit 1
+          fi
+          for file in README.md AGENTS.md; do
+            if ! grep -q "$expected" "$file"; then
+              echo "::error::$file não contém o project ref $expected"
+              exit 1
+            fi
+          done
+          echo "Project ref OK: $expected"
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
