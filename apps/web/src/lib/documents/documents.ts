@@ -1,6 +1,52 @@
 import type { DocumentType } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+export type TenantDocumentBySha = {
+  id: string;
+  docType: DocumentType;
+  importId: string;
+  storagePath: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  status: string;
+  version: number;
+  createdAt: string;
+};
+
+export async function findTenantDocumentsBySha256(params: {
+  tenantId: string;
+  sha256: string;
+}): Promise<TenantDocumentBySha[]> {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("documents")
+    .select(
+      "id, doc_type, import_id, storage_path, original_filename, content_type, size_bytes, status, version, created_at",
+    )
+    .eq("tenant_id", params.tenantId)
+    .eq("sha256", params.sha256)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message || "Falha ao buscar documentos");
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    docType: row.doc_type as DocumentType,
+    importId: row.import_id as string,
+    storagePath: row.storage_path as string,
+    filename: (row.original_filename as string | null) ?? "documento",
+    mediaType:
+      (row.content_type as string | null) ?? "application/octet-stream",
+    sizeBytes: (row.size_bytes as number | null) ?? 0,
+    status: row.status as string,
+    version: row.version as number,
+    createdAt: row.created_at as string,
+  }));
+}
+
 export async function findDocumentsBySha256(params: {
   tenantId: string;
   importId: string;

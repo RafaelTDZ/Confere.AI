@@ -1,6 +1,51 @@
 import { assertDocumentOwnership } from "@/lib/documents/ownership";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+export type LatestExtraction = {
+  id: string;
+  documentId: string;
+  model: string;
+  payload: unknown;
+  tokensUsed: number | null;
+  createdAt: string;
+};
+
+export async function findLatestExtractionsByDocumentIds(params: {
+  tenantId: string;
+  documentIds: string[];
+}): Promise<Map<string, LatestExtraction>> {
+  if (params.documentIds.length === 0) {
+    return new Map();
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("extraction_results")
+    .select("id, document_id, model, payload, tokens_used, created_at")
+    .eq("tenant_id", params.tenantId)
+    .in("document_id", params.documentIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message || "Falha ao buscar extrações");
+  }
+
+  const latest = new Map<string, LatestExtraction>();
+  for (const row of data ?? []) {
+    const documentId = row.document_id as string;
+    if (latest.has(documentId)) continue;
+    latest.set(documentId, {
+      id: row.id as string,
+      documentId,
+      model: row.model as string,
+      payload: row.payload,
+      tokensUsed: (row.tokens_used as number | null) ?? null,
+      createdAt: row.created_at as string,
+    });
+  }
+  return latest;
+}
+
 export async function persistExtractionResult(params: {
   tenantId: string;
   documentId: string;
