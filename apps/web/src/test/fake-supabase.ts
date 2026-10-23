@@ -28,6 +28,62 @@ export type FakeResponse = {
 
 type Operation = FakeQueryLog["operation"];
 
+/** Restringe o próximo erro a uma tabela e/ou operação específicas. */
+export type FakeErrorTarget = {
+  table?: string;
+  operation?: Operation;
+};
+
+export type FakeStorageRemoval = {
+  bucket: string;
+  paths: string[];
+};
+
+export type FakeStorageOptions = {
+  removeError?: FakeError | string | null;
+};
+
+export type FakeSupabaseOptions = {
+  storage?: FakeStorageOptions;
+};
+
+function toFakeError(error: FakeError | string): FakeError {
+  return typeof error === "string" ? { message: error } : error;
+}
+
+export class FakeStorageClient {
+  readonly removals: FakeStorageRemoval[] = [];
+  removeError: FakeError | null;
+
+  constructor(options: FakeStorageOptions = {}) {
+    this.removeError = options.removeError
+      ? toFakeError(options.removeError)
+      : null;
+  }
+
+  from(bucket: string): {
+    remove: (
+      paths: string[],
+    ) => Promise<{
+      data: Array<{ name: string }> | null;
+      error: FakeError | null;
+    }>;
+  } {
+    return {
+      remove: (paths) => {
+        this.removals.push({ bucket, paths: [...paths] });
+        if (this.removeError) {
+          return Promise.resolve({ data: null, error: this.removeError });
+        }
+        return Promise.resolve({
+          data: paths.map((path) => ({ name: path })),
+          error: null,
+        });
+      },
+    };
+  }
+}
+
 /**
  * Fake mínimo do client admin do Supabase.
  *
@@ -38,10 +94,15 @@ type Operation = FakeQueryLog["operation"];
 export class FakeSupabase {
   readonly tables: FakeTables;
   readonly queries: FakeQueryLog[] = [];
-  private readonly pendingErrors: FakeError[] = [];
+  readonly storage: FakeStorageClient;
+  private readonly pendingErrors: Array<{
+    error: FakeError;
+    target: FakeErrorTarget;
+  }> = [];
 
-  constructor(tables: FakeTables = {}) {
+  constructor(tables: FakeTables = {}, options: FakeSupabaseOptions = {}) {
     this.tables = tables;
+    this.storage = new FakeStorageClient(options.storage);
   }
 
   from(table: string): FakeQueryBuilder {
@@ -53,17 +114,30 @@ export class FakeSupabase {
 
   /**
    * Enfileira um erro para a próxima query executada (uma única vez).
-   * A query falha sem alterar as tabelas.
+   * A query falha sem alterar as tabelas. Um alvo opcional restringe o erro
+   * à tabela e/ou operação informadas; as demais queries seguem normais.
    */
-  failNext(error: FakeError | string): this {
-    this.pendingErrors.push(
-      typeof error === "string" ? { message: error } : error,
-    );
+  failNext(error: FakeError | string, target: FakeErrorTarget = {}): this {
+    this.pendingErrors.push({ error: toFakeError(error), target });
     return this;
   }
 
-  takePendingError(): FakeError | null {
-    return this.pendingErrors.shift() ?? null;
+  takePendingError(query?: {
+    table: string;
+    operation: Operation;
+  }): FakeError | null {
+    if (!query) {
+      return this.pendingErrors.shift()?.error ?? null;
+    }
+    const index = this.pendingErrors.findIndex(
+      ({ target }) =>
+        (target.table === undefined || target.table === query.table) &&
+        (target.operation === undefined ||
+          target.operation === query.operation),
+    );
+    if (index === -1) return null;
+    const [entry] = this.pendingErrors.splice(index, 1);
+    return entry?.error ?? null;
   }
 
   /** Linhas da tabela para asserções, criando-a vazia se necessário. */
@@ -171,7 +245,10 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
   private execute(): FakeResponse {
     if (this.response) return this.response;
 
-    const failure = this.db.takePendingError();
+    const failure = this.db.takePendingError({
+      table: this.table,
+      operation: this.operation,
+    });
     if (failure) {
       this.db.queries.push({
         table: this.table,
