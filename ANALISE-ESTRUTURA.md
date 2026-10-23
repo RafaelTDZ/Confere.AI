@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 8 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01), 5 parciais (ENV-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (322 testes; `documents` 90,75% e `ai` 45,12% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 8 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01), 5 parciais (ENV-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (404 testes; `documents` 90,75% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 322 testes em 20 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 79,39% lines; `documents` 90,75% (gate 88%); `ai` 45,12% (gate 43%) |
+| Testes | `pnpm test` | ✅ 404 testes em 25 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 93,05% lines; `documents` 90,75% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 322 testes em 20 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports e base de `lib/ai`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 90,75% de lines (gate 88%) e `ai` em 45,12% (gate 43%); a meta de 60% foi superada em `documents` e ainda falta cobrir `tasks/**` em `ai`.
+**Status (out/2026):** concluído — Vitest 5.0.5, 404 testes em 25 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai` e tasks). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 90,75% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -737,7 +737,7 @@ Legenda de severidade:
 - [x] Testar isolamento por tenant (cross-tenant deve falhar).
 - [x] Testar pipeline com IA mockada.
 - [x] CI roda Vitest e falha se não houver testes.
-- [ ] Adicionar cobertura mínima (ex.: 60% em `lib/documents` e `lib/ai`) — `documents` em 90,75% (meta superada); `ai` em 45,12% (falta cobrir `tasks/**`).
+- [x] Adicionar cobertura mínima (ex.: 60% em `lib/documents` e `lib/ai`) — `documents` 90,75%; `ai` 100%.
 
 **Saída esperada:** `pnpm test` real e CI confiável.
 
@@ -828,8 +828,8 @@ Estas decisões precisam ser tomadas antes de algumas correções. Duas já fora
 4. **O deploy continuará na raiz ou passará para `apps/web`?**
    - **Decidido (out/2026):** continua na raiz — `next`/`typescript` são necessários para o preview do v0. Configurar `Root Directory = apps/web` na Vercel fica opcional.
 5. **Qual o nível mínimo de cobertura de testes aceitável?**
-   - **Decidido (out/2026):** gate no CI — `documents` 88% (medido 90,75%) e `ai` 43% (medido 45,12%). A meta de 60% foi superada em `documents`; em `ai` falta cobrir `tasks/**`.
-   - Sugestão: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
+   - **Decidido (out/2026):** gate no CI — `documents` 88% (medido 90,75%) e `ai` 98% (medido 100%). A meta de 60% foi superada nos dois diretórios.
+   - Sugestão original: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
 6. **O `check-email` deve continuar revelando existência de conta?**
    - Trade-off de UX vs enumeração; documentar a decisão.
 
