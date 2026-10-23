@@ -144,8 +144,6 @@ pnpm db:migration <nome>   # cria nova migration
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
-| `SENTRY_DSN` | Não | Observabilidade |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Observabilidade |
 
 O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).
 

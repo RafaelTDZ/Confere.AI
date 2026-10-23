@@ -530,6 +530,8 @@ Legenda de severidade:
 
 **Critério de aceite:** erro em produção chega ao Sentry com contexto de tenant/importação (sem PII desnecessária).
 
+**Status (out/2026):** variáveis sem uso removidas de `.env.example`, `turbo.json` e README. A integração Sentry/OpenTelemetry continua pendente.
+
 ---
 
 ### OPS-01 — Workspace residual (P3)
