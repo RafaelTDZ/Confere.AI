@@ -1,3 +1,4 @@
+import { assertDocumentOwnership } from "@/lib/documents/ownership";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function persistExtractionResult(params: {
@@ -7,6 +8,11 @@ export async function persistExtractionResult(params: {
   payload: unknown;
   tokensUsed?: number;
 }): Promise<string> {
+  await assertDocumentOwnership({
+    tenantId: params.tenantId,
+    documentId: params.documentId,
+  });
+
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("extraction_results")
