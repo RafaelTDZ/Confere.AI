@@ -13,7 +13,7 @@ export type { AiOverrides };
 /** Chave única da linha de config de IA em app_settings. */
 const AI_SETTINGS_KEY = "ai";
 
-export const aiOverridesSchema = z.object({
+const aiOverridesSchema = z.object({
   provider: z.enum(["openrouter"]),
   model: z
     .string()
@@ -38,7 +38,7 @@ export type EffectiveAiConfig = {
  * de tenant/role — todo signup vira owner do próprio tenant, então role
  * sozinha não restringe.
  */
-export function getAdminEmails(): string[] {
+function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((email) => email.trim().toLowerCase())

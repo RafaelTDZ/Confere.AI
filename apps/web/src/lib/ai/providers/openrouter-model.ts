@@ -1,6 +1,6 @@
 export const DEFAULT_OPENROUTER_MODEL = "~openai/gpt-luna-latest";
 
-export type OpenRouterReasoningEffort =
+type OpenRouterReasoningEffort =
   | "xhigh"
   | "high"
   | "medium"

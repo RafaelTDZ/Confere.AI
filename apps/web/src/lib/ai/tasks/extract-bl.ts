@@ -68,7 +68,7 @@ function cleanStringArray(
     .filter((value): value is string => Boolean(value));
 }
 
-export function cleanBlExtraction(bl: BlExtraction): BlExtraction {
+function cleanBlExtraction(bl: BlExtraction): BlExtraction {
   let packages = trimOrNull(bl.packages);
   let volumes = trimOrNull(bl.volumes);
 

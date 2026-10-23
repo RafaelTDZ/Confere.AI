@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const documentTypeSchema = z.enum([
+const documentTypeSchema = z.enum([
   "invoice",
   "packing_list",
   "bill_of_lading",
@@ -25,7 +25,7 @@ export const documentClassificationSchema = z.object({
 
 export type DocumentClassification = z.infer<typeof documentClassificationSchema>;
 
-export const partyAddressSchema = z.object({
+const partyAddressSchema = z.object({
   street: z.string().nullable().describe("Logradouro / rua"),
   number: z.string().nullable().describe("Número do endereço"),
   complement: z
@@ -42,7 +42,7 @@ export const partyAddressSchema = z.object({
     .describe("Bairro, referência ou outras informações de endereço"),
 });
 
-export const partySchema = z.object({
+const partySchema = z.object({
   name: z.string().nullable().describe("Razão social ou nome"),
   cnpj: z
     .string()
@@ -53,7 +53,7 @@ export const partySchema = z.object({
 
 export type InvoiceParty = z.infer<typeof partySchema>;
 
-export const blPartyDetailsSchema = z.object({
+const blPartyDetailsSchema = z.object({
   name: z.string().nullable().describe("Razão social ou nome como aparece no BL"),
   cnpj: z.string().nullable().describe("CNPJ ou equivalente fiscal, se aparecer"),
   address: partyAddressSchema.describe("Endereço estruturado da empresa"),
@@ -63,7 +63,7 @@ const exporterSchema = z.object({
   name: z.string().nullable().describe("Nome do exportador / shipper"),
 });
 
-export const invoiceProductSchema = z.object({
+const invoiceProductSchema = z.object({
   code: z
     .string()
     .nullable()
@@ -225,4 +225,3 @@ export const blExtractionSchema = z.object({
 });
 
 export type BlExtraction = z.infer<typeof blExtractionSchema>;
-export type BlPartyDetails = z.infer<typeof blPartyDetailsSchema>;

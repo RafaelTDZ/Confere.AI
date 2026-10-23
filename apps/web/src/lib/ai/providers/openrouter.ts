@@ -11,16 +11,4 @@ export function createOpenRouterClient() {
   });
 }
 
-export {
-  getOpenRouterApiKey,
-  AiConfigError,
-  OpenRouterConfigError,
-} from "@/lib/ai/config";
-export {
-  DEFAULT_OPENROUTER_MODEL,
-  getOpenRouterModel,
-  getOpenRouterReasoning,
-  type OpenRouterReasoningConfig,
-  type OpenRouterReasoningContext,
-  type OpenRouterReasoningEffort,
-} from "@/lib/ai/providers/openrouter-model";
+export { AiConfigError } from "@/lib/ai/config";

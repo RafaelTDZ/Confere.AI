@@ -10,11 +10,11 @@ const BUCKET = "import-documents";
  * tenant_id / created_by sempre vêm do JWT validado em getAuthContext().
  */
 
-export function sanitizeFilename(filename: string): string {
+function sanitizeFilename(filename: string): string {
   return filename.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 180);
 }
 
-export function buildStoragePath(
+function buildStoragePath(
   tenantId: string,
   importId: string,
   filename: string,

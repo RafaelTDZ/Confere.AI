@@ -1,11 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalizeNcmCode } from "@/lib/documents/ncms-shared";
 
-export {
-  formatNcmCode,
-  formatNcmInput,
-  normalizeNcmCode,
-} from "@/lib/documents/ncms-shared";
+export { formatNcmCode } from "@/lib/documents/ncms-shared";
 
 export class NcmNotFoundError extends Error {
   constructor() {

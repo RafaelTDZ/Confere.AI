@@ -1,9 +1,9 @@
 import type { AiProviderId } from "@/lib/ai/provider";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 
-export const MUSE_SPARK_OPENROUTER_MODEL = "meta/muse-spark-1.3";
+const MUSE_SPARK_OPENROUTER_MODEL = "meta/muse-spark-1.3";
 
-export type ModelPreset = {
+type ModelPreset = {
   id: string;
   label: string;
   hint: string;

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const MAX_ANALYZE_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_ANALYZE_FILE_BYTES = 10 * 1024 * 1024;
 
 const ALLOWED_MEDIA_TYPES = new Set([
   "application/pdf",

@@ -17,19 +17,7 @@ import {
   type PendingParty,
 } from "@/lib/documents/parties-shared";
 
-export type {
-  PartyRole,
-  PendingParty,
-} from "@/lib/documents/parties-shared";
-export {
-  formatAddressLine,
-  formatCepInput,
-  formatCnpj,
-  formatCnpjInput,
-  normalizeCnpjDigits,
-  parsePartyAddress,
-  partyRolesLabel,
-} from "@/lib/documents/parties-shared";
+export type { PendingParty } from "@/lib/documents/parties-shared";
 
 export type ImportPartiesState = {
   importId: string;
@@ -161,7 +149,7 @@ function hasPartyIdentity(party: InvoiceParty): boolean {
   );
 }
 
-export async function findPartyByCnpj(
+async function findPartyByCnpj(
   tenantId: string,
   cnpj: string,
 ): Promise<{ id: string } | null> {
@@ -183,7 +171,7 @@ export async function findPartyByCnpj(
   return data?.id ? { id: data.id as string } : null;
 }
 
-export async function upsertParty(params: {
+async function upsertParty(params: {
   tenantId: string;
   name: string;
   cnpj: string;
@@ -300,7 +288,7 @@ export async function deleteParty(tenantId: string, id: string): Promise<void> {
   }
 }
 
-export async function linkImportParties(params: {
+async function linkImportParties(params: {
   tenantId: string;
   importId: string;
   consigneeId?: string;

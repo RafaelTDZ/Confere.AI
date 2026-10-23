@@ -18,19 +18,8 @@ import {
 
 export type {
   ImportDetail,
-  ImportDocumentRow,
-  ImportPartySummary,
   ImportRow,
   ImportStatus,
-} from "@/lib/documents/imports-shared";
-export {
-  DOCUMENT_STATUS_LABELS,
-  DOCUMENT_TYPE_LABELS,
-  IMPORT_DOCUMENT_TYPES,
-  IMPORT_STATUS_LABELS,
-  displayImportReference,
-  fallbackSavedReference,
-  normalizeImportKey,
 } from "@/lib/documents/imports-shared";
 
 export class ImportValidationError extends Error {
@@ -97,7 +86,7 @@ async function findImportByColumn(
   return data as ImportLookupRow | null;
 }
 
-export async function findImportByKeys(params: {
+async function findImportByKeys(params: {
   tenantId: string;
   invoiceNumber: string | null;
   blNumber: string | null;
@@ -179,7 +168,7 @@ export async function deleteImportRecord(
   }
 }
 
-export async function createImportRecord(params: {
+async function createImportRecord(params: {
   tenantId: string;
   userId: string;
   invoiceNumber?: string | null;
