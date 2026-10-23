@@ -158,3 +158,5 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Grants RLS** (recomendado): rode
   [`20250731190000_grant_private_rls_functions.sql`](supabase/migrations/20250731190000_grant_private_rls_functions.sql)
   no SQL Editor para selects autenticados com policies RLS funcionarem.
+- **Dependências da raiz**: `next` e `typescript` no `package.json` raiz existem para o
+  preview do v0 — não remover. O app usa as versões declaradas em `apps/web/package.json`.
