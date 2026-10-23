@@ -99,7 +99,8 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 # OpenRouter (requer cookie de sessão autenticada + OPENROUTER_API_KEY):
 # Faça login no browser em /login, depois:
 curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
-# Esperado: {"ok":true,"model":"~openai/gpt-luna-latest","text":"ok","latencyMs":...}
+# Esperado: {"ok":true,"model":"<OPENROUTER_MODEL>","text":"ok","latencyMs":...}
+# (model = OPENROUTER_MODEL; fallback do código: ~openai/gpt-luna-latest)
 ```
 
 ### Troubleshooting
@@ -140,7 +141,7 @@ pnpm db:migration <nome>   # cria nova migration
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
 | `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para IA (`/api/ai/health`, `/api/ai/analyze`) |
-| `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `meta/muse-spark-1.3`; alternativo: `~openai/gpt-luna-latest`) |
+| `OPENROUTER_MODEL` | Não | Modelo OpenRouter. Fallback do código: `~openai/gpt-luna-latest`; o `.env.example` define `meta/muse-spark-1.3` (troca em `/configuracoes`) |
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |

@@ -9,6 +9,8 @@
 > **Nenhum arquivo de código foi alterado durante a análise.** Este documento é o único artefato criado.
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
+>
+> **Atualização 23/10/2026 (status dos achados):** 2 concluídos (ENV-02, OPS-01), 9 parciais (ENV-01, QUA-01, AI-02, SEC-01, SEC-02, DOC-01, OBS-03, OPS-02, OPS-03) e 10 em aberto. Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -91,7 +93,7 @@ Confere.ia/
 └─ README.md / AGENTS.md / PLAN.md
 ```
 
-Existe também um `apps/worker/` local, **não rastreado pelo git**, contendo apenas `node_modules` e `.turbo` de pacotes já removidos (`@confere/domain`, `@confere/application`, `@confere/infrastructure` etc.). É resíduo de workspace, não faz parte da arquitetura atual.
+Existe também um `apps/worker/` local, **não rastreado pelo git**, contendo apenas `node_modules` e `.turbo` de pacotes já removidos (`@confere/domain`, `@confere/application`, `@confere/infrastructure` etc.). Era resíduo de workspace; foi apagado em 23/10/2026 (OPS-01).
 
 ---
 
@@ -223,11 +225,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Atualizar `README.md`, `AGENTS.md`, `PLAN.md` e `.env.example` para `pavxbcsolcvekwslhzmf`.
+- [x] Atualizar `README.md`, `AGENTS.md`, `PLAN.md` e `.env.example` para `pavxbcsolcvekwslhzmf`.
 - [ ] Adicionar um preflight no CI que valide o project ref esperado.
-- [ ] Documentar que o `.env` é local e não versionado.
+- [x] Documentar que o `.env` é local e não versionado.
 
 **Critério de aceite:** `grep` não encontra mais `xmvypuwizexdhpwrgrao` no repositório; um desenvolvedor novo consegue subir o app seguindo apenas o README.
+
+**Status (out/2026):** refs atualizados; falta apenas o preflight no CI.
 
 ---
 
@@ -243,11 +247,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Reconfigurar o MCP do OpenCode/Cursor para o projeto `pavxbcsolcvekwslhzmf`.
-- [ ] Validar com `get_project_url` antes de qualquer migration.
-- [ ] Não usar ferramentas MCP de escrita enquanto a divergência existir.
+- [x] Reconfigurar o MCP do OpenCode/Cursor para o projeto `pavxbcsolcvekwslhzmf`.
+- [x] Validar com `get_project_url` antes de qualquer migration.
+- [x] Não usar ferramentas MCP de escrita enquanto a divergência existir.
 
 **Critério de aceite:** `get_project_url` retorna `https://pavxbcsolcvekwslhzmf.supabase.co` e `list_migrations` mostra as migrations do Confere.ia.
+
+**Status (out/2026):** concluído — MCP aponta para `pavxbcsolcvekwslhzmf`; `get_project_url` e `list_migrations` (18 migrations) validados em 23/10/2026.
 
 ---
 
@@ -264,14 +270,17 @@ Legenda de severidade:
 
 **Correção proposta:**
 
+- [x] Remover a etapa "Testes" do CI e o script `test`, que executavam 0 tarefas.
 - [ ] Adicionar Vitest (ou equivalente) em `apps/web`.
 - [ ] Criar testes unitários para normalização/consolidação de Invoice/BL.
 - [ ] Criar testes de isolamento por tenant nas funções de `lib/documents`.
 - [ ] Criar testes de route handlers com Supabase mockado.
 - [ ] Criar testes do pipeline com IA mockada (classify/extract).
-- [ ] Fazer o CI falhar quando não houver testes executados.
+- [ ] Fazer o CI falhar quando não houver testes executados (quando a suíte voltar).
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
+
+**Status (out/2026):** a falsa segurança do CI foi eliminada (script, task do Turbo e etapa removidos). A suíte continua inexistente por decisão de priorização.
 
 ---
 
@@ -318,6 +327,8 @@ Legenda de severidade:
 
 **Critério de aceite:** reenviar o mesmo arquivo no mesmo tenant não gera novas chamadas de IA.
 
+**Status (out/2026):** parcial — existe dedupe por `import_id + sha256`, mas ele roda depois da classificação/extração e não reaproveita `extraction_results`.
+
 ---
 
 ### SEC-01 — `service_role` como padrão de leitura, com isolamento manual (P1)
@@ -332,12 +343,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Aplicar os grants de `private.*` para `authenticated` no projeto correto.
+- [x] Aplicar os grants de `private.*` para `authenticated` no projeto correto.
 - [ ] Migrar leituras para o client do usuário (RLS) onde possível.
 - [ ] Manter `service_role` apenas para escritas administrativas e jobs.
 - [ ] Adicionar teste de isolamento por tenant para cada função de leitura.
 
 **Critério de aceite:** leituras de `imports`, `documents`, `parties` e `ncms` funcionam com o client autenticado e RLS ativo; `service_role` fica restrito ao servidor/jobs.
+
+**Status (out/2026):** grants aplicados (migration `20250731190000` no cloud). As leituras continuam via `service_role`.
 
 ---
 
@@ -360,6 +373,8 @@ Legenda de severidade:
 - [ ] Centralizar a checagem em um helper `assertTenantOwnership`.
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
+
+**Status (out/2026):** parcial — `insertDocuments` e `persistExtractionResult` recebem `tenantId`; `updateDocumentStatus`, `findDocumentsBySha256` e `listImportStoragePaths` ainda operam só por `id`/`importId`.
 
 ---
 
@@ -423,6 +438,8 @@ Legenda de severidade:
 
 **Critério de aceite:** `tsc` valida colunas/tabelas; não há `as` para linhas do banco nos módulos principais.
 
+**Status (out/2026):** `database.types.ts` continua inexistente e a divergência persiste (banco aceita `operator`; TS declara `member`).
+
 ---
 
 ### DOC-01 — Documentação desatualizada (P2)
@@ -441,12 +458,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Atualizar README, AGENTS e PLAN com o estado real.
-- [ ] Incluir todas as rotas e variáveis.
+- [x] Atualizar README, AGENTS e PLAN com o estado real.
+- [x] Incluir todas as rotas e variáveis.
 - [ ] Alinhar Node >= 22 (ou fixar provider compatível).
-- [ ] Documentar que o default do modelo depende do `.env` e qual é o fallback do código.
+- [x] Documentar que o default do modelo depende do `.env` e qual é o fallback do código.
 
 **Critério de aceite:** documentação revisada contra o build atual; nenhuma afirmação contradiz o código.
+
+**Status (out/2026):** parcial — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis e a distinção entre fallback do código e valor do `.env.example`. Resta o Node, tratado em DEP-01.
 
 ---
 
@@ -487,6 +506,8 @@ Legenda de severidade:
 - [ ] Opcional: criar view/materialized view de custo por importação.
 
 **Critério de aceite:** novas linhas de `ai_logs` de extração têm `import_id` preenchido quando a importação já existe.
+
+**Status (out/2026):** `persistAiLog` já aceita `importId`, mas nenhuma chamada passa o campo — segue aberto.
 
 ---
 
@@ -567,12 +588,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Revisar e commitar as alterações do provider.
-- [ ] Aplicar as migrations no projeto `pavxbcsolcvekwslhzmf` com Supabase CLI 2.34.3.
-- [ ] Validar `app_settings` (provider apenas `openrouter`).
+- [x] Revisar e commitar as alterações do provider.
+- [x] Aplicar as migrations no projeto `pavxbcsolcvekwslhzmf` com Supabase CLI 2.34.3.
+- [x] Validar `app_settings` (provider apenas `openrouter`).
 - [ ] Rodar smoke de `/configuracoes` e `/api/ai/health`.
 
 **Critério de aceite:** `git status` limpo; migrations aplicadas; configuração de IA salvando/lendo corretamente.
+
+**Status (out/2026):** git limpo; 18/18 migrations aplicadas (última `20261014140000`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Falta o smoke autenticado.
 
 ---
 
@@ -589,11 +612,13 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [ ] Configurar `Root Directory = apps/web` no dashboard da Vercel.
-- [ ] Remover `next` da raiz.
-- [ ] Reavaliar o carregamento do `.env` da raiz (ou manter documentado).
+- [x] Manter `next` e `typescript` na raiz para o preview do v0 (item original de remoção cancelado).
+- [x] Manter o carregamento do `.env` da raiz e documentar no `AGENTS.md`.
 - [ ] Testar build/deploy após a mudança.
 
 **Critério de aceite:** deploy funciona com Root Directory `apps/web` e sem `next` na raiz.
+
+**Status (out/2026):** decisão revista — a raiz permanece por causa do preview do v0, então o critério de aceite não se aplica mais. O deploy com Root Directory `apps/web` segue pendente.
 
 ---
 
@@ -628,9 +653,11 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [ ] Adicionar `ADMIN_EMAILS` em `globalEnv`.
-- [ ] Revisar a lista de envs contra `.env.example`.
+- [x] Revisar a lista de envs contra `.env.example`.
 
 **Critério de aceite:** toda env de runtime documentada aparece em `globalEnv` ou tem justificativa.
+
+**Status (out/2026):** revisão feita — `ADMIN_EMAILS` é a única env de runtime fora do `globalEnv`.
 
 ---
 
@@ -639,7 +666,7 @@ Legenda de severidade:
 **Evidência:**
 
 - `package.json` raiz: `"node": ">=20"`.
-- `@openrouter/ai-sdk-provider@3.0.0`: `"node": ">=22"`.
+- `@openrouter/ai-sdk-provider@3.1.0`: `"node": ">=22"`.
 - CI usa Node 22.
 
 **Correção proposta:**
@@ -649,6 +676,8 @@ Legenda de severidade:
 - [ ] Adicionar `.nvmrc`/`.node-version` se fizer sentido.
 
 **Critério de aceite:** `engines`, CI, README e runtime de produção concordam.
+
+**Status (out/2026):** confirmado com o provider 3.1.0 — `engines` e README continuam em `>=20`.
 
 ---
 
@@ -686,11 +715,11 @@ Legenda de severidade:
 
 **Objetivo:** garantir que todo mundo fala com o mesmo Supabase e que o deploy está reproduzível.
 
-- [ ] ENV-01 — Atualizar todos os project refs para `pavxbcsolcvekwslhzmf`.
-- [ ] ENV-02 — Reconfigurar o MCP e validar `get_project_url`.
-- [ ] OPS-02 — Commitar alterações pendentes e aplicar as 2 migrations.
+- [x] ENV-01 — Atualizar todos os project refs para `pavxbcsolcvekwslhzmf`.
+- [x] ENV-02 — Reconfigurar o MCP e validar `get_project_url`.
+- [x] OPS-02 — Commitar alterações pendentes e aplicar as 2 migrations.
 - [ ] Rodar smoke local: `/login`, `/api/ai/health`, `/api/ai/analyze` com um PDF pequeno.
-- [ ] Confirmar que `supabase link` + `db push` funcionam no projeto correto.
+- [x] Confirmar que `supabase link` + `db push` funcionam no projeto correto.
 
 **Saída esperada:** ambiente único, documentado e reproduzível.
 
@@ -704,7 +733,7 @@ Legenda de severidade:
 - [ ] Testar normalização de Invoice/BL e consolidação de importações.
 - [ ] Testar isolamento por tenant (cross-tenant deve falhar).
 - [ ] Testar pipeline com IA mockada.
-- [ ] Ajustar CI para falhar com 0 testes.
+- [x] Ajustar CI para não simular testes (etapa vazia removida).
 - [ ] Adicionar cobertura mínima (ex.: 60% em `lib/documents` e `lib/ai`).
 
 **Saída esperada:** `pnpm test` real e CI confiável.
@@ -730,7 +759,7 @@ Legenda de severidade:
 
 **Objetivo:** reduzir dependência de `service_role` e eliminar risco de vazamento.
 
-- [ ] Aplicar grants de `private.*` para `authenticated`.
+- [x] Aplicar grants de `private.*` para `authenticated`.
 - [ ] SEC-01 — Migrar leituras para o client autenticado.
 - [ ] SEC-02 — Adicionar `tenant_id` em todas as funções administrativas.
 - [ ] SEC-03 — Adicionar `server-only`.
@@ -760,9 +789,9 @@ Legenda de severidade:
 
 - [ ] DATA-03 — Gerar `database.types.ts` e usar `SupabaseClient<Database>`.
 - [ ] Alinhar roles (`operator` vs `member`).
-- [ ] DOC-01 — Atualizar README, AGENTS e PLAN.
+- [x] DOC-01 — Atualizar README, AGENTS e PLAN.
 - [ ] DEP-01 — Alinhar Node >= 22.
-- [ ] Atualizar rotas, envs e default de modelo.
+- [x] Atualizar rotas, envs e default de modelo.
 
 **Saída esperada:** documentação e tipos confiáveis; onboarding sem surpresas.
 
@@ -774,7 +803,7 @@ Legenda de severidade:
 
 - [ ] OBS-03 — Integrar Sentry/OpenTelemetry.
 - [ ] PERF-01 — Paginação e filtros nas listagens.
-- [ ] OPS-01 — Limpar workspace residual.
+- [x] OPS-01 — Limpar workspace residual.
 - [ ] OPS-03 — Reavaliar deploy com Root Directory `apps/web`.
 - [ ] DX-01 — Completar `turbo.json.globalEnv`.
 
@@ -784,7 +813,7 @@ Legenda de severidade:
 
 ## 10. Decisões pendentes
 
-Estas decisões precisam ser tomadas antes de algumas correções:
+Estas decisões precisam ser tomadas antes de algumas correções. Duas já foram tomadas em out/2026: a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi adiada (item 5).
 
 1. **Invoice/BL são 1:1 por tenant?**
    - Se sim: índices únicos parciais.
@@ -794,9 +823,10 @@ Estas decisões precisam ser tomadas antes de algumas correções:
 3. **Leituras devem voltar para RLS ou continuar via service role?**
    - Recomendação: RLS para leitura; service role apenas para jobs/escritas administrativas.
 4. **O deploy continuará na raiz ou passará para `apps/web`?**
-   - Recomendação: `apps/web` para remover o hack do `next` na raiz.
+   - **Decidido (out/2026):** continua na raiz — `next`/`typescript` são necessários para o preview do v0. Configurar `Root Directory = apps/web` na Vercel fica opcional.
 5. **Qual o nível mínimo de cobertura de testes aceitável?**
-   - Sugestão: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
+   - **Decidido (out/2026):** sem suíte por enquanto; a cobertura mínima será definida quando o Vitest for introduzido.
+   - Sugestão original: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
 6. **O `check-email` deve continuar revelando existência de conta?**
    - Trade-off de UX vs enumeração; documentar a decisão.
 
@@ -844,16 +874,16 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 
 Considerar a correção concluída quando:
 
-- [ ] Todos os project refs apontam para `pavxbcsolcvekwslhzmf` e o MCP está alinhado.
-- [ ] `pnpm test` executa uma suíte real e o CI falha sem testes.
+- [x] Todos os project refs apontam para `pavxbcsolcvekwslhzmf` e o MCP está alinhado.
+- [ ] Existe uma suíte real de testes e o CI falha sem testes.
 - [ ] Upload de PDF não bloqueia por mais de poucos segundos; reenvio não gera custo de IA.
 - [ ] Leituras usam RLS (ou têm filtro de tenant explícito e testado).
 - [ ] Merge/delete/pipeline são atômicos ou idempotentes.
 - [ ] `database.types.ts` é gerado e usado.
-- [ ] README/AGENTS/PLAN refletem o estado real.
+- [x] README/AGENTS/PLAN refletem o estado real.
 - [ ] Sentry/OTEL integrados e `ai_logs` com `import_id`.
 - [ ] Rate limit/quota configurados.
-- [ ] `git status` limpo e migrations aplicadas.
+- [x] `git status` limpo e migrations aplicadas.
 
 ---
 
