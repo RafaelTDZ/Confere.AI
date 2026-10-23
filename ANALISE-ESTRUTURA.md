@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 2 concluídos (ENV-02, OPS-01), 9 parciais (ENV-01, QUA-01, AI-02, SEC-01, SEC-02, DOC-01, OBS-03, OPS-02, OPS-03) e 10 em aberto. Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 6 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01), 7 parciais (ENV-01, QUA-01, AI-02, SEC-01, SEC-02, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -56,7 +56,7 @@ O `.cursor/mcp.json` do repositório apontava para `pavxbcsolcvekwslhzmf` (arqui
 | Código-fonte | 84 arquivos TS/TSX em `apps/web/src` (~270 KB) |
 | Banco | 18 migrations |
 | Build | 24 rotas; First Load JS entre 103 kB e 179 kB |
-| Node declarado | `>=20` na raiz, mas provider exige `>=22` |
+| Node declarado | `>=22` na raiz (alinhado em out/2026 com o provider) |
 
 ---
 
@@ -368,13 +368,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Adicionar `tenantId` e filtro `.eq("tenant_id", tenantId)` em todas as funções.
+- [x] Adicionar `tenantId` e filtro `.eq("tenant_id", tenantId)` em `updateDocumentStatus`, `findDocumentsBySha256` e `listImportStoragePaths`.
+- [ ] Aplicar o mesmo filtro em `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded` e `updateImportStatus` (`imports.ts`).
 - [ ] Validar que `document_id` pertence ao tenant antes de persistir extração.
 - [ ] Centralizar a checagem em um helper `assertTenantOwnership`.
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** parcial — `insertDocuments` e `persistExtractionResult` recebem `tenantId`; `updateDocumentStatus`, `findDocumentsBySha256` e `listImportStoragePaths` ainda operam só por `id`/`importId`.
+**Status (out/2026):** parcial — as três funções de `documents` agora recebem `tenantId` e filtram `tenant_id`; `fillImportKeysIfEmpty`, `clearAutoReferenceIfNeeded`, `updateImportStatus`, `nextDocumentVersions` e `moveDocumentsToImport` ainda operam só por `importId`/`id`, e o helper `assertTenantOwnership` segue pendente.
 
 ---
 
@@ -451,7 +452,7 @@ Legenda de severidade:
 - `PLAN.md` também trata Packing List como não implementado; a extração atual é parcial (apenas número da Invoice).
 - A tabela de rotas do README não inclui `/importacoes`, `/empresas`, `/ncm`, `/produtos` nem APIs de imports/parties/ncms.
 - A tabela de variáveis do README não inclui `ADMIN_EMAILS`.
-- README diz Node >= 20, mas `@openrouter/ai-sdk-provider@3.0.0` exige **Node >= 22**.
+- README dizia Node >= 20, mas `@openrouter/ai-sdk-provider@3.1.0` exige **Node >= 22**. Alinhado em out/2026 (`engines` e README em `>=22`).
 - README dizia default `meta/muse-spark-1.3`, mas o código usa `~openai/gpt-luna-latest` (`openrouter-model.ts:1`). Alinhado em out/2026: ambos usam `~openai/gpt-luna-latest`.
 
 **Impacto:** onboarding e decisões técnicas baseadas em informação errada.
@@ -460,12 +461,12 @@ Legenda de severidade:
 
 - [x] Atualizar README, AGENTS e PLAN com o estado real.
 - [x] Incluir todas as rotas e variáveis.
-- [ ] Alinhar Node >= 22 (ou fixar provider compatível).
+- [x] Alinhar Node >= 22 (ou fixar provider compatível).
 - [x] Documentar que o default do modelo depende do `.env` e qual é o fallback do código.
 
 **Critério de aceite:** documentação revisada contra o build atual; nenhuma afirmação contradiz o código.
 
-**Status (out/2026):** parcial — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis e o modelo padrão (`~openai/gpt-luna-latest`, também no `.env.example`). Resta o Node, tratado em DEP-01.
+**Status (out/2026):** concluído — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis, modelo padrão (`~openai/gpt-luna-latest`) e Node >= 22; o Node foi alinhado em DEP-01.
 
 ---
 
@@ -591,11 +592,11 @@ Legenda de severidade:
 - [x] Revisar e commitar as alterações do provider.
 - [x] Aplicar as migrations no projeto `pavxbcsolcvekwslhzmf` com Supabase CLI 2.34.3.
 - [x] Validar `app_settings` (provider apenas `openrouter`).
-- [ ] Rodar smoke de `/configuracoes` e `/api/ai/health`.
+- [x] Rodar smoke autenticado de `/api/ai/health` (200, `provider=openrouter`, `model=~openai/gpt-luna-latest`).
 
 **Critério de aceite:** `git status` limpo; migrations aplicadas; configuração de IA salvando/lendo corretamente.
 
-**Status (out/2026):** git limpo; 18/18 migrations aplicadas (última `20261014140000`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Falta o smoke autenticado.
+**Status (out/2026):** concluído — git limpo; 18/18 migrations aplicadas (última `20261014140000`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Smoke autenticado de `/api/ai/health` em 23/10/2026: 200, `ok=true`, `source=global`, `latencyMs=2214`; sem cookie → 401. A UI de `/configuracoes` não foi exercitada neste smoke.
 
 ---
 
@@ -652,12 +653,12 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Adicionar `ADMIN_EMAILS` em `globalEnv`.
+- [x] Adicionar `ADMIN_EMAILS` em `globalEnv`.
 - [x] Revisar a lista de envs contra `.env.example`.
 
 **Critério de aceite:** toda env de runtime documentada aparece em `globalEnv` ou tem justificativa.
 
-**Status (out/2026):** revisão feita — `ADMIN_EMAILS` é a única env de runtime fora do `globalEnv`.
+**Status (out/2026):** concluído — `ADMIN_EMAILS` adicionada ao `globalEnv`; a lista foi revisada contra `.env.example`.
 
 ---
 
@@ -665,19 +666,19 @@ Legenda de severidade:
 
 **Evidência:**
 
-- `package.json` raiz: `"node": ">=20"`.
+- `package.json` raiz dizia `"node": ">=20"` (corrigido para `>=22` em out/2026).
 - `@openrouter/ai-sdk-provider@3.1.0`: `"node": ">=22"`.
 - CI usa Node 22.
 
 **Correção proposta:**
 
-- [ ] Atualizar `engines` para `>=22` (ou fixar versão do provider compatível com 20).
-- [ ] Atualizar README/AGENTS.
-- [ ] Adicionar `.nvmrc`/`.node-version` se fizer sentido.
+- [x] Atualizar `engines` para `>=22` (ou fixar versão do provider compatível com 20).
+- [x] Atualizar README/AGENTS.
+- [x] Adicionar `.nvmrc`/`.node-version` se fizer sentido — avaliado e dispensado; o CI fixa Node 22.
 
 **Critério de aceite:** `engines`, CI, README e runtime de produção concordam.
 
-**Status (out/2026):** confirmado com o provider 3.1.0 — `engines` e README continuam em `>=20`.
+**Status (out/2026):** concluído — `engines` e README em `>=22`; CI já usava Node 22; `.nvmrc` dispensado.
 
 ---
 
@@ -790,7 +791,7 @@ Legenda de severidade:
 - [ ] DATA-03 — Gerar `database.types.ts` e usar `SupabaseClient<Database>`.
 - [ ] Alinhar roles (`operator` vs `member`).
 - [x] DOC-01 — Atualizar README, AGENTS e PLAN.
-- [ ] DEP-01 — Alinhar Node >= 22.
+- [x] DEP-01 — Alinhar Node >= 22.
 - [x] Atualizar rotas, envs e default de modelo.
 
 **Saída esperada:** documentação e tipos confiáveis; onboarding sem surpresas.
@@ -805,7 +806,7 @@ Legenda de severidade:
 - [ ] PERF-01 — Paginação e filtros nas listagens.
 - [x] OPS-01 — Limpar workspace residual.
 - [ ] OPS-03 — Reavaliar deploy com Root Directory `apps/web`.
-- [ ] DX-01 — Completar `turbo.json.globalEnv`.
+- [x] DX-01 — Completar `turbo.json.globalEnv`.
 
 **Saída esperada:** produção observável, listas escaláveis e deploy simplificado.
 
