@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 7 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02), 6 parciais (ENV-01, QUA-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0 e a suíte de testes segue pendente — o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 7 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02), 6 parciais (ENV-01, QUA-01, AI-02, SEC-01, OBS-03, OPS-03) e 8 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, OBS-01, OBS-02, PERF-01). Migrations: 18/18 aplicadas no cloud; `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte de testes foi reiniciada com Vitest (39 testes puros) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -56,7 +56,7 @@ O `.cursor/mcp.json` do repositório apontava para `pavxbcsolcvekwslhzmf` (arqui
 | Código-fonte | 84 arquivos TS/TSX em `apps/web/src` (~270 KB) |
 | Banco | 18 migrations |
 | Build | 24 rotas; First Load JS entre 103 kB e 179 kB |
-| Node declarado | `>=22` na raiz (alinhado em out/2026 com o provider) |
+| Node declarado | `>=22.12` na raiz (alinhado em out/2026 com o provider e o Vitest) |
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ⚠️ **0 tarefas executadas** (`0 successful, 0 total`) |
+| Testes | `pnpm test` | ✅ 39 testes em 3 arquivos (Vitest 5.0.5) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -271,16 +271,16 @@ Legenda de severidade:
 **Correção proposta:**
 
 - [x] Remover a etapa "Testes" do CI e o script `test`, que executavam 0 tarefas.
-- [ ] Adicionar Vitest (ou equivalente) em `apps/web`.
-- [ ] Criar testes unitários para normalização/consolidação de Invoice/BL.
+- [x] Adicionar Vitest (ou equivalente) em `apps/web`.
+- [x] Criar testes unitários para normalização/consolidação de Invoice/BL.
 - [ ] Criar testes de isolamento por tenant nas funções de `lib/documents`.
 - [ ] Criar testes de route handlers com Supabase mockado.
 - [ ] Criar testes do pipeline com IA mockada (classify/extract).
-- [ ] Fazer o CI falhar quando não houver testes executados (quando a suíte voltar).
+- [x] Fazer o CI falhar quando não houver testes executados (quando a suíte voltar).
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** a falsa segurança do CI foi eliminada (script, task do Turbo e etapa removidos). A suíte continua inexistente por decisão de priorização.
+**Status (out/2026):** parcial — Vitest 5.0.5 configurado, 39 testes de funções puras (`imports-shared`, `ncms-shared`, `parties-shared`), `pnpm test` no Turbo e step no CI. Faltam isolamento por tenant, route handlers, pipeline com IA mockada e cobertura mínima.
 
 ---
 
@@ -467,7 +467,7 @@ Legenda de severidade:
 
 **Critério de aceite:** documentação revisada contra o build atual; nenhuma afirmação contradiz o código.
 
-**Status (out/2026):** concluído — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis, modelo padrão (`~openai/gpt-luna-latest`) e Node >= 22; o Node foi alinhado em DEP-01.
+**Status (out/2026):** concluído — README/AGENTS/PLAN atualizados em 23/10/2026, incluindo rotas, variáveis, modelo padrão (`~openai/gpt-luna-latest`) e Node >= 22.12; o Node foi alinhado em DEP-01.
 
 ---
 
@@ -667,7 +667,7 @@ Legenda de severidade:
 
 **Evidência:**
 
-- `package.json` raiz dizia `"node": ">=20"` (corrigido para `>=22` em out/2026).
+- `package.json` raiz dizia `"node": ">=20"` (corrigido para `>=22.12` em out/2026; Vitest 5 exige 22.12+).
 - `@openrouter/ai-sdk-provider@3.1.0`: `"node": ">=22"`.
 - CI usa Node 22.
 
@@ -679,7 +679,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `engines`, CI, README e runtime de produção concordam.
 
-**Status (out/2026):** concluído — `engines` e README em `>=22`; CI já usava Node 22; `.nvmrc` dispensado.
+**Status (out/2026):** concluído — `engines` e README em `>=22.12`; CI usa Node 22 (latest); `.nvmrc` dispensado.
 
 ---
 
@@ -731,11 +731,11 @@ Legenda de severidade:
 
 **Objetivo:** impedir regressões enquanto as próximas fases avançam.
 
-- [ ] QUA-01 — Configurar Vitest.
-- [ ] Testar normalização de Invoice/BL e consolidação de importações.
+- [x] QUA-01 — Configurar Vitest.
+- [x] Testar normalização de Invoice/BL e referências de importação.
 - [ ] Testar isolamento por tenant (cross-tenant deve falhar).
 - [ ] Testar pipeline com IA mockada.
-- [x] Ajustar CI para não simular testes (etapa vazia removida).
+- [x] CI roda Vitest e falha se não houver testes.
 - [ ] Adicionar cobertura mínima (ex.: 60% em `lib/documents` e `lib/ai`).
 
 **Saída esperada:** `pnpm test` real e CI confiável.
@@ -815,7 +815,7 @@ Legenda de severidade:
 
 ## 10. Decisões pendentes
 
-Estas decisões precisam ser tomadas antes de algumas correções. Duas já foram tomadas em out/2026: a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi adiada (item 5).
+Estas decisões precisam ser tomadas antes de algumas correções. Duas já foram tomadas em out/2026: a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi reiniciada com Vitest (item 5).
 
 1. **Invoice/BL são 1:1 por tenant?**
    - Se sim: índices únicos parciais.
@@ -827,8 +827,8 @@ Estas decisões precisam ser tomadas antes de algumas correções. Duas já fora
 4. **O deploy continuará na raiz ou passará para `apps/web`?**
    - **Decidido (out/2026):** continua na raiz — `next`/`typescript` são necessários para o preview do v0. Configurar `Root Directory = apps/web` na Vercel fica opcional.
 5. **Qual o nível mínimo de cobertura de testes aceitável?**
-   - **Decidido (out/2026):** sem suíte por enquanto; a cobertura mínima será definida quando o Vitest for introduzido.
-   - Sugestão original: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
+   - **Decidido (out/2026):** suíte reintroduzida com Vitest; a cobertura mínima ainda será definida.
+   - Sugestão: 60% em `lib/documents` e `lib/ai`; 100% dos caminhos críticos de auth/tenant.
 6. **O `check-email` deve continuar revelando existência de conta?**
    - Trade-off de UX vs enumeração; documentar a decisão.
 
@@ -877,7 +877,7 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 Considerar a correção concluída quando:
 
 - [x] Todos os project refs apontam para `pavxbcsolcvekwslhzmf` e o MCP está alinhado.
-- [ ] Existe uma suíte real de testes e o CI falha sem testes.
+- [x] Existe uma suíte real de testes e o CI falha sem testes.
 - [ ] Upload de PDF não bloqueia por mais de poucos segundos; reenvio não gera custo de IA.
 - [ ] Leituras usam RLS (ou têm filtro de tenant explícito e testado).
 - [ ] Merge/delete/pipeline são atômicos ou idempotentes.
