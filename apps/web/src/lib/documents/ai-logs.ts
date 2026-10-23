@@ -12,23 +12,54 @@ export async function persistAiLog(params: {
   costUsd?: number | null;
   reasoningTokens?: number;
   importId?: string | null;
-}): Promise<void> {
+}): Promise<string | null> {
   try {
     const admin = createSupabaseAdminClient();
-    await admin.from("ai_logs").insert({
-      tenant_id: params.tenantId,
-      capability: params.capability,
-      model: params.model,
-      tokens_in: params.tokensIn,
-      tokens_out: params.tokensOut,
-      latency_ms: params.latencyMs,
-      status: params.status,
-      error_message: params.errorMessage ?? null,
-      cost_usd: params.costUsd ?? null,
-      reasoning_tokens: params.reasoningTokens ?? 0,
-      import_id: params.importId ?? null,
-    });
+    const { data, error } = await admin
+      .from("ai_logs")
+      .insert({
+        tenant_id: params.tenantId,
+        capability: params.capability,
+        model: params.model,
+        tokens_in: params.tokensIn,
+        tokens_out: params.tokensOut,
+        latency_ms: params.latencyMs,
+        status: params.status,
+        error_message: params.errorMessage ?? null,
+        cost_usd: params.costUsd ?? null,
+        reasoning_tokens: params.reasoningTokens ?? 0,
+        import_id: params.importId ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("[ai_logs] falha ao persistir:", error);
+      return null;
+    }
+
+    return (data?.id as string | undefined) ?? null;
   } catch (err) {
     console.error("[ai_logs] falha ao persistir:", err);
+    return null;
+  }
+}
+
+export async function attachAiLogsToImport(params: {
+  tenantId: string;
+  importId: string;
+  logIds: string[];
+}): Promise<void> {
+  if (params.logIds.length === 0) return;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("ai_logs")
+    .update({ import_id: params.importId })
+    .eq("tenant_id", params.tenantId)
+    .in("id", params.logIds);
+
+  if (error) {
+    throw new Error(error.message || "Falha ao vincular logs à importação");
   }
 }

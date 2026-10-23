@@ -275,7 +275,28 @@ describe("POST /api/ai/analyze", () => {
         model: "unknown",
         status: "error",
         errorMessage: "boom",
+        importId: IMPORT_ID,
       }),
     );
+  });
+
+  it("retorna 502 sem importId e registra o log sem vínculo", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.runAnalyzePipeline.mockRejectedValue(new Error("boom"));
+
+    const { status, body } = await readJson(await POST(makeRequest()));
+
+    expect(status).toBe(502);
+    expect(body).toEqual({ error: "boom" });
+    expect(consoleError).toHaveBeenCalled();
+    expect(mocks.persistAiLog).toHaveBeenCalledTimes(1);
+
+    const logParams = mocks.persistAiLog.mock.calls[0]?.[0] as
+      | { importId?: string }
+      | undefined;
+    expect(logParams).toBeDefined();
+    expect(logParams?.importId).toBeUndefined();
   });
 });

@@ -15,7 +15,10 @@ import type {
   InvoiceExtraction,
   PackingListExtraction,
 } from "@/lib/ai/schemas";
-import { persistAiLog } from "@/lib/documents/ai-logs";
+import {
+  attachAiLogsToImport,
+  persistAiLog,
+} from "@/lib/documents/ai-logs";
 import {
   findDocumentsBySha256,
   findTenantDocumentsBySha256,
@@ -342,10 +345,16 @@ export async function runAnalyzePipeline(params: {
     }
   })();
 
+  const aiLogIds: string[] = [];
+  async function logAi(params: Parameters<typeof persistAiLog>[0]) {
+    const id = await persistAiLog(params);
+    if (id) aiLogIds.push(id);
+  }
+
   let classifyResult;
   try {
     classifyResult = await classifyDocument(fileInput, overrides);
-    await persistAiLog({
+    await logAi({
       tenantId: params.tenantId,
       capability: "classify",
       model: classifyResult.model,
@@ -357,7 +366,7 @@ export async function runAnalyzePipeline(params: {
       reasoningTokens: classifyResult.usage.reasoningTokens,
     });
   } catch (err) {
-    await persistAiLog({
+    await logAi({
       tenantId: params.tenantId,
       capability: "classify",
       model: modelId,
@@ -387,7 +396,7 @@ export async function runAnalyzePipeline(params: {
       invoice = extracted.invoice;
       invoiceModel = extracted.model;
       invoiceTokensUsed = extracted.tokensIn + extracted.tokensOut;
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_invoice",
         model: extracted.model,
@@ -399,7 +408,7 @@ export async function runAnalyzePipeline(params: {
         reasoningTokens: extracted.usage.reasoningTokens,
       });
     } catch (err) {
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_invoice",
         model: modelId,
@@ -419,7 +428,7 @@ export async function runAnalyzePipeline(params: {
       packingList = extracted.packingList;
       packingListModel = extracted.model;
       packingListTokensUsed = extracted.tokensIn + extracted.tokensOut;
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_packing_list",
         model: extracted.model,
@@ -431,7 +440,7 @@ export async function runAnalyzePipeline(params: {
         reasoningTokens: extracted.usage.reasoningTokens,
       });
     } catch (err) {
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_packing_list",
         model: modelId,
@@ -451,7 +460,7 @@ export async function runAnalyzePipeline(params: {
       bl = extracted.bl;
       blModel = extracted.model;
       blTokensUsed = extracted.tokensIn + extracted.tokensOut;
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_bl",
         model: extracted.model,
@@ -463,7 +472,7 @@ export async function runAnalyzePipeline(params: {
         reasoningTokens: extracted.usage.reasoningTokens,
       });
     } catch (err) {
-      await persistAiLog({
+      await logAi({
         tenantId: params.tenantId,
         capability: "extract_bl",
         model: modelId,
@@ -508,6 +517,19 @@ export async function runAnalyzePipeline(params: {
       supplierName,
     });
     importId = created.importId;
+  }
+
+  try {
+    await attachAiLogsToImport({
+      tenantId: params.tenantId,
+      importId,
+      logIds: aiLogIds,
+    });
+  } catch (logErr) {
+    console.error(
+      "[analyze-pipeline] falha ao vincular ai_logs à importação:",
+      logErr,
+    );
   }
 
   const existingByHash = await findDocumentsBySha256({

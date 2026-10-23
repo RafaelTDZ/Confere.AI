@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   getAiModelId: vi.fn(),
   getAiOverrides: vi.fn(),
   persistAiLog: vi.fn(),
+  attachAiLogsToImport: vi.fn(),
   findDocumentsBySha256: vi.fn(),
   findTenantDocumentsBySha256: vi.fn(),
   insertDocuments: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock("@/lib/settings/ai-settings", () => ({
 }));
 
 vi.mock("@/lib/documents/ai-logs", () => ({
+  attachAiLogsToImport: mocks.attachAiLogsToImport,
   persistAiLog: mocks.persistAiLog,
 }));
 
@@ -308,7 +310,26 @@ function baseParams() {
   return { tenantId: TENANT_ID, userId: USER_ID, file: makeFile() };
 }
 
+function attachCalls(): Array<{
+  tenantId: string;
+  importId: string;
+  logIds: string[];
+}> {
+  return mocks.attachAiLogsToImport.mock.calls.map(
+    (call) =>
+      call[0] as { tenantId: string; importId: string; logIds: string[] },
+  );
+}
+
+let aiLogSequence = 0;
+
+function nextAiLogId(): string {
+  aiLogSequence += 1;
+  return `log-${aiLogSequence}`;
+}
+
 function setDefaultMocks() {
+  aiLogSequence = 0;
   mocks.getAiOverrides.mockResolvedValue({});
   mocks.getAiModelId.mockReturnValue("model-default");
 
@@ -346,7 +367,8 @@ function setDefaultMocks() {
   ]);
   mocks.persistExtractionResult.mockResolvedValue("extraction-1");
 
-  mocks.persistAiLog.mockResolvedValue(undefined);
+  mocks.persistAiLog.mockImplementation(async () => nextAiLogId());
+  mocks.attachAiLogsToImport.mockResolvedValue(undefined);
   mocks.uploadImportFile.mockResolvedValue(undefined);
   mocks.updateDocumentStatus.mockResolvedValue(undefined);
   mocks.fillImportKeysIfEmpty.mockResolvedValue(undefined);
@@ -452,6 +474,13 @@ describe("runAnalyzePipeline", () => {
       "classify:success",
       "extract_invoice:success",
     ]);
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1", "log-2"],
+      },
+    ]);
     expect(mocks.extractPackingList).not.toHaveBeenCalled();
     expect(mocks.extractBl).not.toHaveBeenCalled();
     expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
@@ -460,6 +489,47 @@ describe("runAnalyzePipeline", () => {
       invoice,
     });
     expect(result.pendingParties).toEqual([]);
+  });
+
+  it("conclui a análise mesmo quando o vínculo dos logs falha", async () => {
+    const invoice = makeInvoice();
+    mocks.extractInvoice.mockResolvedValue(
+      makeExtractionResult("invoice", invoice, "invoice-model"),
+    );
+    mocks.attachAiLogsToImport.mockRejectedValue(new Error("update falhou"));
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.importId).toBe("import-1");
+    expect(result.invoice).toBe(invoice);
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1", "log-2"],
+      },
+    ]);
+    expect(console.error).toHaveBeenCalledWith(
+      "[analyze-pipeline] falha ao vincular ai_logs à importação:",
+      new Error("update falhou"),
+    );
+  });
+
+  it("vincula apenas os logs que receberam id", async () => {
+    mocks.persistAiLog
+      .mockResolvedValueOnce("log-1")
+      .mockResolvedValueOnce(null);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.importId).toBe("import-1");
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1"],
+      },
+    ]);
   });
 
   it("processa invoice, packing list e BL no mesmo arquivo", async () => {
@@ -563,6 +633,13 @@ describe("runAnalyzePipeline", () => {
       "extract_packing_list:success",
       "extract_bl:success",
     ]);
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1", "log-2", "log-3", "log-4"],
+      },
+    ]);
     expect(mocks.resolveInvoiceParties).toHaveBeenCalledTimes(1);
     expect(mocks.resolveBlParties).toHaveBeenCalledTimes(1);
   });
@@ -607,6 +684,13 @@ describe("runAnalyzePipeline", () => {
     expect(logSummary()).toEqual([
       "classify:success",
       "extract_invoice:success",
+    ]);
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1", "log-2"],
+      },
     ]);
   });
 
@@ -676,6 +760,7 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractPackingList).not.toHaveBeenCalled();
     expect(mocks.extractBl).not.toHaveBeenCalled();
     expect(mocks.persistAiLog).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
     expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
     expect(mocks.getImportDetail).not.toHaveBeenCalled();
     expect(mocks.buildUniqueStoragePath).not.toHaveBeenCalled();
@@ -749,6 +834,7 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.findDocumentsBySha256).not.toHaveBeenCalled();
     expect(mocks.classifyDocument).not.toHaveBeenCalled();
     expect(mocks.extractInvoice).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
 
     expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
@@ -871,6 +957,7 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractInvoice).not.toHaveBeenCalled();
     expect(mocks.extractPackingList).not.toHaveBeenCalled();
     expect(mocks.extractBl).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
     expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
     expect(mocks.findDocumentsBySha256).not.toHaveBeenCalled();
   });
@@ -1016,6 +1103,7 @@ describe("runAnalyzePipeline", () => {
     });
     expect(mocks.classifyDocument).not.toHaveBeenCalled();
     expect(mocks.extractInvoice).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
   });
 
   it("reaproveita a importação informada e não cria outra", async () => {
@@ -1082,6 +1170,7 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractInvoice).not.toHaveBeenCalled();
     expect(mocks.extractPackingList).not.toHaveBeenCalled();
     expect(mocks.extractBl).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
     expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
     expect(mocks.buildUniqueStoragePath).not.toHaveBeenCalled();
     expect(mocks.uploadImportFile).not.toHaveBeenCalled();
@@ -1146,6 +1235,13 @@ describe("runAnalyzePipeline", () => {
       model: "model-default",
       errorMessage: "packing falhou",
     });
+    expect(attachCalls()).toEqual([
+      {
+        tenantId: TENANT_ID,
+        importId: "import-1",
+        logIds: ["log-1", "log-2", "log-3"],
+      },
+    ]);
   });
 
   it("falha do BL sem invoice é fatal", async () => {
@@ -1178,6 +1274,7 @@ describe("runAnalyzePipeline", () => {
 
     expect(mocks.extractInvoice).not.toHaveBeenCalled();
     expect(mocks.extractPackingList).not.toHaveBeenCalled();
+    expect(mocks.attachAiLogsToImport).not.toHaveBeenCalled();
     expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
     expect(mocks.uploadImportFile).not.toHaveBeenCalled();
     expect(mocks.insertDocuments).not.toHaveBeenCalled();

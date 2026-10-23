@@ -29,6 +29,7 @@ function parseOptionalImportId(
 export async function POST(request: Request) {
   const started = Date.now();
   let tenantIdForLog: string | null = null;
+  let importIdForLog: string | undefined;
   let modelId = "unknown";
 
   try {
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     }
 
     const importId = parseOptionalImportId(form.get("importId"));
+    importIdForLog = importId;
 
     const result = await runAnalyzePipeline({
       tenantId: auth.tenantId,
@@ -119,6 +121,7 @@ export async function POST(request: Request) {
         latencyMs: Date.now() - started,
         status: "error",
         errorMessage: message,
+        importId: importIdForLog,
       });
     }
 
