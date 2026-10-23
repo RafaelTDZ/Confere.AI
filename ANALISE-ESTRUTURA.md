@@ -375,7 +375,7 @@ Legenda de severidade:
 
 **Critério de aceite:** nenhuma query administrativa é executada sem filtro de tenant; testes cobrem tentativas cross-tenant.
 
-**Status (out/2026):** parcial — as três funções de `documents` e as três de `imports` agora recebem `tenantId` e filtram `tenant_id`; `nextDocumentVersions`, `moveDocumentsToImport` e a validação de vínculo em `persistExtractionResult` seguem pendentes, assim como o helper `assertTenantOwnership`.
+**Status (out/2026):** parcial — todas as funções de `documents` e `imports` do escopo agora filtram `tenant_id`; restam a validação de vínculo em `persistExtractionResult` e o helper `assertTenantOwnership`. `mergeImportInto` ainda atualiza `analysis_results`/`product_matches`/parties só por `import_id`/`id`.
 
 ---
 
