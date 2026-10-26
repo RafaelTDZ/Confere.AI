@@ -183,6 +183,31 @@ describe("claimAiJob", () => {
     await expect(claimAiJob(JOB_ID)).resolves.toBeNull();
   });
 
+  it("devolve null para a linha de nulls que o PostgREST retorna sem job", async () => {
+    db.onRpc("claim_ai_job", {
+      data: {
+        id: null,
+        tenant_id: null,
+        status: null,
+        storage_path: null,
+        file_name: null,
+        media_type: null,
+        size_bytes: null,
+        sha256: null,
+        attempts: null,
+        error_message: null,
+        result: null,
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+        import_id: null,
+        user_id: null,
+      },
+    });
+
+    await expect(claimAiJob(JOB_ID)).resolves.toBeNull();
+  });
+
   it("propaga erro da RPC", async () => {
     db.onRpc("claim_ai_job", { error: { message: "rpc falhou" } });
 
@@ -213,6 +238,31 @@ describe("claimNextAiJob", () => {
       p_stale_seconds: 60,
       p_max_attempts: 5,
     });
+  });
+
+  it("devolve null para a linha de nulls quando a fila está vazia", async () => {
+    db.onRpc("claim_next_ai_job", {
+      data: {
+        id: null,
+        tenant_id: null,
+        status: null,
+        storage_path: null,
+        file_name: null,
+        media_type: null,
+        size_bytes: null,
+        sha256: null,
+        attempts: null,
+        error_message: null,
+        result: null,
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+        import_id: null,
+        user_id: null,
+      },
+    });
+
+    await expect(claimNextAiJob()).resolves.toBeNull();
   });
 });
 

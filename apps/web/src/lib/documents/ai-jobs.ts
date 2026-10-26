@@ -69,6 +69,19 @@ function mapAiJobRow(row: AiJobDbRow): AiJobRow {
   };
 }
 
+/**
+ * Normaliza o retorno das RPCs de claim. O PostgREST devolve uma linha de
+ * `null`s (não `null`) quando a função composta não encontra job — sem isso o
+ * worker tentaria processar um job vazio e o dreno contaria "processados".
+ */
+function mapClaimedJob(data: unknown): AiJobRow | null {
+  const candidate = Array.isArray(data) ? data[0] : data;
+  if (!candidate || typeof candidate !== "object") return null;
+  const row = candidate as AiJobDbRow;
+  if (!row.id) return null;
+  return mapAiJobRow(row);
+}
+
 const AI_JOB_SELECT =
   "id, tenant_id, import_id, user_id, status, storage_path, file_name, media_type, size_bytes, sha256, attempts, error_message, result, created_at, started_at, finished_at";
 
@@ -169,7 +182,7 @@ export async function claimAiJob(jobId: string): Promise<AiJobRow | null> {
     throw new Error(error.message || "Falha ao reservar job de análise");
   }
 
-  return data ? mapAiJobRow(data) : null;
+  return mapClaimedJob(data);
 }
 
 /** Claim do próximo job da fila (inclui jobs travados há mais tempo). */
@@ -187,7 +200,7 @@ export async function claimNextAiJob(options?: {
     throw new Error(error.message || "Falha ao reservar próximo job");
   }
 
-  return data ? mapAiJobRow(data) : null;
+  return mapClaimedJob(data);
 }
 
 export async function markAiJobSucceeded(
