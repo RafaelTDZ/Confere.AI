@@ -13,14 +13,17 @@
 > Smoke E2E pela UI em 26/10/2026: upload de PDF → job `succeeded` (1 tentativa) → importação
 > `awaiting_review` com invoice `12345`/supplier `Fireworks Test`; `ai_logs` com `classify`
 > (2,0s) e `extract_invoice` (2,5s). O artefato de teste foi removido (DB + Storage).
-> Pendente: configurar `FIREWORKS_API_KEY` na Vercel.
 >
 > **Produção (26/10/2026):** envs `FIREWORKS_API_KEY`, `FIREWORKS_MODEL`, `AI_PROVIDER` e
 > `CRON_SECRET` configuradas na Vercel (Production/Preview) e deploy READY. O primeiro upload em
 > produção falhou com `Cannot find module '@napi-rs/canvas'`; corrigido no commit `b7bbc30`
-> (dependência direta + import estático no `pdf-pages.ts` para o tracer incluir o nativo). Depois
-> apareceu `Setting up fake worker failed` porque `pdf.worker.mjs` não era tracejado; corrigido
-> incluindo `legacy/build/pdf.worker*.mjs` no `outputFileTracingIncludes`.
+> (dependência direta + import estático no `pdf-pages.ts`). Depois apareceu
+> `Setting up fake worker failed` porque `pdf.worker.mjs` não era tracejado; corrigido incluindo
+> `legacy/build/pdf.worker*.mjs` no `outputFileTracingIncludes`. O worker também passou a usar
+> `runWithAdminReads` (service role com o tenant do job) e o dedupe reprocessa documento `failed`
+> (commit `ab36356`). Smoke final em produção via `/api/ai/jobs/run` sem sessão: PDF de BL → job
+> `succeeded`, documento `extracted` e BL `PLISZ4H15136` persistido em `extraction_results`;
+> artefatos de teste removidos (DB + Storage).
 
 ## 0. Verificação técnica (26/10/2026)
 
