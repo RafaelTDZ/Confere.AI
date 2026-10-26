@@ -40,7 +40,7 @@ divergências entre documentos.
   - Placeholder (CRUD ainda não implementado)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
-- [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `~openai/gpt-luna-latest`; validado com chave real)
+- [x] **Infra Fireworks + OpenRouter** — clients servidor (`apps/web/src/lib/ai`), Fireworks como padrão (`accounts/fireworks/routers/deepseek-flash-latest`) e OpenRouter como opção; smoke autenticado `GET /api/ai/health`; PDF no Fireworks é convertido em imagens
 - [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e responde `202`; worker persiste `imports`/`documents` e extrai Invoice, número de Invoice explícito no Packing List e campos do BL
 - [x] **Observabilidade** — `@vercel/otel` no `instrumentation.ts` + spans/métricas do pipeline em `lib/observability/tracing.ts`
 
@@ -132,8 +132,8 @@ Browser
   ├─ /produtos                → Placeholder catálogo
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
-  ├─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
-  └─ /api/ai/analyze          → cria job (202) → worker baixa o arquivo e roda classificação/extração
+  ├─ /api/ai/health           → Fireworks/OpenRouter generateText (sessão obrigatória; chave só no servidor)
+  └─ /api/ai/analyze          → cria job (202) → worker prepara o documento (PDF→imagens no Fireworks) e roda classificação/extração
 
 apps/web/src
   ├─ app/                     → Rotas e pages finas
@@ -148,7 +148,8 @@ Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`)
   ├─ Storage                  → bucket `import-documents` (pasta raiz = tenant_id)
   └─ Triggers                 → provisionamento automático de tenant no signup
 
-OpenRouter                    → modelos ~openai/gpt-luna-latest e meta/muse-spark-1.3 (OPENROUTER_API_KEY)
+Fireworks (padrão)            → routers deepseek-flash-latest e glm-flash-latest (FIREWORKS_API_KEY; PDF→imagens)
+OpenRouter (opção)            → ~openai/gpt-luna-latest e meta/muse-spark-1.3 (OPENROUTER_API_KEY)
 ```
 
 ## Planos

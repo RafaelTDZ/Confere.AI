@@ -2,7 +2,15 @@
 
 > **Status:** plano revisado em 26/10/2026 contra o código atual (pós AI-01/DATA-01/DATA-03/OBS-03).
 > Ajustes em relação ao rascunho original estão marcados com **Revisão**.
-> Nada deste plano foi implementado ainda.
+>
+> **Implementação (26/10/2026):** fases 1 e 2 concluídas no commit `03f00e6`
+> (`feat(web): adicionar Fireworks e conversao de PDF`) — provider/catálogo/settings/UI,
+> PDF→imagens (`pdf-to-img`), pipeline/tasks, tracing do Next e testes (699). A migration
+> `20261026140000_ai_fireworks_default.sql` foi criada, mas **não aplicada**: falta
+> `FIREWORKS_API_KEY` no ambiente, e forçar `fireworks` agora derrubaria health/análises (503).
+> A config global no banco segue `openrouter`, então o app continua operando com OpenRouter.
+> Para ativar: (1) configurar `FIREWORKS_API_KEY` local + Vercel; (2) aplicar a migration com
+> CLI 2.34.3; (3) smoke em `/api/ai/health` e numa análise real (PDF de 2+ páginas).
 
 ## 0. Verificação técnica (26/10/2026)
 

@@ -24,7 +24,9 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    Edite o `.env` na raiz e preencha (**uma chave por linha**):
    - `NEXT_PUBLIC_SUPABASE_URL=https://pavxbcsolcvekwslhzmf.supabase.co`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — chave publishable (`sb_publishable_...`)
-   - `OPENROUTER_API_KEY` — para smoke/IA (`https://openrouter.ai/settings/keys`); opcional até ligar o pipeline
+   - `FIREWORKS_API_KEY` — provedor padrão de IA (`https://app.fireworks.ai/settings/api-keys`);
+     sem ela, `/api/ai/health` e as análises respondem 503/502
+   - `OPENROUTER_API_KEY` — opção alternativa (`https://openrouter.ai/settings/keys`)
 
    Chaves em: Supabase Dashboard > Settings > API Keys. **Não deixe `SUPABASE_INTERNAL_URL=` vazio**
    — remova a linha ou deixe comentada para usar `NEXT_PUBLIC_SUPABASE_URL`.
@@ -41,19 +43,31 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    # ou: pnpm dev
    ```
 
-### Provedor de IA (OpenRouter)
+### Provedor de IA (Fireworks + OpenRouter)
 
-- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `provider.ts` (`getAiModelId`/`getDefaultLanguageModel`), sempre OpenRouter.
-  - `createOpenRouterClient` + `OPENROUTER_MODEL`; reasoning via `OPENROUTER_REASONING_*`; PDFs com plugin file-parser (+ fallback mistral-ocr).
-  - Modelos no catálogo: `~openai/gpt-luna-latest` (GPT Luna Latest) e `meta/muse-spark-1.3` (Muse Spark 1.3); troca via dropdown em `/configuracoes`.
+- Client servidor: [`apps/web/src/lib/ai`](apps/web/src/lib/ai) — `provider.ts`
+  (`getAiProvider`/`getAiModelId`/`getDefaultLanguageModel`).
+- **Fireworks (padrão)**: `createFireworksClient` + `FIREWORKS_MODEL`
+  (`accounts/fireworks/routers/deepseek-flash-latest`; alternativa
+  `accounts/fireworks/routers/glm-flash-latest`). A API não aceita PDF: o pipeline converte as
+  páginas em JPEG (`pdf-to-img`, até 30 páginas/~7 MB) e reutiliza as imagens nas 4 tasks.
+- **OpenRouter (opção)**: `createOpenRouterClient` + `OPENROUTER_MODEL`; reasoning via
+  `OPENROUTER_REASONING_*`; PDFs com plugin file-parser (+ fallback mistral-ocr).
+- `AI_PROVIDER` escolhe o padrão do servidor quando não há config global; o dropdown em
+  `/configuracoes` grava `app_settings` (`fireworks`/`openrouter`) e vale para todos os tenants.
+- Modelos no catálogo: Fireworks DeepSeek/GLM Flash e OpenRouter `~openai/gpt-luna-latest` /
+  `meta/muse-spark-1.3`.
 - Smoke autenticado: `GET /api/ai/health` (exige sessão Supabase).
   - Sem cookie → `401`; sem chave do provider ativo → `503`; sucesso → `{ ok, provider, model, text, latencyMs }`.
-- Análise de documento: `POST /api/ai/analyze` (multipart `file`).
+- Análise de documento: `POST /api/ai/analyze` (multipart `file`) responde **202** e enfileira
+  (`ai_jobs`); o worker baixa o arquivo, prepara o documento (PDF→imagens no Fireworks) e roda
+  classificação/extração. Status em `GET /api/ai/jobs/[jobId]`.
   - Classifica tipos (`invoice` / `packing_list` / `bill_of_lading`; multi-tipo permitido).
   - Se houver Invoice, extrai número, exportador, importador, notify e produtos.
   - Persiste Storage `import-documents` + `imports`/`documents`; `extraction_results`/`ai_logs` via **service role**. Leituras de domínio via **RLS** (`getReadClient`).
   - Rate limit por tenant em `/api/ai/analyze` (30/h) e quota mensal de 10M tokens; `/api/auth/check-email` limitado por IP (10/min).
-- Chaves só no servidor: `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (nunca `NEXT_PUBLIC_*`).
+- Chaves só no servidor: `FIREWORKS_API_KEY`, `OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+  (nunca `NEXT_PUBLIC_*`).
 - Config global de IA (só allowlist `ADMIN_EMAILS` — todo signup vira owner do próprio
   tenant, então role sozinha não restringe): página `/configuracoes` + `GET/PUT/DELETE /api/settings/ai`
   (persiste tabela `app_settings` chave `ai` `{provider, model}` via service role, sem policies p/
@@ -112,11 +126,11 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
-| Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
+| IA (Fireworks + OpenRouter) | Fireworks padrão (`deepseek-flash-latest`, GLM alternativa; PDF→imagens) + OpenRouter opcional; `/api/ai/health` |
 | Observabilidade | OTel (`@vercel/otel` no `instrumentation.ts`); spans `ai.analyze`/`ai.job`/`ai.classify`/`ai.extract_*`/`ai.persist_extraction` e métricas por capability |
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 622 testes em 37 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
+| Testes automatizados | Vitest 5.0.5 — 699 testes em 43 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
@@ -132,9 +146,9 @@ curl -sI http://localhost:3000/login | head -1
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'   # {"exists":false|true}
-# OpenRouter (sessão autenticada + OPENROUTER_API_KEY no .env da raiz):
+# IA (sessão autenticada + chave do provider ativo no .env da raiz):
 # curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
-# → {"ok":true,"model":"~openai/gpt-luna-latest","text":"ok","latencyMs":...}
+# → {"ok":true,"provider":"fireworks","model":"accounts/fireworks/routers/deepseek-flash-latest",...}
 ```
 
 ### Cuidados não-óbvios
@@ -161,7 +175,14 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   (vira `Invalid API key`).
 - **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
-- **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
+- **Fireworks (padrão)**: `FIREWORKS_API_KEY` só no servidor. A API não aceita PDF — o pipeline
+  renderiza as páginas em JPEG (`pdf-to-img`, 30 páginas/~7 MB) uma vez por análise e reusa nas
+  4 tasks. Use o ID completo (`accounts/fireworks/routers/deepseek-flash-latest`); aliases curtos
+  não funcionam. A migration `20261026140000_ai_fireworks_default.sql` força a config global para
+  Fireworks e **só deve ser aplicada depois** de configurar a chave; sem ela, use
+  `AI_PROVIDER=openrouter` ou o dropdown em `/configuracoes`.
+- **OpenRouter (opção)**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se a
+  chave do provider ativo faltar e 401 sem sessão.
 - **Fila de análise (`ai_jobs`)**: `POST /api/ai/analyze` grava o arquivo em
   `<tenant>/_jobs/<jobId>/`, cria o job e responde `202`; o processamento continua no
   `after()` da request. `/api/ai/jobs/run` (Bearer `CRON_SECRET`) drena jobs `queued` ou

@@ -11,7 +11,7 @@ classifica e extrai Invoice/Packing List/BL e a UI acompanha o status.
 |--------|------------|
 | Front-end | Next.js 15 (App Router) + React 19 + Tailwind + shadcn/ui |
 | Banco / Auth | Supabase cloud (PostgreSQL com RLS) |
-| IA | OpenRouter (`@openrouter/ai-sdk-provider`) via AI SDK; modelo padrão `~openai/gpt-luna-latest` (alternativo: `meta/muse-spark-1.3`; troca em `/configuracoes`) |
+| IA | Fireworks (`@ai-sdk/fireworks`) como padrão — `accounts/fireworks/routers/deepseek-flash-latest` / `glm-flash-latest` (PDF convertido em imagens); OpenRouter (`@openrouter/ai-sdk-provider`) como opção com `~openai/gpt-luna-latest` / `meta/muse-spark-1.3`; troca em `/configuracoes` |
 | Monorepo | Turborepo + pnpm workspaces |
 
 ## Estrutura
@@ -57,7 +57,8 @@ pnpm install
 cp .env.example .env
 # Edite o .env na raiz e preencha (uma chave por linha):
 #   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-#   OPENROUTER_API_KEY=sk-or-v1-...
+#   FIREWORKS_API_KEY=fw_...        # provedor padrão de IA
+#   OPENROUTER_API_KEY=sk-or-v1-... # opcional (provider alternativo)
 #   SUPABASE_SERVICE_ROLE_KEY=...   # obrigatória para /api/ai/analyze
 pnpm dev         # web em http://localhost:3000
 ```
@@ -99,11 +100,11 @@ curl -sI http://localhost:3000/login | head -1                                  
 curl -s -X POST http://localhost:3000/api/auth/check-email \
   -H 'Content-Type: application/json' \
   -d '{"email":"teste@empresa.com"}'                                                 # {"exists":...}
-# OpenRouter (requer cookie de sessão autenticada + OPENROUTER_API_KEY):
+# IA (requer cookie de sessão autenticada + chave do provider ativo):
 # Faça login no browser em /login, depois:
 curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
-# Esperado: {"ok":true,"model":"~openai/gpt-luna-latest","text":"ok","latencyMs":...}
-# (model = OPENROUTER_MODEL; se não definido, usa ~openai/gpt-luna-latest)
+# Esperado: {"ok":true,"provider":"fireworks","model":"accounts/fireworks/routers/deepseek-flash-latest",...}
+# (provider/model = config global ou AI_PROVIDER/FIREWORKS_MODEL/OPENROUTER_MODEL)
 ```
 
 ### Troubleshooting
@@ -117,8 +118,9 @@ curl -s http://localhost:3000/api/ai/health --cookie 'sb-confere-auth-token=...'
 | `Failed to fetch` na senha (login/signup) | Proxy repassando headers hop-by-hop do Cloudflare, ou browser chamando Supabase direto | Confira route handler em `apps/web/src/app/supabase/[...path]/route.ts` (filtra `content-encoding` / `transfer-encoding` / `set-cookie`) |
 | `/supabase/*` retorna 500 | `SUPABASE_INTERNAL_URL=` vazio no `.env` | Remova a linha ou comente — string vazia quebra o proxy |
 | `/api/ai/health` → 401 | Sem sessão | Faça login antes; a rota exige cookie `sb-confere-auth-token` |
-| `/api/ai/health` → 503 | `OPENROUTER_API_KEY` ausente | Preencha no `.env` da raiz e reinicie o Next |
+| `/api/ai/health` → 503 | Chave do provider ativo ausente (`FIREWORKS_API_KEY` ou `OPENROUTER_API_KEY`) | Preencha no `.env` da raiz e reinicie o Next |
 | `/api/ai/analyze` → 503 (service role) | `SUPABASE_SERVICE_ROLE_KEY` ausente | Preencha a service role no `.env` (Dashboard → API Keys) |
+| Job de análise falha com erro de PDF | Fireworks não aceita PDF e a conversão passou dos limites (30 páginas/~7 MB) | Selecione OpenRouter em `/configuracoes` ou envie o documento como PNG/JPG |
 | `/api/ai/analyze` → 429 | Rate limit por tenant ou quota mensal de tokens atingida | Ajuste `AI_ANALYZE_RATE_LIMIT` / `AI_MONTHLY_TOKEN_QUOTA` ou aguarde a janela/mês |
 | Login redireciona de volta ao `/login` | Cookie de sessão divergente | Cookie fixo `sb-confere-auth-token` em browser/server/proxy |
 | `permission denied for function current_tenant_id` | Grants RLS ausentes no cloud | Aplique `20250731190000_grant_private_rls_functions.sql` (`db push` ou SQL Editor). O `/api/ai/analyze` já grava via service role e não depende desse grant |
@@ -144,8 +146,11 @@ pnpm db:migration <nome>   # cria nova migration
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Não | JWT `anon` legado — fallback se publishable não estiver definida |
 | `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Service role (servidor). *Obrigatória para `/api/ai/analyze` persistir `extraction_results` / `ai_logs` |
 | `SUPABASE_INTERNAL_URL` | Não | Override do destino do proxy `/supabase` (padrão: `NEXT_PUBLIC_SUPABASE_URL`). **Não deixe vazio** — remova a linha ou use URL válida |
-| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória para IA (`/api/ai/health`, `/api/ai/analyze`) |
+| `OPENROUTER_API_KEY` | Não* | Chave OpenRouter (servidor). *Obrigatória só quando `provider=openrouter` |
 | `OPENROUTER_MODEL` | Não | Modelo OpenRouter (default: `~openai/gpt-luna-latest`; alternativo: `meta/muse-spark-1.3`) |
+| `AI_PROVIDER` | Não | Provider padrão do servidor quando `app_settings` está vazio: `fireworks` (default) ou `openrouter` |
+| `FIREWORKS_API_KEY` | Sim* | Chave Fireworks (servidor). *Obrigatória quando `provider=fireworks` (padrão) |
+| `FIREWORKS_MODEL` | Não | Modelo Fireworks (default: `accounts/fireworks/routers/deepseek-flash-latest`; alternativa: `accounts/fireworks/routers/glm-flash-latest`) |
 | `OPENROUTER_REASONING_EFFORT` | Não | Override de reasoning: `xhigh` \| `high` \| `medium` \| `low` \| `none` (padrão para análise: `low`) |
 | `OPENROUTER_REASONING_MAX_TOKENS` | Não | Budget de tokens de reasoning (alternativa a `effort`; não usar os dois) |
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
@@ -192,7 +197,10 @@ Adicione as variáveis (Production + Preview):
 NEXT_PUBLIC_SUPABASE_URL=https://pavxbcsolcvekwslhzmf.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SERVICE_ROLE_KEY=<service_role>
-OPENROUTER_API_KEY=<sk-or-v1-...>
+FIREWORKS_API_KEY=<fw_...>
+AI_PROVIDER=fireworks
+FIREWORKS_MODEL=accounts/fireworks/routers/deepseek-flash-latest
+OPENROUTER_API_KEY=<sk-or-v1-...>   # opcional (provider alternativo)
 OPENROUTER_MODEL=~openai/gpt-luna-latest
 ```
 
