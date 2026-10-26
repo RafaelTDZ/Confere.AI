@@ -151,6 +151,10 @@ Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`)
 OpenRouter                    → modelos ~openai/gpt-luna-latest e meta/muse-spark-1.3 (OPENROUTER_API_KEY)
 ```
 
+## Planos
+
+- [`docs/planos/fireworks-default.md`](docs/planos/fireworks-default.md) — trocar o provedor padrão para Fireworks (DeepSeek/GLM via router) mantendo OpenRouter como opção; inclui PDF→imagens, migration e checklist de smoke.
+
 ## Referências
 
 - [`README.md`](README.md) — setup, variáveis de ambiente, rotas
