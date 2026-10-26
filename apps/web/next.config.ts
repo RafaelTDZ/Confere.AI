@@ -45,6 +45,13 @@ function pdfTracingIncludes(): string[] {
     tracingGlob(path.join(pdfjsDir, "cmaps")),
   ];
 
+  // O pdfjs carrega o worker dinamicamente ("fake worker" no Node); sem esses
+  // arquivos o deploy falha com "Setting up fake worker failed".
+  const pdfjsLegacyBuild = path.join(pdfjsDir, "legacy", "build");
+  for (const workerFile of ["pdf.worker.mjs", "pdf.worker.min.mjs"]) {
+    includes.push(tracingGlob(pdfjsLegacyBuild, workerFile));
+  }
+
   // `@napi-rs/canvas` é dependência direta (e o pdfjs-dist a requer em
   // runtime). Inclui o pacote e o binding nativo da plataforma do build.
   const canvasPackage = require.resolve("@napi-rs/canvas/package.json");

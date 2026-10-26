@@ -185,7 +185,9 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   embutidas convertem normalmente e no Linux/Vercel os assets estão no tracing.
   No deploy, `@napi-rs/canvas` **precisa** ser dependência direta e ter o import estático em
   `pdf-pages.ts`: o `pdfjs-dist` o requer em runtime e, sem isso, a função falha com
-  `Cannot find module '@napi-rs/canvas'`. Não remova o import.
+  `Cannot find module '@napi-rs/canvas'`. Não remova o import. O `pdf.worker.mjs` também precisa
+  estar no `outputFileTracingIncludes` (fake worker do pdfjs no Node); o `next.config.ts` cobre
+  `/api/ai/analyze` e `/api/ai/jobs/run`.
 - **OpenRouter (opção)**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se a
   chave do provider ativo faltar e 401 sem sessão.
 - **Fila de análise (`ai_jobs`)**: `POST /api/ai/analyze` grava o arquivo em

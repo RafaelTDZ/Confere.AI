@@ -18,7 +18,9 @@
 > **Produção (26/10/2026):** envs `FIREWORKS_API_KEY`, `FIREWORKS_MODEL`, `AI_PROVIDER` e
 > `CRON_SECRET` configuradas na Vercel (Production/Preview) e deploy READY. O primeiro upload em
 > produção falhou com `Cannot find module '@napi-rs/canvas'`; corrigido no commit `b7bbc30`
-> (dependência direta + import estático no `pdf-pages.ts` para o tracer incluir o nativo).
+> (dependência direta + import estático no `pdf-pages.ts` para o tracer incluir o nativo). Depois
+> apareceu `Setting up fake worker failed` porque `pdf.worker.mjs` não era tracejado; corrigido
+> incluindo `legacy/build/pdf.worker*.mjs` no `outputFileTracingIncludes`.
 
 ## 0. Verificação técnica (26/10/2026)
 
