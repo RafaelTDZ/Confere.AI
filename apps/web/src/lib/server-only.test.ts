@@ -17,6 +17,7 @@ const CLIENT_SAFE = new Set([
   "auth/tenant.ts",
   "supabase/auth-cookie.ts",
   "supabase/client.ts",
+  "supabase/database.types.ts",
   "supabase/fetch.ts",
   "supabase/public-key.ts",
 ]);

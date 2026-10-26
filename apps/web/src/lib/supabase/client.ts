@@ -3,10 +3,11 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import type { Database } from "@/lib/supabase/database.types";
 import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
-let client: SupabaseClient | null = null;
+let client: SupabaseClient<Database> | null = null;
 
 /**
  * URL pública do Supabase no browser.
@@ -22,7 +23,7 @@ function getBrowserSupabaseUrl(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
 }
 
-export function getSupabaseBrowserClient(): SupabaseClient {
+export function getSupabaseBrowserClient(): SupabaseClient<Database> {
   if (client) return client;
 
   const key = getSupabasePublicKey();
@@ -33,7 +34,7 @@ export function getSupabaseBrowserClient(): SupabaseClient {
     );
   }
 
-  client = createBrowserClient(getBrowserSupabaseUrl(), key, {
+  client = createBrowserClient<Database>(getBrowserSupabaseUrl(), key, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
     global: { fetch: createSupabaseFetch(key) },
   });

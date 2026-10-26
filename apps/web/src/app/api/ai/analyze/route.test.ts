@@ -169,7 +169,7 @@ beforeEach(() => {
     userId: USER_ID,
     email: "user@example.com",
     tenantId: TENANT_ID,
-    role: "member",
+    role: "operator",
   });
   mocks.createAiJob.mockResolvedValue(jobRow());
   mocks.processAiJobById.mockResolvedValue(undefined);

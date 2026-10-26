@@ -33,7 +33,7 @@ export type ImportPartySummary = {
   name: string;
 };
 
-export type ImportDocumentRow = {
+type ImportDocumentRow = {
   id: string;
   doc_type: DocumentType;
   original_filename: string | null;

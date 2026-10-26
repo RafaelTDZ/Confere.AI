@@ -3,11 +3,6 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 
-type AiLogTokenRow = {
-  tokens_in: number | null;
-  tokens_out: number | null;
-};
-
 export async function persistAiLog(params: {
   tenantId: string;
   capability: string;
@@ -46,7 +41,7 @@ export async function persistAiLog(params: {
       return null;
     }
 
-    return (data?.id as string | undefined) ?? null;
+    return data?.id ?? null;
   } catch (err) {
     console.error("[ai_logs] falha ao persistir:", err);
     return null;
@@ -76,7 +71,7 @@ export async function getMonthlyTokenUsage(
     throw new Error(error.message || "Falha ao calcular uso mensal de IA");
   }
 
-  const rows = (data ?? []) as AiLogTokenRow[];
+  const rows = data ?? [];
   return rows.reduce(
     (total, row) => total + (row.tokens_in ?? 0) + (row.tokens_out ?? 0),
     0,

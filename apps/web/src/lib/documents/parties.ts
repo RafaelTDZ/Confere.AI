@@ -180,7 +180,7 @@ async function findPartyByCnpj(
     throw new Error(error.message || "Falha ao buscar parte");
   }
 
-  return data?.id ? { id: data.id as string } : null;
+  return data?.id ? { id: data.id } : null;
 }
 
 async function upsertParty(params: {
@@ -213,7 +213,7 @@ async function upsertParty(params: {
     throw new Error(error?.message || "Falha ao cadastrar parte");
   }
 
-  return data.id as string;
+  return data.id;
 }
 
 export async function listTenantParties(
@@ -245,7 +245,7 @@ export async function listTenantParties(
   }
 
   return buildPage(
-    ((data ?? []) as PartyTableRow[]).map(mapPartyRow),
+    (data ?? []).map(mapPartyRow),
     count ?? 0,
     page,
     pageSize,
@@ -271,7 +271,7 @@ export async function getPartyById(
     throw new PartyNotFoundError();
   }
 
-  return mapPartyRow(data as PartyTableRow);
+  return mapPartyRow(data);
 }
 
 export async function updateParty(
@@ -300,7 +300,7 @@ export async function updateParty(
     throw new PartyNotFoundError();
   }
 
-  return mapPartyRow(data as PartyTableRow);
+  return mapPartyRow(data);
 }
 
 export async function deleteParty(tenantId: string, id: string): Promise<void> {
@@ -327,7 +327,7 @@ async function linkImportParties(params: {
   consigneeId?: string;
   notifyId?: string;
 }): Promise<void> {
-  const patch: Record<string, string> = {};
+  const patch: { consignee_id?: string; notify_id?: string } = {};
   if (params.consigneeId) patch.consignee_id = params.consigneeId;
   if (params.notifyId) patch.notify_id = params.notifyId;
   if (Object.keys(patch).length === 0) return;
@@ -546,7 +546,7 @@ async function getInvoiceExtractionForImport(
     throw new Error(docsError.message || "Falha ao buscar documentos");
   }
 
-  const documentIds = (documents ?? []).map((row) => row.id as string);
+  const documentIds = (documents ?? []).map((row) => row.id);
   if (documentIds.length === 0) return null;
 
   const { data, error } = await supabase
@@ -578,7 +578,7 @@ async function getBlExtractionForImport(
     throw new Error(docsError.message || "Falha ao buscar documentos");
   }
 
-  const documentIds = (documents ?? []).map((row) => row.id as string);
+  const documentIds = (documents ?? []).map((row) => row.id);
   if (documentIds.length === 0) return null;
 
   const { data, error } = await supabase

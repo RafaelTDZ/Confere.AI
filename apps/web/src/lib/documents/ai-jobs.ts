@@ -3,13 +3,28 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { DocumentType } from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { Database, Json } from "@/lib/supabase/database.types";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { uploadImportFile } from "@/lib/documents/storage";
 
 const JOBS_BUCKET = "import-documents";
 const MAX_ERROR_LENGTH = 500;
 
+type AiJobDbRow = Database["public"]["Tables"]["ai_jobs"]["Row"];
 type AiJobStatus = "queued" | "running" | "succeeded" | "failed";
+
+const JOB_STATUSES: readonly AiJobStatus[] = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+];
+
+const DOCUMENT_TYPES: readonly DocumentType[] = [
+  "invoice",
+  "packing_list",
+  "bill_of_lading",
+];
 
 export type AiJobResult = {
   importId: string;
@@ -17,24 +32,42 @@ export type AiJobResult = {
   deduped: boolean;
 };
 
-export type AiJobRow = {
-  id: string;
-  tenant_id: string;
-  import_id: string | null;
-  user_id: string | null;
+export type AiJobRow = Omit<AiJobDbRow, "status" | "result"> & {
   status: AiJobStatus;
-  storage_path: string;
-  file_name: string;
-  media_type: string;
-  size_bytes: number;
-  sha256: string;
-  attempts: number;
-  error_message: string | null;
   result: AiJobResult | null;
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
 };
+
+function toJobStatus(value: string): AiJobStatus {
+  return JOB_STATUSES.includes(value as AiJobStatus)
+    ? (value as AiJobStatus)
+    : "failed";
+}
+
+function toJobResult(value: Json | null): AiJobResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const row = value as { [key: string]: Json | undefined };
+  const importId = typeof row.importId === "string" ? row.importId : null;
+  if (!importId) return null;
+
+  const types = Array.isArray(row.types)
+    ? row.types.filter(
+        (type): type is DocumentType =>
+          typeof type === "string" &&
+          (DOCUMENT_TYPES as readonly string[]).includes(type),
+      )
+    : [];
+
+  return { importId, types, deduped: row.deduped === true };
+}
+
+function mapAiJobRow(row: AiJobDbRow): AiJobRow {
+  return {
+    ...row,
+    status: toJobStatus(row.status),
+    result: toJobResult(row.result),
+  };
+}
 
 const AI_JOB_SELECT =
   "id, tenant_id, import_id, user_id, status, storage_path, file_name, media_type, size_bytes, sha256, attempts, error_message, result, created_at, started_at, finished_at";
@@ -102,7 +135,7 @@ export async function createAiJob(params: {
     throw new Error(error?.message || "Falha ao criar job de análise");
   }
 
-  return data as AiJobRow;
+  return mapAiJobRow(data);
 }
 
 /** Lê o job com o client do usuário (RLS por tenant). */
@@ -122,7 +155,7 @@ export async function getAiJobForTenant(
     throw new Error(error.message || "Falha ao consultar job de análise");
   }
 
-  return (data as AiJobRow | null) ?? null;
+  return data ? mapAiJobRow(data) : null;
 }
 
 /** Claim atômico de um job específico; devolve `null` se outro worker pegou. */
@@ -136,7 +169,7 @@ export async function claimAiJob(jobId: string): Promise<AiJobRow | null> {
     throw new Error(error.message || "Falha ao reservar job de análise");
   }
 
-  return (data as AiJobRow | null) ?? null;
+  return data ? mapAiJobRow(data) : null;
 }
 
 /** Claim do próximo job da fila (inclui jobs travados há mais tempo). */
@@ -154,7 +187,7 @@ export async function claimNextAiJob(options?: {
     throw new Error(error.message || "Falha ao reservar próximo job");
   }
 
-  return (data as AiJobRow | null) ?? null;
+  return data ? mapAiJobRow(data) : null;
 }
 
 export async function markAiJobSucceeded(

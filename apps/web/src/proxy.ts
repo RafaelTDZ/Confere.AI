@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/supabase/auth-cookie";
+import type { Database } from "@/lib/supabase/database.types";
 import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
@@ -27,7 +28,7 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  const supabase = createServerClient(supabaseUrl, supabaseKey, {
+  const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
     cookieOptions: { name: AUTH_COOKIE_NAME },
     global: { fetch: createSupabaseFetch(supabaseKey) },
     cookies: {

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/database.types";
 import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";
 
@@ -9,7 +10,7 @@ import { getSupabasePublicKey } from "@/lib/supabase/public-key";
  * Evita reenviar JWT antigo (ex.: sessão do Supabase local) que o cloud rejeita
  * com PGRST301 e quebra o login ("Erro ao verificar email").
  */
-export function createSupabasePublicClient(): SupabaseClient {
+export function createSupabasePublicClient(): SupabaseClient<Database> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = getSupabasePublicKey();
 
@@ -19,7 +20,7 @@ export function createSupabasePublicClient(): SupabaseClient {
     );
   }
 
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

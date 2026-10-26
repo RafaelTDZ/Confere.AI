@@ -1,6 +1,10 @@
 import "server-only";
 
-import type { BlExtraction, InvoiceExtraction } from "@/lib/ai/schemas";
+import type {
+  BlExtraction,
+  DocumentType,
+  InvoiceExtraction,
+} from "@/lib/ai/schemas";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { ImportNotFoundError } from "@/lib/documents/parties";
@@ -10,7 +14,6 @@ import {
   IMPORT_STATUS_LABELS,
   normalizeImportKey,
   type ImportDetail,
-  type ImportDocumentRow,
   type ImportPartySummary,
   type ImportRow,
   type ImportStatus,
@@ -117,7 +120,7 @@ async function findImportByColumn(
     throw new Error(error.message || "Falha ao buscar importação");
   }
 
-  return data as ImportLookupRow | null;
+  return data;
 }
 
 async function findImportByKeys(params: {
@@ -188,7 +191,7 @@ export async function listTenantImports(
     throw new Error(error.message);
   }
 
-  return buildPage((data ?? []) as ImportRow[], count ?? 0, page, pageSize);
+  return buildPage(data ?? [], count ?? 0, page, pageSize);
 }
 
 /**
@@ -214,9 +217,7 @@ export async function deleteImportRecord(
     throw new Error(error.message || "Falha ao remover importação");
   }
 
-  const storagePaths = [
-    ...new Set(((data as string[] | null) ?? []).filter(Boolean)),
-  ];
+  const storagePaths = [...new Set((data ?? []).filter(Boolean))];
 
   if (storagePaths.length > 0) {
     const { error: storageError } = await admin.storage
@@ -259,7 +260,7 @@ async function createImportRecord(params: {
       error?.code,
     );
   }
-  return data.id as string;
+  return data.id;
 }
 
 const KEY_CONFLICT_INDEXES: Record<string, "bl_number" | "invoice_number"> = {
@@ -286,13 +287,19 @@ function conflictingKeyColumn(
  * não for reconhecido — apenas registra `console.warn`: uma chave disputada não
  * pode interromper a análise.
  */
+type ImportKeysPatch = {
+  invoice_number?: string | null;
+  bl_number?: string | null;
+  supplier_name?: string | null;
+};
+
 async function updateImportKeys(params: {
   tenantId: string;
   importId: string;
-  patch: Record<string, string>;
+  patch: ImportKeysPatch;
 }): Promise<void> {
   const admin = createSupabaseAdminClient();
-  const patch: Record<string, string> = { ...params.patch };
+  const patch: ImportKeysPatch = { ...params.patch };
   let conflict: string | null = null;
 
   while (Object.keys(patch).length > 0) {
@@ -366,7 +373,7 @@ export async function fillImportKeysIfEmpty(params: {
   }
   if (!data) return;
 
-  const patch: Record<string, string> = {};
+  const patch: ImportKeysPatch = {};
   if (!data.invoice_number && params.invoiceNumber) {
     patch.invoice_number = params.invoiceNumber;
   }
@@ -520,7 +527,7 @@ async function getPartySummary(
     throw new Error(error.message || "Falha ao buscar parte da importação");
   }
   if (!data) return null;
-  return { id: data.id as string, name: data.name as string };
+  return { id: data.id, name: data.name };
 }
 
 export async function getImportDetail(
@@ -554,10 +561,10 @@ export async function getImportDetail(
 
   const invoiceDocIds = (documents ?? [])
     .filter((row) => row.doc_type === "invoice")
-    .map((row) => row.id as string);
+    .map((row) => row.id);
   const blDocIds = (documents ?? [])
     .filter((row) => row.doc_type === "bill_of_lading")
-    .map((row) => row.id as string);
+    .map((row) => row.id);
 
   async function latestExtractionPayload<T>(
     documentIds: string[],
@@ -583,22 +590,25 @@ export async function getImportDetail(
   ]);
 
   const [consignee, notify] = await Promise.all([
-    getPartySummary(tenantId, (data.consignee_id as string | null) ?? null),
-    getPartySummary(tenantId, (data.notify_id as string | null) ?? null),
+    getPartySummary(tenantId, data.consignee_id ?? null),
+    getPartySummary(tenantId, data.notify_id ?? null),
   ]);
 
   return {
-    id: data.id as string,
-    reference_number: (data.reference_number as string | null) ?? null,
-    status: data.status as string,
-    supplier_name: (data.supplier_name as string | null) ?? null,
-    invoice_number: (data.invoice_number as string | null) ?? null,
-    bl_number: (data.bl_number as string | null) ?? null,
-    created_at: data.created_at as string,
-    updated_at: data.updated_at as string,
+    id: data.id,
+    reference_number: data.reference_number ?? null,
+    status: data.status,
+    supplier_name: data.supplier_name ?? null,
+    invoice_number: data.invoice_number ?? null,
+    bl_number: data.bl_number ?? null,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
     consignee,
     notify,
-    documents: ((documents ?? []) as ImportDocumentRow[]),
+    documents: (documents ?? []).map((document) => ({
+      ...document,
+      doc_type: document.doc_type as DocumentType,
+    })),
     invoice,
     bl,
   };
@@ -677,7 +687,7 @@ async function mergeImportInto(
     p_tenant_id: tenantId,
     p_source_id: sourceId,
     p_target_id: targetId,
-    p_supplier_name: extras?.supplierName ?? null,
+    p_supplier_name: extras?.supplierName ?? undefined,
   });
 
   if (error) {

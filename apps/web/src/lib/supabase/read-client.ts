@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/database.types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -8,6 +9,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * Use somente em Server Components/Route Handlers; escritas administrativas
  * continuam via service role.
  */
-export async function getReadClient(): Promise<SupabaseClient> {
+export async function getReadClient(): Promise<SupabaseClient<Database>> {
   return createSupabaseServerClient();
 }

@@ -2,7 +2,16 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type MemberRole = "owner" | "admin" | "member" | "viewer";
+const MEMBER_ROLES = ["owner", "admin", "operator", "viewer"] as const;
+
+/** Mesmo check de `tenant_members.role` no banco (init.sql). */
+type MemberRole = (typeof MEMBER_ROLES)[number];
+
+function toMemberRole(value: unknown): MemberRole {
+  return MEMBER_ROLES.includes(value as MemberRole)
+    ? (value as MemberRole)
+    : "viewer";
+}
 
 export interface AuthContext {
   userId: string;
@@ -38,7 +47,7 @@ export async function resolveAuthState(): Promise<AuthState> {
   }
 
   const tenantId = user.app_metadata?.tenant_id as string | undefined;
-  const role = (user.app_metadata?.tenant_role ?? "viewer") as MemberRole;
+  const role = toMemberRole(user.app_metadata?.tenant_role);
 
   if (!tenantId) {
     return { status: "unauthenticated" };

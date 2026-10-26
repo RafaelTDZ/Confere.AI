@@ -86,7 +86,7 @@ export async function listTenantNcms(
     throw new Error(error.message || "Falha ao listar NCMs");
   }
 
-  return buildPage((data ?? []) as NcmRow[], count ?? 0, page, pageSize);
+  return buildPage(data ?? [], count ?? 0, page, pageSize);
 }
 
 export async function getNcmById(
@@ -108,7 +108,7 @@ export async function getNcmById(
     throw new NcmNotFoundError();
   }
 
-  return data as NcmRow;
+  return data;
 }
 
 export async function createNcm(
@@ -134,7 +134,7 @@ export async function createNcm(
     throw new Error(error?.message || "Falha ao cadastrar NCM");
   }
 
-  return data as NcmRow;
+  return data;
 }
 
 export async function updateNcm(
@@ -163,5 +163,5 @@ export async function updateNcm(
     throw new NcmNotFoundError();
   }
 
-  return data as NcmRow;
+  return data;
 }

@@ -1,12 +1,13 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/supabase/database.types";
 
 /**
  * Client Supabase com service role / secret key (bypassa RLS).
  * Usado apenas no servidor para escrever extraction_results e ai_logs.
  */
-export function createSupabaseAdminClient(): SupabaseClient {
+export function createSupabaseAdminClient(): SupabaseClient<Database> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
@@ -18,7 +19,7 @@ export function createSupabaseAdminClient(): SupabaseClient {
     );
   }
 
-  return createClient(url, key, {
+  return createClient<Database>(url, key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

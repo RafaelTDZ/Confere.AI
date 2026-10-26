@@ -56,7 +56,7 @@ beforeEach(() => {
     userId: "user-1",
     email: "user@example.com",
     tenantId: TENANT_ID,
-    role: "member",
+    role: "operator",
   });
 });
 

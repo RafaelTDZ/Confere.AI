@@ -2,6 +2,7 @@ import "server-only";
 
 import { assertDocumentOwnership } from "@/lib/documents/ownership";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/supabase/database.types";
 import { getReadClient } from "@/lib/supabase/read-client";
 
 export type LatestExtraction = {
@@ -35,15 +36,15 @@ export async function findLatestExtractionsByDocumentIds(params: {
 
   const latest = new Map<string, LatestExtraction>();
   for (const row of data ?? []) {
-    const documentId = row.document_id as string;
+    const documentId = row.document_id;
     if (latest.has(documentId)) continue;
     latest.set(documentId, {
-      id: row.id as string,
+      id: row.id,
       documentId,
-      model: row.model as string,
+      model: row.model,
       payload: row.payload,
-      tokensUsed: (row.tokens_used as number | null) ?? null,
-      createdAt: row.created_at as string,
+      tokensUsed: row.tokens_used,
+      createdAt: row.created_at,
     });
   }
   return latest;
@@ -68,7 +69,9 @@ export async function persistExtractionResult(params: {
       tenant_id: params.tenantId,
       document_id: params.documentId,
       model: params.model,
-      payload: params.payload,
+      // Payload vem dos schemas zod (já serializável); o `Json` do banco é a
+      // fronteira onde o tipo aberto vira valor persistido.
+      payload: params.payload as Json,
       confidence: {},
       tokens_used: params.tokensUsed ?? null,
     })

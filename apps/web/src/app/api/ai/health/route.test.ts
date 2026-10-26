@@ -72,7 +72,7 @@ const AUTH_CONTEXT = {
   userId: "user-1",
   email: "user@example.com",
   tenantId: "tenant-1",
-  role: "member",
+  role: "operator",
 };
 
 async function readJson(response: {

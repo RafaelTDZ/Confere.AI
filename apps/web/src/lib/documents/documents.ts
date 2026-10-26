@@ -36,17 +36,16 @@ export async function findTenantDocumentsBySha256(params: {
   }
 
   return (data ?? []).map((row) => ({
-    id: row.id as string,
+    id: row.id,
     docType: row.doc_type as DocumentType,
-    importId: row.import_id as string,
-    storagePath: row.storage_path as string,
-    filename: (row.original_filename as string | null) ?? "documento",
-    mediaType:
-      (row.content_type as string | null) ?? "application/octet-stream",
-    sizeBytes: (row.size_bytes as number | null) ?? 0,
-    status: row.status as string,
-    version: row.version as number,
-    createdAt: row.created_at as string,
+    importId: row.import_id,
+    storagePath: row.storage_path,
+    filename: row.original_filename ?? "documento",
+    mediaType: row.content_type ?? "application/octet-stream",
+    sizeBytes: row.size_bytes ?? 0,
+    status: row.status,
+    version: row.version,
+    createdAt: row.created_at,
   }));
 }
 
@@ -68,7 +67,7 @@ export async function findDocumentsBySha256(params: {
   }
 
   return (data ?? []).map((row) => ({
-    id: row.id as string,
+    id: row.id,
     docType: row.doc_type as DocumentType,
   }));
 }
@@ -96,7 +95,7 @@ async function nextDocumentVersions(
   }
   for (const row of data ?? []) {
     const type = row.doc_type as DocumentType;
-    max[type] = Math.max(max[type] ?? 0, row.version as number);
+    max[type] = Math.max(max[type] ?? 0, row.version);
   }
   for (const type of types) {
     max[type] += 1;
@@ -143,7 +142,7 @@ export async function insertDocuments(params: {
   }
 
   return data.map((row) => ({
-    id: row.id as string,
+    id: row.id,
     docType: row.doc_type as DocumentType,
   }));
 }
@@ -180,5 +179,5 @@ export async function listImportStoragePaths(params: {
     throw new Error(error.message || "Falha ao listar arquivos da importação");
   }
 
-  return (data ?? []).map((row) => row.storage_path as string);
+  return (data ?? []).map((row) => row.storage_path);
 }
