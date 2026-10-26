@@ -130,6 +130,8 @@ function extractionForType(
   return extractions.get(doc.id) ?? null;
 }
 
+type PipelineTracker = { importId?: string };
+
 async function buildReusableResult(
   params: AnalyzePipelineParams,
   reusable: ReusableUpload,
@@ -140,6 +142,7 @@ async function buildReusableResult(
     mediaType: string;
   },
   started: number,
+  tracker: PipelineTracker,
 ): Promise<AnalyzePipelineResult> {
   const { docs, extractions } = reusable;
   const types = IMPORT_DOCUMENT_TYPES.filter((type) =>
@@ -225,6 +228,8 @@ async function buildReusableResult(
 
       documents = newDocs;
 
+      tracker.importId = importId;
+
       const invoiceNumber =
         normalizeImportKey(invoice?.number) ??
         normalizeImportKey(packingList?.invoiceNumber);
@@ -306,6 +311,10 @@ async function buildReusableResult(
   };
 }
 
+/**
+ * Executa a análise e, em caso de falha, marca a importação como `failed`
+ * antes de propagar o erro (o estado parcial fica explícito e reprocessável).
+ */
 export async function runAnalyzePipeline(params: {
   tenantId: string;
   userId: string;
@@ -313,6 +322,39 @@ export async function runAnalyzePipeline(params: {
   startedAt?: number;
   importId?: string;
 }): Promise<AnalyzePipelineResult> {
+  const tracker: PipelineTracker = {};
+
+  try {
+    return await executeAnalyzePipeline(params, tracker);
+  } catch (error) {
+    if (tracker.importId) {
+      try {
+        await updateImportStatus({
+          tenantId: params.tenantId,
+          importId: tracker.importId,
+          status: "failed",
+        });
+      } catch (statusError) {
+        console.error(
+          "[analyze-pipeline] falha ao marcar importação como failed:",
+          statusError,
+        );
+      }
+    }
+    throw error;
+  }
+}
+
+async function executeAnalyzePipeline(
+  params: {
+    tenantId: string;
+    userId: string;
+    file: File;
+    startedAt?: number;
+    importId?: string;
+  },
+  tracker: PipelineTracker,
+): Promise<AnalyzePipelineResult> {
   const started = params.startedAt ?? Date.now();
 
   const filename = params.file.name || "documento";
@@ -329,6 +371,7 @@ export async function runAnalyzePipeline(params: {
       reusable,
       { buffer, digest, filename, mediaType },
       started,
+      tracker,
     );
   }
 
@@ -520,6 +563,8 @@ export async function runAnalyzePipeline(params: {
     });
     importId = created.importId;
   }
+
+  tracker.importId = importId;
 
   try {
     await attachAiLogsToImport({

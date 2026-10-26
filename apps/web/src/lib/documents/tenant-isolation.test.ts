@@ -4,7 +4,6 @@ import {
   findDocumentsBySha256,
   insertDocuments,
   listImportStoragePaths,
-  moveDocumentsToImport,
   updateDocumentStatus,
 } from "@/lib/documents/documents";
 import { persistExtractionResult } from "@/lib/documents/extractions";
@@ -192,22 +191,6 @@ function findImport(id: string, tenantId: string): FakeRow {
     throw new Error(`Importação ${id} do tenant ${tenantId} não encontrada`);
   }
   return row;
-}
-
-/** Delega ao fake e injeta erro somente na segunda consulta (destino). */
-function readClientWithSecondSelectFailure(message: string): unknown {
-  const db = seedAdmin();
-  const originalFrom = db.from.bind(db);
-  let calls = 0;
-  return {
-    from(table: string) {
-      calls += 1;
-      if (calls === 2) {
-        db.failNext({ message }, { table, operation: "select" });
-      }
-      return originalFrom(table);
-    },
-  };
 }
 
 describe("findDocumentsBySha256", () => {
@@ -617,86 +600,5 @@ describe("insertDocuments", () => {
         sizeBytes: 321,
       }),
     ).rejects.toThrow("falha ao registrar documentos");
-  });
-});
-
-describe("moveDocumentsToImport", () => {
-  it("move só documentos do próprio tenant e ignora versões de outro tenant", async () => {
-    await moveDocumentsToImport({
-      tenantId: "tenant-a",
-      sourceImportId: "import-source",
-      targetImportId: "import-target",
-    });
-
-    expect(findRow("documents", "doc-a-source")).toMatchObject({
-      import_id: "import-target",
-      version: 3,
-    });
-    expect(findRow("documents", "doc-b-source")).toMatchObject({
-      import_id: "import-source",
-      version: 5,
-    });
-    expect(findRow("documents", "doc-b-target")).toMatchObject({
-      import_id: "import-target",
-      version: 10,
-    });
-  });
-
-  it("propaga erro ao listar os documentos da origem", async () => {
-    readClient.failNext(
-      { message: "falha ao listar documentos da origem" },
-      { table: "documents", operation: "select" },
-    );
-
-    await expect(
-      moveDocumentsToImport({
-        tenantId: "tenant-a",
-        sourceImportId: "import-source",
-        targetImportId: "import-target",
-      }),
-    ).rejects.toThrow("falha ao listar documentos da origem");
-  });
-
-  it("propaga erro ao mover os documentos no destino", async () => {
-    adminClient.failNext(
-      { message: "falha ao mover documento" },
-      { table: "documents", operation: "update" },
-    );
-
-    await expect(
-      moveDocumentsToImport({
-        tenantId: "tenant-a",
-        sourceImportId: "import-source",
-        targetImportId: "import-target",
-      }),
-    ).rejects.toThrow("falha ao mover documento");
-  });
-
-  it("não altera nada quando a origem não possui documentos", async () => {
-    await moveDocumentsToImport({
-      tenantId: "tenant-a",
-      sourceImportId: "import-sem-documentos",
-      targetImportId: "import-target",
-    });
-
-    expect(findRow("documents", "doc-a-target").version).toBe(2);
-  });
-
-  it("propaga erro ao versionar os documentos no destino", async () => {
-    mocks.readClient = readClientWithSecondSelectFailure(
-      "falha ao versionar no destino",
-    );
-
-    await expect(
-      moveDocumentsToImport({
-        tenantId: "tenant-a",
-        sourceImportId: "import-source",
-        targetImportId: "import-target",
-      }),
-    ).rejects.toThrow("falha ao versionar no destino");
-
-    expect(findRow("documents", "doc-a-source").import_id).toBe(
-      "import-source",
-    );
   });
 });

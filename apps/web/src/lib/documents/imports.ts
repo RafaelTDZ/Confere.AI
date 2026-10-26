@@ -16,10 +16,6 @@ import {
   type ImportStatus,
 } from "@/lib/documents/imports-shared";
 import {
-  listImportStoragePaths,
-  moveDocumentsToImport,
-} from "@/lib/documents/documents";
-import {
   buildPage,
   escapeLike,
   normalizePage,
@@ -195,33 +191,32 @@ export async function listTenantImports(
   return buildPage((data ?? []) as ImportRow[], count ?? 0, page, pageSize);
 }
 
+/**
+ * Remove a importação em uma transação no banco (`delete_import`): documentos e
+ * extrações caem por FK em cascata e os `storage_path` são devolvidos para a
+ * limpeza do Storage. Se a remoção do arquivo falhar, a importação já foi
+ * removida e o arquivo órfão fica registrado no log.
+ */
 export async function deleteImportRecord(
   tenantId: string,
   importId: string,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
-  const storagePaths = [
-    ...new Set(
-      await listImportStoragePaths({
-        tenantId,
-        importId,
-      }),
-    ),
-  ];
-  const { data, error } = await admin
-    .from("imports")
-    .delete()
-    .eq("id", importId)
-    .eq("tenant_id", tenantId)
-    .select("id")
-    .maybeSingle();
+  const { data, error } = await admin.rpc("delete_import", {
+    p_tenant_id: tenantId,
+    p_import_id: importId,
+  });
 
   if (error) {
+    if (error.code === "P0002") {
+      throw new ImportNotFoundError();
+    }
     throw new Error(error.message || "Falha ao remover importação");
   }
-  if (!data) {
-    throw new ImportNotFoundError();
-  }
+
+  const storagePaths = [
+    ...new Set(((data as string[] | null) ?? []).filter(Boolean)),
+  ];
 
   if (storagePaths.length > 0) {
     const { error: storageError } = await admin.storage
@@ -662,6 +657,11 @@ export async function updateImportRecord(
   return getImportDetail(tenantId, id);
 }
 
+/**
+ * Consolida a importação de origem na de destino em uma transação no banco
+ * (`merge_imports`): documentos, extrações, resultados, matches, ai_logs,
+ * chaves e partes mudam juntos; falha em qualquer passo desfaz tudo.
+ */
 async function mergeImportInto(
   tenantId: string,
   sourceId: string,
@@ -673,101 +673,18 @@ async function mergeImportInto(
   }
 
   const admin = createSupabaseAdminClient();
-  const supabase = await getReadClient();
-  const { data: source, error: sourceError } = await supabase
-    .from("imports")
-    .select(
-      "invoice_number, bl_number, supplier_name, consignee_id, notify_id",
-    )
-    .eq("tenant_id", tenantId)
-    .eq("id", sourceId)
-    .maybeSingle();
-
-  if (sourceError) {
-    throw new Error(sourceError.message || "Falha ao buscar importação origem");
-  }
-  if (!source) {
-    throw new ImportNotFoundError();
-  }
-
-  const { data: target, error: targetError } = await supabase
-    .from("imports")
-    .select("consignee_id, notify_id")
-    .eq("tenant_id", tenantId)
-    .eq("id", targetId)
-    .maybeSingle();
-
-  if (targetError) {
-    throw new Error(targetError.message || "Falha ao buscar importação destino");
-  }
-  if (!target) {
-    throw new ImportNotFoundError();
-  }
-
-  await moveDocumentsToImport({
-    tenantId,
-    sourceImportId: sourceId,
-    targetImportId: targetId,
+  const { error } = await admin.rpc("merge_imports", {
+    p_tenant_id: tenantId,
+    p_source_id: sourceId,
+    p_target_id: targetId,
+    p_supplier_name: extras?.supplierName ?? null,
   });
 
-  const { error: analysisError } = await admin
-    .from("analysis_results")
-    .update({ import_id: targetId })
-    .eq("tenant_id", tenantId)
-    .eq("import_id", sourceId);
-  if (analysisError) {
-    throw new Error(
-      analysisError.message || "Falha ao mover resultados da análise",
-    );
-  }
-
-  const { error: matchesError } = await admin
-    .from("product_matches")
-    .update({ import_id: targetId })
-    .eq("tenant_id", tenantId)
-    .eq("import_id", sourceId);
-  if (matchesError) {
-    throw new Error(
-      matchesError.message || "Falha ao mover correspondências de produto",
-    );
-  }
-
-  await fillImportKeysIfEmpty({
-    tenantId,
-    importId: targetId,
-    invoiceNumber: source.invoice_number as string | null,
-    blNumber: source.bl_number as string | null,
-    supplierName:
-      extras?.supplierName !== undefined
-        ? extras.supplierName
-        : (source.supplier_name as string | null),
-  });
-
-  const partyPatch: Record<string, string> = {};
-  if (!target.consignee_id && source.consignee_id) {
-    partyPatch.consignee_id = source.consignee_id as string;
-  }
-  if (!target.notify_id && source.notify_id) {
-    partyPatch.notify_id = source.notify_id as string;
-  }
-  if (Object.keys(partyPatch).length > 0) {
-    const { error: partyError } = await admin
-      .from("imports")
-      .update(partyPatch)
-      .eq("tenant_id", tenantId)
-      .eq("id", targetId);
-    if (partyError) {
-      throw new Error(partyError.message || "Falha ao copiar partes");
+  if (error) {
+    if (error.code === "P0002") {
+      throw new ImportNotFoundError();
     }
-  }
-
-  const { error: deleteError } = await admin
-    .from("imports")
-    .delete()
-    .eq("tenant_id", tenantId)
-    .eq("id", sourceId);
-  if (deleteError) {
-    throw new Error(deleteError.message || "Falha ao remover importação duplicada");
+    throw new Error(error.message || "Falha ao consolidar importações");
   }
 
   return getImportDetail(tenantId, targetId);

@@ -9,7 +9,8 @@ export type ImportStatus =
   | "processing"
   | "awaiting_review"
   | "completed"
-  | "rejected";
+  | "rejected"
+  | "failed";
 
 export type ImportRow = {
   id: string;
@@ -68,6 +69,7 @@ export const IMPORT_STATUS_LABELS: Record<
   awaiting_review: { label: "Aguardando revisão", variant: "default" },
   completed: { label: "Concluída", variant: "success" },
   rejected: { label: "Rejeitada", variant: "destructive" },
+  failed: { label: "Falhou", variant: "destructive" },
 };
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {

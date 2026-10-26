@@ -250,6 +250,54 @@ export class FakeSupabase {
     }
     return null;
   }
+
+  /** RPCs chamadas, na ordem, com os parâmetros recebidos. */
+  readonly rpcCalls: Array<{
+    name: string;
+    params: Record<string, unknown>;
+  }> = [];
+
+  private readonly pendingRpcs: Array<{
+    name: string;
+    response: FakeResponse;
+  }> = [];
+
+  /**
+   * Enfileira a resposta de uma RPC (uma única vez, casada pelo nome).
+   * Sem resposta enfileirada, a chamada falha para o teste perceber o esquecimento.
+   */
+  onRpc(
+    name: string,
+    response: { data?: unknown; error?: FakeError | string | null } = {},
+  ): this {
+    this.pendingRpcs.push({
+      name,
+      response: {
+        data: response.data ?? null,
+        error: response.error ? toFakeError(response.error) : null,
+      },
+    });
+    return this;
+  }
+
+  rpc(
+    name: string,
+    params: Record<string, unknown> = {},
+  ): Promise<FakeResponse> {
+    this.rpcCalls.push({ name, params });
+    const index = this.pendingRpcs.findIndex((entry) => entry.name === name);
+    if (index === -1) {
+      return Promise.resolve({
+        data: null,
+        error: {
+          code: "PGRST202",
+          message: `FakeSupabase: RPC "${name}" não configurada no teste`,
+        },
+      });
+    }
+    const [entry] = this.pendingRpcs.splice(index, 1);
+    return Promise.resolve(entry?.response ?? { data: null, error: null });
+  }
 }
 
 export class FakeQueryBuilder implements PromiseLike<FakeResponse> {

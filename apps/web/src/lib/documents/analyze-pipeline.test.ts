@@ -1321,3 +1321,46 @@ describe("runAnalyzePipeline", () => {
     ]);
   });
 });
+
+describe("falha no pipeline", () => {
+  it("marca a importação como failed antes de propagar o erro", async () => {
+    mocks.insertDocuments.mockRejectedValue(
+      new Error("falha ao registrar documentos"),
+    );
+
+    await expect(runAnalyzePipeline(baseParams())).rejects.toThrow(
+      "falha ao registrar documentos",
+    );
+
+    expect(mocks.updateImportStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      status: "failed",
+    });
+  });
+
+  it("não marca status quando a falha acontece antes de resolver a importação", async () => {
+    mocks.findTenantDocumentsBySha256.mockRejectedValue(
+      new Error("banco indisponível"),
+    );
+
+    await expect(runAnalyzePipeline(baseParams())).rejects.toThrow(
+      "banco indisponível",
+    );
+
+    expect(mocks.updateImportStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
+  it("propaga o erro original mesmo se o update de status falhar", async () => {
+    mocks.insertDocuments.mockRejectedValue(
+      new Error("falha ao registrar documentos"),
+    );
+    mocks.updateImportStatus.mockRejectedValue(new Error("status falhou"));
+
+    await expect(runAnalyzePipeline(baseParams())).rejects.toThrow(
+      "falha ao registrar documentos",
+    );
+  });
+});

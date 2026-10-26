@@ -373,14 +373,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function findRow(table: string, id: string): FakeRow {
-  const row = admin.rows(table).find((candidate) => candidate.id === id);
-  if (!row) {
-    throw new Error(`Linha ${table}/${id} não encontrada`);
-  }
-  return row;
-}
-
 function findImport(id: string, tenantId: string): FakeRow | undefined {
   return admin
     .rows("imports")
@@ -557,11 +549,19 @@ describe("listTenantImports", () => {
 });
 
 describe("deleteImportRecord", () => {
-  it("remove a importação do próprio tenant e os arquivos únicos do Storage", async () => {
+  it("remove via RPC transacional e limpa os arquivos únicos do Storage", async () => {
+    adminClient.onRpc("delete_import", {
+      data: ["tenant-a/shared.pdf", "tenant-a/shared-extra.pdf"],
+    });
+
     await deleteImportRecord(TENANT_A, "import-shared");
 
-    expect(findImport("import-shared", TENANT_A)).toBeUndefined();
-    expect(findImport("import-shared", TENANT_B)).toBeDefined();
+    expect(adminClient.rpcCalls).toEqual([
+      {
+        name: "delete_import",
+        params: { p_tenant_id: TENANT_A, p_import_id: "import-shared" },
+      },
+    ]);
     expect(admin.storage.removals).toEqual([
       {
         bucket: "import-documents",
@@ -570,32 +570,35 @@ describe("deleteImportRecord", () => {
     ]);
   });
 
-  it("lança ImportNotFoundError para importação de outro tenant sem remover arquivos", async () => {
+  it("lança ImportNotFoundError quando a RPC não encontra a importação", async () => {
+    adminClient.onRpc("delete_import", {
+      error: { code: "P0002", message: "importacao nao encontrada" },
+    });
+
     await expect(
       deleteImportRecord(TENANT_B, "import-a-early"),
     ).rejects.toBeInstanceOf(ImportNotFoundError);
 
-    expect(findImport("import-a-early", TENANT_A)).toBeDefined();
     expect(admin.storage.removals).toHaveLength(0);
   });
 
-  it("lança ImportNotFoundError para id inexistente", async () => {
-    await expect(
-      deleteImportRecord(TENANT_A, "import-inexistente"),
-    ).rejects.toBeInstanceOf(ImportNotFoundError);
+  it("não chama o Storage quando a importação não tem documentos", async () => {
+    adminClient.onRpc("delete_import", { data: [] });
+
+    await deleteImportRecord(TENANT_A, "import-a-late");
 
     expect(admin.storage.removals).toHaveLength(0);
   });
 
-  it("registra falha do Storage sem lançar e mantém a importação removida", async () => {
+  it("registra falha do Storage sem lançar", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     admin.storage.removeError = { message: "storage offline" };
+    adminClient.onRpc("delete_import", { data: ["tenant-a/shared.pdf"] });
 
     await expect(
       deleteImportRecord(TENANT_A, "import-shared"),
     ).resolves.toBeUndefined();
 
-    expect(findImport("import-shared", TENANT_A)).toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
       "[imports delete] Falha ao remover arquivos do Storage",
       { message: "storage offline" },
@@ -603,30 +606,14 @@ describe("deleteImportRecord", () => {
   });
 
   it("propaga erro do banco ao remover", async () => {
-    adminClient.failNext(
-      { message: "falha ao excluir" },
-      { table: "imports", operation: "delete" },
-    );
+    adminClient.onRpc("delete_import", {
+      error: { message: "falha ao excluir" },
+    });
 
     await expect(deleteImportRecord(TENANT_A, "import-shared")).rejects.toThrow(
       "falha ao excluir",
     );
 
-    expect(findImport("import-shared", TENANT_A)).toBeDefined();
-    expect(admin.storage.removals).toHaveLength(0);
-  });
-
-  it("propaga erro ao listar os arquivos da importação", async () => {
-    readClient.failNext(
-      { message: "falha ao listar arquivos" },
-      { table: "documents", operation: "select" },
-    );
-
-    await expect(deleteImportRecord(TENANT_A, "import-shared")).rejects.toThrow(
-      "falha ao listar arquivos",
-    );
-
-    expect(findImport("import-shared", TENANT_A)).toBeDefined();
     expect(admin.storage.removals).toHaveLength(0);
   });
 });
@@ -955,7 +942,7 @@ describe("updateImportRecord", () => {
     );
   });
 
-  it("faz merge da importação de origem na importação de referência duplicada", async () => {
+  it("consolida a importação via RPC transacional e devolve o destino", async () => {
     adminClient.failNext(
       {
         code: "23505",
@@ -963,36 +950,60 @@ describe("updateImportRecord", () => {
       },
       { table: "imports", operation: "update" },
     );
+    adminClient.onRpc("merge_imports", { data: "import-merge-target" });
 
     const detail = await updateImportRecord(TENANT_A, "import-merge-source", {
       referenceNumber: "po-target",
       supplierName: "Fornecedor Mesclado",
     });
 
+    expect(adminClient.rpcCalls).toEqual([
+      {
+        name: "merge_imports",
+        params: {
+          p_tenant_id: TENANT_A,
+          p_source_id: "import-merge-source",
+          p_target_id: "import-merge-target",
+          p_supplier_name: "Fornecedor Mesclado",
+        },
+      },
+    ]);
     expect(detail).toMatchObject({
       id: "import-merge-target",
       reference_number: "PO-TARGET",
-      invoice_number: "INV-MERGE",
-      bl_number: "BL-MERGE",
-      supplier_name: "Fornecedor Mesclado",
-      consignee: { id: "party-a-consignee", name: "Consignatário A" },
-      notify: { id: "party-a-notify", name: "Notify A" },
     });
-    expect(detail.documents.map((document) => document.id)).toEqual([
-      "doc-merge-target",
-      "doc-merge-source",
-    ]);
-    expect(findImport("import-merge-source", TENANT_A)).toBeUndefined();
-    expect(findRow("documents", "doc-merge-source")).toMatchObject({
-      import_id: "import-merge-target",
-      version: 3,
+  });
+
+  it("lança ImportNotFoundError quando a RPC de merge não encontra a origem", async () => {
+    adminClient.failNext(
+      { code: "23505", message: "duplicate key" },
+      { table: "imports", operation: "update" },
+    );
+    adminClient.onRpc("merge_imports", {
+      error: { code: "P0002", message: "importacao origem nao encontrada" },
     });
-    expect(findRow("analysis_results", "analysis-merge")).toMatchObject({
-      import_id: "import-merge-target",
+
+    await expect(
+      updateImportRecord(TENANT_A, "import-merge-source", {
+        referenceNumber: "PO-TARGET",
+      }),
+    ).rejects.toBeInstanceOf(ImportNotFoundError);
+  });
+
+  it("propaga erro genérico da RPC de merge", async () => {
+    adminClient.failNext(
+      { code: "23505", message: "duplicate key" },
+      { table: "imports", operation: "update" },
+    );
+    adminClient.onRpc("merge_imports", {
+      error: { message: "falha ao consolidar" },
     });
-    expect(findRow("product_matches", "match-merge")).toMatchObject({
-      import_id: "import-merge-target",
-    });
+
+    await expect(
+      updateImportRecord(TENANT_A, "import-merge-source", {
+        referenceNumber: "PO-TARGET",
+      }),
+    ).rejects.toThrow("falha ao consolidar");
   });
 
   it("lança ImportConflictError quando a referência duplicada é a própria importação", async () => {
@@ -1032,59 +1043,6 @@ describe("updateImportRecord", () => {
         referenceNumber: "PO-NOVA",
       }),
     ).rejects.toThrow("falha ao atualizar");
-  });
-
-  it("propaga erro ao mover resultados da análise durante o merge", async () => {
-    adminClient.failNext(
-      { code: "23505", message: "duplicate key" },
-      { table: "imports", operation: "update" },
-    );
-    adminClient.failNext(
-      { message: "falha ao mover análise" },
-      { table: "analysis_results", operation: "update" },
-    );
-
-    await expect(
-      updateImportRecord(TENANT_A, "import-merge-source", {
-        referenceNumber: "PO-TARGET",
-      }),
-    ).rejects.toThrow("falha ao mover análise");
-  });
-
-  it("propaga erro ao mover correspondências durante o merge", async () => {
-    adminClient.failNext(
-      { code: "23505", message: "duplicate key" },
-      { table: "imports", operation: "update" },
-    );
-    adminClient.failNext(
-      { message: "falha ao mover correspondências" },
-      { table: "product_matches", operation: "update" },
-    );
-
-    await expect(
-      updateImportRecord(TENANT_A, "import-merge-source", {
-        referenceNumber: "PO-TARGET",
-      }),
-    ).rejects.toThrow("falha ao mover correspondências");
-  });
-
-  it("propaga erro ao remover a importação de origem durante o merge", async () => {
-    adminClient.failNext(
-      { code: "23505", message: "duplicate key" },
-      { table: "imports", operation: "update" },
-    );
-    adminClient.failNext(
-      { message: "falha ao excluir origem" },
-      { table: "imports", operation: "delete" },
-    );
-
-    await expect(
-      updateImportRecord(TENANT_A, "import-merge-source", {
-        referenceNumber: "PO-TARGET",
-      }),
-    ).rejects.toThrow("falha ao excluir origem");
-
-    expect(findImport("import-merge-source", TENANT_A)).toBeDefined();
   });
 });
 
