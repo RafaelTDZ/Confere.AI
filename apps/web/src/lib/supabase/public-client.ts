@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseFetch } from "@/lib/supabase/fetch";
 import { getSupabasePublicKey } from "@/lib/supabase/public-key";

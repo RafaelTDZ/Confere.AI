@@ -1,3 +1,5 @@
+import "server-only";
+
 import { getReadClient } from "@/lib/supabase/read-client";
 
 export async function assertDocumentOwnership(params: {

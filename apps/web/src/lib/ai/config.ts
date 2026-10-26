@@ -1,3 +1,5 @@
+import "server-only";
+
 export class AiConfigError extends Error {
   constructor(message: string) {
     super(message);

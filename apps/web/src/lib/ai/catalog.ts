@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { AiProviderId } from "@/lib/ai/provider";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 

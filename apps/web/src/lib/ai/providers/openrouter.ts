@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { getOpenRouterApiKey } from "@/lib/ai/config";
 

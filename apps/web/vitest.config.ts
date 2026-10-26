@@ -5,6 +5,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // O pacote real lança ao ser importado fora do React Server; nos testes
+      // basta um módulo vazio (o guard de build é exercido pelo `next build`).
+      "server-only": fileURLToPath(
+        new URL("./src/test/server-only.ts", import.meta.url),
+      ),
     },
   },
   test: {

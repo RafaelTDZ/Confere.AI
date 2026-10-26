@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createOpenRouterClient } from "@/lib/ai/providers/openrouter";
 import {
   getOpenRouterModel,

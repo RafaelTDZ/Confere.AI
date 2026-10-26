@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type RateLimitResult = {

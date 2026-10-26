@@ -1,3 +1,5 @@
+import "server-only";
+
 export { AiConfigError } from "@/lib/ai/providers/openrouter";
 export {
   getAiProvider,

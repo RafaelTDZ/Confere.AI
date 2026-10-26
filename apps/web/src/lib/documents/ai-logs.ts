@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 

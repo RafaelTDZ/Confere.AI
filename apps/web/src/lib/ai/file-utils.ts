@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createHash } from "node:crypto";
 
 const MAX_ANALYZE_FILE_BYTES = 10 * 1024 * 1024;

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type MemberRole = "owner" | "admin" | "member" | "viewer";

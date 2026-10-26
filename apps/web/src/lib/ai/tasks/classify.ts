@@ -1,3 +1,5 @@
+import "server-only";
+
 import { generateText, Output } from "ai";
 import {
   getDocumentLanguageModel,

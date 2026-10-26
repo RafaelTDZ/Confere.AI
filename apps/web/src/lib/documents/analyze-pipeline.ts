@@ -1,3 +1,5 @@
+import "server-only";
+
 import { classifyDocument } from "@/lib/ai/tasks/classify";
 import { extractBl } from "@/lib/ai/tasks/extract-bl";
 import { extractInvoice } from "@/lib/ai/tasks/extract-invoice";
