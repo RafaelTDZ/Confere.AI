@@ -194,6 +194,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   `<tenant>/_jobs/<jobId>/`, cria o job e responde `202`; o processamento continua no
   `after()` da request. `/api/ai/jobs/run` (Bearer `CRON_SECRET`) drena jobs `queued` ou
   `running` travados há 15 min (até 3 tentativas) — aponte o Vercel Cron para ele.
+- **Worker sem sessão**: `runWithAdminReads` (`lib/supabase/read-client.ts`) faz o pipeline do
+  job ler via service role usando o `tenant_id` do job; requests normais seguem em RLS
+  (`getReadClient`). Sem isso, `persistExtractionResult` falha no cron/`after()` por falta de
+  cookie.
 - **Observabilidade**: `src/instrumentation.ts` registra `@vercel/otel` (na Vercel envia para a
   observabilidade do projeto; local/testes viram no-op). `lib/observability/tracing.ts` expõe
   `withSpan`/`recordAiCall`: spans `ai.analyze`, `ai.job`, `ai.classify`, `ai.extract_*` e

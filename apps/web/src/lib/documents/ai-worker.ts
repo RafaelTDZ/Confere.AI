@@ -12,6 +12,7 @@ import {
   type AiJobRow,
 } from "@/lib/documents/ai-jobs";
 import { withSpan } from "@/lib/observability/tracing";
+import { runWithAdminReads } from "@/lib/supabase/read-client";
 
 /** Executa um job já reservado: baixa o arquivo, roda o pipeline e fecha o estado. */
 async function runClaimedJob(job: AiJobRow): Promise<void> {
@@ -26,12 +27,14 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
         "tenant.id": job.tenant_id,
       },
       () =>
-        runAnalyzePipeline({
-          tenantId: job.tenant_id,
-          userId: job.user_id ?? "",
-          file,
-          importId: job.import_id ?? undefined,
-        }),
+        runWithAdminReads(() =>
+          runAnalyzePipeline({
+            tenantId: job.tenant_id,
+            userId: job.user_id ?? "",
+            file,
+            importId: job.import_id ?? undefined,
+          }),
+        ),
     );
   } catch (error) {
     // `PdfConversionError` já traz a mensagem acionável de PDF → imagens; ela
