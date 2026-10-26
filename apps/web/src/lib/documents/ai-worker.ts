@@ -10,18 +10,28 @@ import {
   removeAiJobFile,
   type AiJobRow,
 } from "@/lib/documents/ai-jobs";
+import { withSpan } from "@/lib/observability/tracing";
 
 /** Executa um job já reservado: baixa o arquivo, roda o pipeline e fecha o estado. */
 async function runClaimedJob(job: AiJobRow): Promise<void> {
   let result;
   try {
     const file = await downloadAiJobFile(job);
-    result = await runAnalyzePipeline({
-      tenantId: job.tenant_id,
-      userId: job.user_id ?? "",
-      file,
-      importId: job.import_id ?? undefined,
-    });
+    result = await withSpan(
+      "ai.job",
+      {
+        "job.id": job.id,
+        "job.attempt": job.attempts,
+        "tenant.id": job.tenant_id,
+      },
+      () =>
+        runAnalyzePipeline({
+          tenantId: job.tenant_id,
+          userId: job.user_id ?? "",
+          file,
+          importId: job.import_id ?? undefined,
+        }),
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Falha ao analisar documento";

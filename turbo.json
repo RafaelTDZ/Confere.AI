@@ -19,7 +19,8 @@
     "AI_MONTHLY_TOKEN_QUOTA",
     "CHECK_EMAIL_RATE_LIMIT",
     "CHECK_EMAIL_RATE_WINDOW_SECONDS",
-    "CRON_SECRET"
+    "CRON_SECRET",
+    "OTEL_EXPORTER_OTLP_ENDPOINT"
   ],
   "tasks": {
     "build": {

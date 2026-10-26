@@ -56,6 +56,7 @@ import {
   buildUniqueStoragePath,
   uploadImportFile,
 } from "@/lib/documents/storage";
+import { recordAiCall, withSpan } from "@/lib/observability/tracing";
 
 export type AnalyzePipelineResult = {
   importId: string;
@@ -128,6 +129,20 @@ function extractionForType(
   const doc = docs.find((d) => d.docType === docType);
   if (!doc) return null;
   return extractions.get(doc.id) ?? null;
+}
+
+/** Persiste a extração dentro de um span (tenant/documento, sem PII). */
+async function persistExtractionWithSpan(
+  params: Parameters<typeof persistExtractionResult>[0],
+): Promise<string> {
+  return withSpan(
+    "ai.persist_extraction",
+    {
+      "tenant.id": params.tenantId,
+      "document.id": params.documentId,
+    },
+    () => persistExtractionResult(params),
+  );
 }
 
 type PipelineTracker = { importId?: string };
@@ -209,7 +224,7 @@ async function buildReusableResult(
         );
         if (!extraction) continue;
 
-        const newExtractionId = await persistExtractionResult({
+        const newExtractionId = await persistExtractionWithSpan({
           tenantId: params.tenantId,
           documentId: newDoc.id,
           model: extraction.model,
@@ -322,27 +337,42 @@ export async function runAnalyzePipeline(params: {
   startedAt?: number;
   importId?: string;
 }): Promise<AnalyzePipelineResult> {
-  const tracker: PipelineTracker = {};
+  return withSpan(
+    "ai.analyze",
+    params.importId
+      ? { "tenant.id": params.tenantId, "import.id": params.importId }
+      : { "tenant.id": params.tenantId },
+    async (span) => {
+      const tracker: PipelineTracker = {};
 
-  try {
-    return await executeAnalyzePipeline(params, tracker);
-  } catch (error) {
-    if (tracker.importId) {
       try {
-        await updateImportStatus({
-          tenantId: params.tenantId,
-          importId: tracker.importId,
-          status: "failed",
+        const result = await executeAnalyzePipeline(params, tracker);
+        span.setAttributes({
+          "import.id": result.importId,
+          "ai.deduped": result.deduped,
+          "ai.types": result.types.join(","),
+          "ai.latency_ms": result.latencyMs,
         });
-      } catch (statusError) {
-        console.error(
-          "[analyze-pipeline] falha ao marcar importação como failed:",
-          statusError,
-        );
+        return result;
+      } catch (error) {
+        if (tracker.importId) {
+          try {
+            await updateImportStatus({
+              tenantId: params.tenantId,
+              importId: tracker.importId,
+              status: "failed",
+            });
+          } catch (statusError) {
+            console.error(
+              "[analyze-pipeline] falha ao marcar importação como failed:",
+              statusError,
+            );
+          }
+        }
+        throw error;
       }
-    }
-    throw error;
-  }
+    },
+  );
 }
 
 async function executeAnalyzePipeline(
@@ -392,13 +422,35 @@ async function executeAnalyzePipeline(
 
   const aiLogIds: string[] = [];
   async function logAi(params: Parameters<typeof persistAiLog>[0]) {
+    recordAiCall({
+      capability: params.capability,
+      model: params.model,
+      status: params.status,
+      tokensIn: params.tokensIn,
+      tokensOut: params.tokensOut,
+      latencyMs: params.latencyMs,
+      costUsd: params.costUsd,
+    });
     const id = await persistAiLog(params);
     if (id) aiLogIds.push(id);
   }
 
   let classifyResult;
   try {
-    classifyResult = await classifyDocument(fileInput, overrides);
+    classifyResult = await withSpan(
+      "ai.classify",
+      { "ai.model": modelId },
+      async (span) => {
+        const result = await classifyDocument(fileInput, overrides);
+        span.setAttributes({
+          "ai.model": result.model,
+          "ai.tokens_in": result.tokensIn,
+          "ai.tokens_out": result.tokensOut,
+          "ai.latency_ms": result.latencyMs,
+        });
+        return result;
+      },
+    );
     await logAi({
       tenantId: params.tenantId,
       capability: "classify",
@@ -437,7 +489,20 @@ async function executeAnalyzePipeline(
 
   if (types.includes("invoice")) {
     try {
-      const extracted = await extractInvoice(fileInput, overrides);
+      const extracted = await withSpan(
+        "ai.extract_invoice",
+        { "ai.model": modelId },
+        async (span) => {
+          const result = await extractInvoice(fileInput, overrides);
+          span.setAttributes({
+            "ai.model": result.model,
+            "ai.tokens_in": result.tokensIn,
+            "ai.tokens_out": result.tokensOut,
+            "ai.latency_ms": result.latencyMs,
+          });
+          return result;
+        },
+      );
       invoice = extracted.invoice;
       invoiceModel = extracted.model;
       invoiceTokensUsed = extracted.tokensIn + extracted.tokensOut;
@@ -469,7 +534,20 @@ async function executeAnalyzePipeline(
 
   if (types.includes("packing_list")) {
     try {
-      const extracted = await extractPackingList(fileInput, overrides);
+      const extracted = await withSpan(
+        "ai.extract_packing_list",
+        { "ai.model": modelId },
+        async (span) => {
+          const result = await extractPackingList(fileInput, overrides);
+          span.setAttributes({
+            "ai.model": result.model,
+            "ai.tokens_in": result.tokensIn,
+            "ai.tokens_out": result.tokensOut,
+            "ai.latency_ms": result.latencyMs,
+          });
+          return result;
+        },
+      );
       packingList = extracted.packingList;
       packingListModel = extracted.model;
       packingListTokensUsed = extracted.tokensIn + extracted.tokensOut;
@@ -501,7 +579,20 @@ async function executeAnalyzePipeline(
 
   if (types.includes("bill_of_lading")) {
     try {
-      const extracted = await extractBl(fileInput, overrides);
+      const extracted = await withSpan(
+        "ai.extract_bl",
+        { "ai.model": modelId },
+        async (span) => {
+          const result = await extractBl(fileInput, overrides);
+          span.setAttributes({
+            "ai.model": result.model,
+            "ai.tokens_in": result.tokensIn,
+            "ai.tokens_out": result.tokensOut,
+            "ai.latency_ms": result.latencyMs,
+          });
+          return result;
+        },
+      );
       bl = extracted.bl;
       blModel = extracted.model;
       blTokensUsed = extracted.tokensIn + extracted.tokensOut;
@@ -618,7 +709,7 @@ async function executeAnalyzePipeline(
 
     if (invoice && invoiceDoc) {
       try {
-        extractionResultId = await persistExtractionResult({
+        extractionResultId = await persistExtractionWithSpan({
           tenantId: params.tenantId,
           documentId: invoiceDoc.id,
           model: invoiceModel,
@@ -659,7 +750,7 @@ async function executeAnalyzePipeline(
 
     if (packingList && packingListDoc) {
       try {
-        await persistExtractionResult({
+        await persistExtractionWithSpan({
           tenantId: params.tenantId,
           documentId: packingListDoc.id,
           model: packingListModel,
@@ -693,7 +784,7 @@ async function executeAnalyzePipeline(
 
     if (bl && blDoc) {
       try {
-        await persistExtractionResult({
+        await persistExtractionWithSpan({
           tenantId: params.tenantId,
           documentId: blDoc.id,
           model: blModel,
