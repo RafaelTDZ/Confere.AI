@@ -3,7 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, Building2, Hash, Menu, Package, Settings, Sparkles, X } from "lucide-react";
+import {
+  Boxes,
+  Building2,
+  Hash,
+  Menu,
+  Package,
+  Settings,
+  Shield,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -17,6 +27,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const ADMIN_NAV_ITEMS = [
+  { href: "/admin", label: "Admin", icon: Shield },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ] as const;
 
