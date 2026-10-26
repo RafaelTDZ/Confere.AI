@@ -201,7 +201,9 @@ describe("findDocumentsBySha256", () => {
       sha256: "sha-same",
     });
 
-    expect(documents).toEqual([{ id: "doc-a-invoice", docType: "invoice" }]);
+    expect(documents).toEqual([
+      { id: "doc-a-invoice", docType: "invoice", status: "pending" },
+    ]);
   });
 
   it("retorna lista vazia quando o tenant não possui o documento", async () => {
@@ -238,7 +240,9 @@ describe("findDocumentsBySha256", () => {
       sha256: "sha-same",
     });
 
-    expect(documents).toEqual([{ id: "doc-a-invoice", docType: "invoice" }]);
+    expect(documents).toEqual([
+      { id: "doc-a-invoice", docType: "invoice", status: "pending" },
+    ]);
   });
 });
 

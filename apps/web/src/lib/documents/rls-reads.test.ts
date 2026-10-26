@@ -409,7 +409,9 @@ describe("leituras públicas de documents", () => {
       sha256: SHA_INVOICE_A,
     });
 
-    expect(documents).toEqual([{ id: "doc-a", docType: "invoice" }]);
+    expect(documents).toEqual([
+      { id: "doc-a", docType: "invoice", status: "extracted" },
+    ]);
   });
 
   it("encontra somente os documentos do tenant pelo sha256", async () => {

@@ -687,8 +687,13 @@ async function executeAnalyzePipeline(
     sha256: digest,
   });
 
-  let documents = existingByHash;
   let extractionResultId: string | null = null;
+  const shouldPersist =
+    existingByHash.length === 0 ||
+    existingByHash.some((document) => document.status !== "extracted");
+
+  let documents: Array<{ id: string; docType: DocumentType }> =
+    existingByHash.map(({ id, docType }) => ({ id, docType }));
 
   if (existingByHash.length === 0) {
     const storagePath = await buildUniqueStoragePath({
@@ -713,7 +718,9 @@ async function executeAnalyzePipeline(
       mediaType,
       sizeBytes: buffer.byteLength,
     });
+  }
 
+  if (shouldPersist) {
     const invoiceDoc = documents.find((d) => d.docType === "invoice");
     const packingListDoc = documents.find((d) => d.docType === "packing_list");
     const blDoc = documents.find((d) => d.docType === "bill_of_lading");
@@ -833,7 +840,9 @@ async function executeAnalyzePipeline(
         }
       }
     }
-  } else {
+  }
+
+  if (!shouldPersist) {
     await fillImportKeysIfEmpty({
       tenantId: params.tenantId,
       importId,

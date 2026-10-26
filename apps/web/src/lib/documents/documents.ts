@@ -53,11 +53,11 @@ export async function findDocumentsBySha256(params: {
   tenantId: string;
   importId: string;
   sha256: string;
-}): Promise<Array<{ id: string; docType: DocumentType }>> {
+}): Promise<Array<{ id: string; docType: DocumentType; status: string }>> {
   const supabase = await getReadClient();
   const { data, error } = await supabase
     .from("documents")
-    .select("id, doc_type")
+    .select("id, doc_type, status")
     .eq("tenant_id", params.tenantId)
     .eq("import_id", params.importId)
     .eq("sha256", params.sha256);
@@ -69,6 +69,7 @@ export async function findDocumentsBySha256(params: {
   return (data ?? []).map((row) => ({
     id: row.id,
     docType: row.doc_type as DocumentType,
+    status: row.status,
   }));
 }
 

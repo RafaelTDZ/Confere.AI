@@ -728,7 +728,7 @@ describe("runAnalyzePipeline", () => {
 
   it("pula storage e persistência quando o documento já existe (dedupe)", async () => {
     mocks.findDocumentsBySha256.mockResolvedValue([
-      { id: "existing-doc", docType: "invoice" },
+      { id: "existing-doc", docType: "invoice", status: "extracted" },
     ]);
 
     const result = await runAnalyzePipeline(baseParams());
@@ -774,6 +774,30 @@ describe("runAnalyzePipeline", () => {
         logIds: ["log-1", "log-2"],
       },
     ]);
+  });
+
+  it("reprocessa documento existente que ficou failed", async () => {
+    mocks.findDocumentsBySha256.mockResolvedValue([
+      { id: "existing-doc", docType: "invoice", status: "failed" },
+    ]);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.extractionResultId).toBe("extraction-1");
+    expect(result.documents).toEqual([
+      { id: "existing-doc", docType: "invoice" },
+    ]);
+    expect(mocks.uploadImportFile).not.toHaveBeenCalled();
+    expect(mocks.insertDocuments).not.toHaveBeenCalled();
+    expect(mocks.persistExtractionResult).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "existing-doc" }),
+    );
+    expect(mocks.updateDocumentStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      documentId: "existing-doc",
+      status: "extracted",
+    });
+    expect(mocks.fillImportKeysIfEmpty).not.toHaveBeenCalled();
   });
 
   it("reaproveita upload completo de outra importação sem chamar IA", async () => {
