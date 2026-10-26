@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PdfConversionError } from "@/lib/ai";
+import { PdfConversionError } from "@/lib/ai/pdf-pages";
 import { runAnalyzePipeline } from "@/lib/documents/analyze-pipeline";
 import {
   claimAiJob,
@@ -42,6 +42,7 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
       console.error("[ai-worker] conversão de PDF falhou", {
         jobId: job.id,
         message,
+        cause: error.cause,
       });
     } else {
       console.error("[ai-worker] job falhou", { jobId: job.id, message });

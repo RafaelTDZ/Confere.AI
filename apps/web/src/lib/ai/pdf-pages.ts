@@ -1,5 +1,10 @@
 import "server-only";
 
+// Import estático: o pdfjs-dist faz `require("@napi-rs/canvas")` em runtime
+// (dentro de um try/catch). Sem esta referência, o tracer da Vercel não inclui
+// o pacote nativo no bundle da função e a conversão falha com "Cannot find
+// module '@napi-rs/canvas'".
+import "@napi-rs/canvas";
 import type { FilePart } from "ai";
 import { pdf } from "pdf-to-img";
 

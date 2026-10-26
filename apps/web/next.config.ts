@@ -45,26 +45,26 @@ function pdfTracingIncludes(): string[] {
     tracingGlob(path.join(pdfjsDir, "cmaps")),
   ];
 
-  // `@napi-rs/canvas` é dependência opcional do pdfjs-dist: pode não existir.
-  const canvasDir = resolvePackageDir(
-    createRequire(pdfjsPackage),
-    "@napi-rs/canvas",
-  );
-  if (!canvasDir) return includes;
+  // `@napi-rs/canvas` é dependência direta (e o pdfjs-dist a requer em
+  // runtime). Inclui o pacote e o binding nativo da plataforma do build.
+  const canvasPackage = require.resolve("@napi-rs/canvas/package.json");
+  const canvasDir = path.dirname(canvasPackage);
+  includes.push(tracingGlob(canvasDir), "node_modules/@napi-rs/canvas/**");
 
-  includes.push(tracingGlob(canvasDir));
-
-  // O binding nativo fica num pacote por plataforma (ex.:
-  // @napi-rs/canvas-win32-x64-msvc), resolvido em runtime — invisível ao tracing.
-  const canvasRequire = createRequire(path.join(canvasDir, "package.json"));
-  const manifest = require(path.join(canvasDir, "package.json")) as {
+  const canvasRequire = createRequire(canvasPackage);
+  const manifest = require(canvasPackage) as {
     optionalDependencies?: Record<string, string>;
   };
   for (const platformPackage of Object.keys(
     manifest.optionalDependencies ?? {},
   )) {
     const platformDir = resolvePackageDir(canvasRequire, platformPackage);
-    if (platformDir) includes.push(tracingGlob(platformDir));
+    if (platformDir) {
+      includes.push(
+        tracingGlob(platformDir),
+        `node_modules/${platformPackage}/**`,
+      );
+    }
   }
 
   return includes;
