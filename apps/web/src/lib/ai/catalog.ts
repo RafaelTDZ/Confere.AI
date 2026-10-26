@@ -1,8 +1,10 @@
 import "server-only";
 
 import type { AiProviderId } from "@/lib/ai/provider";
+import { DEFAULT_FIREWORKS_MODEL } from "@/lib/ai/providers/fireworks-config";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 
+const GLM_FLASH_FIREWORKS_MODEL = "accounts/fireworks/routers/glm-flash-latest";
 const MUSE_SPARK_OPENROUTER_MODEL = "meta/muse-spark-1.3";
 
 type ModelPreset = {
@@ -20,9 +22,28 @@ export type ProviderInfo = {
 
 export const AI_PROVIDER_CATALOG: ProviderInfo[] = [
   {
+    id: "fireworks",
+    name: "Fireworks",
+    description:
+      "Provider direto do Fireworks (padrão). PDF → imagens renderizadas no servidor.",
+    models: [
+      {
+        id: DEFAULT_FIREWORKS_MODEL,
+        label: "DeepSeek Flash Latest",
+        hint: "Padrão do servidor · multimodal",
+      },
+      {
+        id: GLM_FLASH_FIREWORKS_MODEL,
+        label: "GLM Flash Latest",
+        hint: "Multimodal · thinking nativo",
+      },
+    ],
+  },
+  {
     id: "openrouter",
     name: "OpenRouter",
-    description: "Gateway multi-modelos. Suporta PDF direto (file-parser).",
+    description:
+      "Gateway multi-modelos. PDF direto (file-parser) com fallback mistral-ocr.",
     models: [
       {
         id: DEFAULT_OPENROUTER_MODEL,

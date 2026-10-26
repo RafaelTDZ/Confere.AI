@@ -90,7 +90,7 @@ beforeEach(() => {
   });
   mocks.getAuthContext.mockResolvedValue(AUTH_CONTEXT);
   mocks.getAiOverrides.mockResolvedValue({});
-  mocks.getAiProvider.mockReturnValue("openrouter");
+  mocks.getAiProvider.mockReturnValue("fireworks");
   mocks.getAiModelId.mockReturnValue("env-model");
   mocks.getDefaultLanguageModel.mockReturnValue("language-model");
   mocks.generateText.mockResolvedValue({ text: "  ok  " });
@@ -124,25 +124,27 @@ describe("GET /api/ai/health", () => {
     expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
-  it("retorna 503 quando getAiProvider lança AiConfigError", async () => {
-    mocks.getAiProvider.mockImplementation(() => {
-      throw new AiConfigError("OPENROUTER_API_KEY ausente");
+  it("retorna 503 quando getDefaultLanguageModel lança AiConfigError", async () => {
+    mocks.getDefaultLanguageModel.mockImplementation(() => {
+      throw new AiConfigError("FIREWORKS_API_KEY ausente");
     });
 
     const { status, body } = await readJson(await GET());
 
     expect(status).toBe(503);
-    expect(body).toEqual({ error: "OPENROUTER_API_KEY ausente" });
+    expect(body).toEqual({ error: "FIREWORKS_API_KEY ausente" });
     expect(mocks.generateText).not.toHaveBeenCalled();
   });
 
-  it("retorna 200 com a config global e o texto normalizado", async () => {
+  it("retorna 200 com Fireworks definido pela config global", async () => {
     mocks.getAiOverrides.mockResolvedValue({
-      provider: "openrouter",
-      model: "model-x",
+      provider: "fireworks",
+      model: "accounts/fireworks/routers/deepseek-flash-latest",
     });
-    mocks.getAiProvider.mockReturnValue("openrouter");
-    mocks.getAiModelId.mockReturnValue("model-x");
+    mocks.getAiProvider.mockReturnValue("fireworks");
+    mocks.getAiModelId.mockReturnValue(
+      "accounts/fireworks/routers/deepseek-flash-latest",
+    );
     mocks.getDefaultLanguageModel.mockReturnValue("language-model-x");
 
     const { status, body } = await readJson(await GET());
@@ -150,8 +152,8 @@ describe("GET /api/ai/health", () => {
     expect(status).toBe(200);
     expect(body).toEqual({
       ok: true,
-      provider: "openrouter",
-      model: "model-x",
+      provider: "fireworks",
+      model: "accounts/fireworks/routers/deepseek-flash-latest",
       source: "global",
       text: "ok",
       latencyMs: expect.any(Number),
@@ -159,6 +161,26 @@ describe("GET /api/ai/health", () => {
     expect(mocks.generateText).toHaveBeenCalledWith({
       model: "language-model-x",
       prompt: 'Responda apenas com a palavra "ok".',
+    });
+  });
+
+  it("retorna 200 com OpenRouter quando selecionado", async () => {
+    mocks.getAiOverrides.mockResolvedValue({
+      provider: "openrouter",
+      model: "meta/muse-spark-1.3",
+    });
+    mocks.getAiProvider.mockReturnValue("openrouter");
+    mocks.getAiModelId.mockReturnValue("meta/muse-spark-1.3");
+
+    const { status, body } = await readJson(await GET());
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      ok: true,
+      provider: "openrouter",
+      model: "meta/muse-spark-1.3",
+      source: "global",
+      text: "ok",
     });
   });
 
@@ -170,7 +192,7 @@ describe("GET /api/ai/health", () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
-      provider: "openrouter",
+      provider: "fireworks",
       model: "env-model",
       source: "env",
       text: "ok",

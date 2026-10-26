@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import { packingListExtractionSchema } from "@/lib/ai/schemas";
 import { extractPackingList } from "@/lib/ai/tasks/extract-packing-list";
 
@@ -8,11 +9,12 @@ const mocks = vi.hoisted(() => ({
   outputObject: vi.fn((options: unknown) => options),
   getDocumentLanguageModel: vi.fn(
     (options?: {
+      provider?: string;
+      modelId?: string;
       isPdf?: boolean;
       pdfEngine?: string;
-      overrides?: unknown;
     }) => ({
-      modelId: "model-x",
+      modelId: options?.modelId,
       options,
     }),
   ),
@@ -29,13 +31,9 @@ vi.mock("@/lib/ai/tasks/document-model", () => ({
   shouldFallbackPdfEngine: mocks.shouldFallbackPdfEngine,
 }));
 
-vi.mock("@/lib/ai/provider", () => ({
-  getAiModelId: () => "model-x",
-  getAiProvider: () => "openrouter",
-}));
-
 type ChamadaGenerateText = {
   output?: { schema?: unknown; name?: string };
+  messages?: Array<{ content?: Array<Record<string, unknown>> }>;
 };
 
 function opcoesDaChamada(indice: number): ChamadaGenerateText {
@@ -57,16 +55,36 @@ function resultadoComSucesso(output: unknown) {
   };
 }
 
-const ENTRADA_PDF = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "application/pdf",
+const PDF_BYTES = new Uint8Array([1, 2, 3]);
+
+const PREPARED_PDF: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: true,
   filename: "doc.pdf",
+  content: [
+    {
+      type: "file",
+      mediaType: "application/pdf",
+      filename: "doc.pdf",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
-const ENTRADA_IMAGEM = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "image/png",
+const PREPARED_IMAGE: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: false,
   filename: "doc.png",
+  content: [
+    {
+      type: "file",
+      mediaType: "image/png",
+      filename: "doc.png",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -86,10 +104,10 @@ describe("extractPackingList", () => {
       resultadoComSucesso({ invoiceNumber: "  INV   123  " }),
     );
 
-    const resultado = await extractPackingList(ENTRADA_PDF);
+    const resultado = await extractPackingList(PREPARED_PDF);
 
     expect(resultado.packingList).toEqual({ invoiceNumber: "INV 123" });
-    expect(resultado.model).toBe("model-x");
+    expect(resultado.model).toBe("model-doc");
     expect(resultado.tokensIn).toBe(10);
     expect(resultado.tokensOut).toBe(4);
     expect(resultado.usage).toEqual({
@@ -102,18 +120,19 @@ describe("extractPackingList", () => {
     expect(resultado.latencyMs).toBe(resultado.usage.latencyMs);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
   });
 
-  it("usa o schema de extração do Packing List", async () => {
+  it("usa o schema de extração do Packing List e envia o conteúdo preparado", async () => {
     mocks.generateText.mockResolvedValue(
       resultadoComSucesso({ invoiceNumber: "INV-1" }),
     );
 
-    await extractPackingList(ENTRADA_PDF);
+    await extractPackingList(PREPARED_PDF);
 
     expect(mocks.outputObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -123,6 +142,9 @@ describe("extractPackingList", () => {
     );
     expect(opcoesDaChamada(0).output?.schema).toBe(
       packingListExtractionSchema,
+    );
+    expect(opcoesDaChamada(0).messages?.[0]?.content?.[1]).toEqual(
+      PREPARED_PDF.content[0],
     );
   });
 
@@ -135,7 +157,7 @@ describe("extractPackingList", () => {
       resultadoComSucesso({ invoiceNumber: valor }),
     );
 
-    const resultado = await extractPackingList(ENTRADA_PDF);
+    const resultado = await extractPackingList(PREPARED_PDF);
 
     expect(resultado.packingList).toEqual({ invoiceNumber: null });
   });
@@ -143,7 +165,7 @@ describe("extractPackingList", () => {
   it("rejeita quando a IA não retorna dados do Packing List", async () => {
     mocks.generateText.mockResolvedValue(resultadoComSucesso(null));
 
-    await expect(extractPackingList(ENTRADA_PDF)).rejects.toThrow(
+    await expect(extractPackingList(PREPARED_PDF)).rejects.toThrow(
       "A IA não retornou dados do Packing List",
     );
   });
@@ -157,20 +179,22 @@ describe("extractPackingList", () => {
       );
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    const resultado = await extractPackingList(ENTRADA_PDF);
+    const resultado = await extractPackingList(PREPARED_PDF);
 
     expect(resultado.packingList).toEqual({ invoiceNumber: "INV-9" });
     expect(mocks.generateText).toHaveBeenCalledTimes(2);
     expect(mocks.shouldFallbackPdfEngine).toHaveBeenCalledWith(erro);
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(1, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(2, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "mistral-ocr",
-      overrides: undefined,
     });
   });
 
@@ -179,7 +203,7 @@ describe("extractPackingList", () => {
     mocks.generateText.mockRejectedValue(erro);
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    await expect(extractPackingList(ENTRADA_IMAGEM)).rejects.toBe(erro);
+    await expect(extractPackingList(PREPARED_IMAGE)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
   });

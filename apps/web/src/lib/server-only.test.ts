@@ -14,6 +14,7 @@ const CLIENT_SAFE = new Set([
   "pagination.ts",
   "ai/schemas.ts",
   "ai/usage.ts",
+  "ai/model-compat.ts",
   "auth/tenant.ts",
   "supabase/auth-cookie.ts",
   "supabase/client.ts",
@@ -68,6 +69,8 @@ describe("proteção server-only", () => {
       "documents/analyze-pipeline.ts",
       "documents/storage.ts",
       "ai/tasks/classify.ts",
+      "ai/document-content.ts",
+      "ai/pdf-pages.ts",
       "settings/ai-settings.ts",
       "security/rate-limit.ts",
     ];

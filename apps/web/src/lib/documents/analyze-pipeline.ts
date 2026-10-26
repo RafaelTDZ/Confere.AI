@@ -5,6 +5,11 @@ import { extractBl } from "@/lib/ai/tasks/extract-bl";
 import { extractInvoice } from "@/lib/ai/tasks/extract-invoice";
 import { extractPackingList } from "@/lib/ai/tasks/extract-packing-list";
 import {
+  prepareDocument,
+  type AnalyzeFileInput,
+  type PreparedDocument,
+} from "@/lib/ai/document-content";
+import {
   assertAllowedFile,
   normalizeMediaType,
   sha256Hex,
@@ -392,7 +397,7 @@ async function executeAnalyzePipeline(
   const buffer = new Uint8Array(await params.file.arrayBuffer());
   assertAllowedFile(buffer.byteLength, mediaType);
   const digest = sha256Hex(buffer);
-  const fileInput = { bytes: buffer, mediaType, filename };
+  const fileInput: AnalyzeFileInput = { bytes: buffer, mediaType, filename };
 
   const reusable = await findReusableUpload(params.tenantId, digest);
   if (reusable) {
@@ -435,22 +440,28 @@ async function executeAnalyzePipeline(
     if (id) aiLogIds.push(id);
   }
 
+  let prepared: PreparedDocument;
   let classifyResult;
   try {
-    classifyResult = await withSpan(
+    const classified = await withSpan(
       "ai.classify",
       { "ai.model": modelId },
       async (span) => {
-        const result = await classifyDocument(fileInput, overrides);
+        // Prepara uma única vez (PDF → imagens no Fireworks) e reutiliza nas
+        // quatro tasks abaixo.
+        const preparedDocument = await prepareDocument(fileInput, overrides);
+        const result = await classifyDocument(preparedDocument);
         span.setAttributes({
           "ai.model": result.model,
           "ai.tokens_in": result.tokensIn,
           "ai.tokens_out": result.tokensOut,
           "ai.latency_ms": result.latencyMs,
         });
-        return result;
+        return { prepared: preparedDocument, result };
       },
     );
+    prepared = classified.prepared;
+    classifyResult = classified.result;
     await logAi({
       tenantId: params.tenantId,
       capability: "classify",
@@ -493,7 +504,7 @@ async function executeAnalyzePipeline(
         "ai.extract_invoice",
         { "ai.model": modelId },
         async (span) => {
-          const result = await extractInvoice(fileInput, overrides);
+          const result = await extractInvoice(prepared);
           span.setAttributes({
             "ai.model": result.model,
             "ai.tokens_in": result.tokensIn,
@@ -538,7 +549,7 @@ async function executeAnalyzePipeline(
         "ai.extract_packing_list",
         { "ai.model": modelId },
         async (span) => {
-          const result = await extractPackingList(fileInput, overrides);
+          const result = await extractPackingList(prepared);
           span.setAttributes({
             "ai.model": result.model,
             "ai.tokens_in": result.tokensIn,
@@ -583,7 +594,7 @@ async function executeAnalyzePipeline(
         "ai.extract_bl",
         { "ai.model": modelId },
         async (span) => {
-          const result = await extractBl(fileInput, overrides);
+          const result = await extractBl(prepared);
           span.setAttributes({
             "ai.model": result.model,
             "ai.tokens_in": result.tokensIn,

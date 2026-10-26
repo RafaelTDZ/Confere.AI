@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sha256Hex } from "@/lib/ai/file-utils";
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import type {
   BlExtraction,
   DocumentClassification,
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   extractInvoice: vi.fn(),
   extractPackingList: vi.fn(),
   extractBl: vi.fn(),
+  prepareDocument: vi.fn(),
   getAiModelId: vi.fn(),
   getAiOverrides: vi.fn(),
   persistAiLog: vi.fn(),
@@ -55,6 +57,10 @@ vi.mock("@/lib/ai/tasks/extract-packing-list", () => ({
 
 vi.mock("@/lib/ai/tasks/extract-bl", () => ({
   extractBl: mocks.extractBl,
+}));
+
+vi.mock("@/lib/ai/document-content", () => ({
+  prepareDocument: mocks.prepareDocument,
 }));
 
 vi.mock("@/lib/ai", () => ({
@@ -107,6 +113,21 @@ const TENANT_ID = "tenant-a";
 const USER_ID = "user-a";
 const FILE_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
 const FILE_DIGEST = sha256Hex(FILE_BYTES);
+
+const PREPARED: PreparedDocument = {
+  provider: "fireworks",
+  modelId: "model-default",
+  isPdf: true,
+  filename: "invoice.pdf",
+  content: [
+    {
+      type: "file",
+      mediaType: "image/jpeg",
+      filename: "invoice-pagina-1.jpg",
+      data: new Uint8Array([1, 2, 3]),
+    },
+  ],
+};
 
 type AiLogEntry = {
   tenantId: string;
@@ -332,6 +353,7 @@ function setDefaultMocks() {
   aiLogSequence = 0;
   mocks.getAiOverrides.mockResolvedValue({});
   mocks.getAiModelId.mockReturnValue("model-default");
+  mocks.prepareDocument.mockResolvedValue(PREPARED);
 
   mocks.classifyDocument.mockResolvedValue({
     classification: makeClassification(["invoice"]),
@@ -489,6 +511,66 @@ describe("runAnalyzePipeline", () => {
       invoice,
     });
     expect(result.pendingParties).toEqual([]);
+  });
+
+  it("prepara o documento uma vez e reutiliza nas tasks", async () => {
+    mocks.getAiOverrides.mockResolvedValue({
+      provider: "openrouter",
+      model: "model-from-settings",
+    });
+    mocks.classifyDocument.mockResolvedValue({
+      classification: makeClassification([
+        "invoice",
+        "packing_list",
+        "bill_of_lading",
+      ]),
+      model: "classify-model",
+      tokensIn: 30,
+      tokensOut: 12,
+      latencyMs: 50,
+      usage: { costUsd: 0.01, reasoningTokens: 0 },
+    });
+    mocks.insertDocuments.mockResolvedValue([
+      { id: "doc-invoice", docType: "invoice" },
+      { id: "doc-packing-list", docType: "packing_list" },
+      { id: "doc-bl", docType: "bill_of_lading" },
+    ]);
+
+    await runAnalyzePipeline(baseParams());
+
+    expect(mocks.prepareDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.prepareDocument).toHaveBeenCalledWith(
+      {
+        bytes: expect.any(Uint8Array),
+        mediaType: "application/pdf",
+        filename: "invoice.pdf",
+      },
+      { provider: "openrouter", model: "model-from-settings" },
+    );
+    expect(mocks.classifyDocument).toHaveBeenCalledWith(PREPARED);
+    expect(mocks.extractInvoice).toHaveBeenCalledWith(PREPARED);
+    expect(mocks.extractPackingList).toHaveBeenCalledWith(PREPARED);
+    expect(mocks.extractBl).toHaveBeenCalledWith(PREPARED);
+  });
+
+  it("propaga falha ao preparar o documento no log do classify", async () => {
+    const erro = new Error(
+      "Não foi possível converter o PDF em imagens (arquivo protegido ou corrompido). Selecione OpenRouter ou envie o documento como PNG/JPG.",
+    );
+    mocks.prepareDocument.mockRejectedValue(erro);
+
+    await expect(runAnalyzePipeline(baseParams())).rejects.toBe(erro);
+
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(logEntries()).toEqual([
+      expect.objectContaining({
+        capability: "classify",
+        status: "error",
+        model: "model-default",
+        errorMessage: erro.message,
+      }),
+    ]);
+    expect(mocks.findOrCreateImport).not.toHaveBeenCalled();
   });
 
   it("conclui a análise mesmo quando o vínculo dos logs falha", async () => {

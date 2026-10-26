@@ -1,6 +1,8 @@
 import "server-only";
 
 import { z } from "zod";
+import { AI_PROVIDER_CATALOG } from "@/lib/ai/catalog";
+import { isModelCompatibleWithProvider } from "@/lib/ai/model-compat";
 import {
   getAiModelId,
   getAiProvider,
@@ -15,15 +17,42 @@ export type { AiOverrides };
 /** Chave única da linha de config de IA em app_settings. */
 const AI_SETTINGS_KEY = "ai";
 
-const aiOverridesSchema = z.object({
-  provider: z.enum(["openrouter"]),
-  model: z
-    .string()
-    .trim()
-    .min(1, "Modelo é obrigatório")
-    .max(200, "Modelo muito longo")
-    .optional(),
-});
+const INVALID_PROVIDER_MESSAGE = "Provedor inválido (use fireworks ou openrouter)";
+const INVALID_MODEL_MESSAGE = "Modelo não pertence ao provedor selecionado";
+
+function presetIdsFor(provider: AiProviderId): string[] {
+  const entry = AI_PROVIDER_CATALOG.find((item) => item.id === provider);
+  return entry ? entry.models.map((model) => model.id) : [];
+}
+
+const aiOverridesSchema = z
+  .object({
+    provider: z.enum(["fireworks", "openrouter"], {
+      error: INVALID_PROVIDER_MESSAGE,
+    }),
+    model: z
+      .string()
+      .trim()
+      .min(1, "Modelo é obrigatório")
+      .max(200, "Modelo muito longo")
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.model) return;
+    if (
+      !isModelCompatibleWithProvider(
+        value.provider,
+        value.model,
+        presetIdsFor(value.provider),
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["model"],
+        message: INVALID_MODEL_MESSAGE,
+      });
+    }
+  });
 
 export type AiSettingsInput = z.infer<typeof aiOverridesSchema>;
 
@@ -95,10 +124,9 @@ export async function saveAiOverrides(
   const parsed = aiOverridesSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    const message =
-      issue?.code === "invalid_value"
-        ? "Provedor inválido (use openrouter)"
-        : (issue?.message ?? "Configuração de IA inválida");
+    const message = issue?.path.includes("provider")
+      ? INVALID_PROVIDER_MESSAGE
+      : (issue?.message ?? "Configuração de IA inválida");
     throw new Error(message);
   }
 
@@ -139,6 +167,7 @@ export async function clearAiOverrides(): Promise<EffectiveAiConfig> {
 /** Chaves configuradas no servidor (só presença, nunca valores). */
 export function getServerKeysStatus() {
   return {
+    fireworksConfigured: Boolean(process.env.FIREWORKS_API_KEY?.trim()),
     openrouterConfigured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
   };
 }

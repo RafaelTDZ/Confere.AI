@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PdfConversionError } from "@/lib/ai/pdf-pages";
 import {
   processAiJobById,
   processNextAiJob,
@@ -116,6 +117,19 @@ describe("processAiJobById", () => {
     expect(mocks.markAiJobFailed).toHaveBeenCalledWith("job-1", "IA fora do ar");
     expect(mocks.markAiJobSucceeded).not.toHaveBeenCalled();
     expect(mocks.removeAiJobFile).not.toHaveBeenCalled();
+  });
+
+  it("grava a mensagem acionável do PdfConversionError sem prefixo", async () => {
+    mocks.claimAiJob.mockResolvedValue(JOB);
+    const erro = new PdfConversionError(
+      "Não foi possível converter o PDF em imagens (arquivo protegido ou corrompido). Selecione OpenRouter ou envie o documento como PNG/JPG.",
+    );
+    mocks.runAnalyzePipeline.mockRejectedValue(erro);
+
+    await processAiJobById("job-1");
+
+    expect(mocks.markAiJobFailed).toHaveBeenCalledWith("job-1", erro.message);
+    expect(mocks.markAiJobSucceeded).not.toHaveBeenCalled();
   });
 
   it("marca failed quando o download do arquivo falha", async () => {

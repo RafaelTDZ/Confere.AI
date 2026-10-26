@@ -1,34 +1,41 @@
 import "server-only";
 
+import { createFireworksClient } from "@/lib/ai/providers/fireworks";
 import { createOpenRouterClient } from "@/lib/ai/providers/openrouter";
 import { getOpenRouterReasoning } from "@/lib/ai/providers/openrouter-model";
-import {
-  getAiModelId,
-  type AiOverrides,
-} from "@/lib/ai/provider";
+import type { AiProviderId } from "@/lib/ai/provider";
 
 export type PdfEngine = "native" | "mistral-ocr";
 
-/**
- * Modelo para documentos via OpenRouter.
- * PDFs usam file-parser (engine native) por padrão; mistral-ocr fica como
- * fallback quando o processamento nativo falha. Inclui ainda o plugin
- * response-healing + reasoning.
- */
-export function getDocumentLanguageModel(options?: {
+export type DocumentLanguageModelOptions = {
+  provider: AiProviderId;
+  modelId: string;
   isPdf?: boolean;
   pdfEngine?: PdfEngine;
-  overrides?: AiOverrides;
-}) {
-  const isPdf = options?.isPdf ?? false;
-  const overrides = options?.overrides;
+};
+
+/**
+ * Modelo para documentos no provider/modelo efetivos.
+ * - Fireworks: client puro (PDF já foi convertido em imagens pelo pipeline).
+ * - OpenRouter: PDFs usam file-parser (engine native) por padrão; mistral-ocr
+ *   fica como fallback quando o processamento nativo falha. Inclui ainda o
+ *   plugin response-healing + reasoning.
+ */
+export function getDocumentLanguageModel(
+  options: DocumentLanguageModelOptions,
+) {
+  if (options.provider === "fireworks") {
+    const fireworks = createFireworksClient();
+    return fireworks(options.modelId);
+  }
+
+  const isPdf = options.isPdf ?? false;
+  const pdfEngine = options.pdfEngine ?? "native";
 
   const openrouter = createOpenRouterClient();
-  const modelId = getAiModelId(overrides);
   const reasoning = getOpenRouterReasoning("document");
-  const pdfEngine = options?.pdfEngine ?? "native";
 
-  return openrouter(modelId, {
+  return openrouter(options.modelId, {
     ...(reasoning ? { reasoning } : {}),
     plugins: [
       ...(isPdf

@@ -13,19 +13,21 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { isModelCompatibleWithProvider } from "@/lib/ai/model-compat";
 import type { AiProviderId } from "@/lib/ai/provider";
 import type { ProviderInfo } from "@/lib/ai/catalog";
 
 type AiSettingsPayload = {
   overrides: { provider?: AiProviderId; model?: string };
   config: { provider: AiProviderId; model: string; source: "global" | "env" };
-  keys: { openrouterConfigured: boolean };
+  keys: { fireworksConfigured: boolean; openrouterConfigured: boolean };
   catalog: ProviderInfo[];
 };
 
 export function AiSettingsForm() {
   const [data, setData] = useState<AiSettingsPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [provider, setProvider] = useState<AiProviderId>("fireworks");
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -40,6 +42,7 @@ export function AiSettingsForm() {
         throw new Error(json?.error ?? "Falha ao carregar configurações");
       }
       setData(json);
+      setProvider(json.config.provider);
       setModel(json.config.model);
     } catch (error) {
       setLoadError(
@@ -61,7 +64,7 @@ export function AiSettingsForm() {
       const res = await fetch("/api/settings/ai", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "openrouter", model: model.trim() || undefined }),
+        body: JSON.stringify({ provider, model: model.trim() || undefined }),
       });
       const json = (await res.json().catch(() => null)) as AiSettingsPayload & {
         error?: string;
@@ -70,6 +73,7 @@ export function AiSettingsForm() {
         throw new Error(json?.error ?? "Falha ao salvar");
       }
       setData(json);
+      setProvider(json.config.provider);
       setModel(json.config.model);
       setMessage({ kind: "ok", text: "Configuração salva para todos os usuários." });
     } catch (error) {
@@ -80,6 +84,19 @@ export function AiSettingsForm() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleProviderChange(next: AiProviderId) {
+    if (!data) return;
+    setProvider(next);
+    const nextPresets = data.catalog.find((item) => item.id === next)?.models ?? [];
+    const current = model.trim();
+    const aindaValido = isModelCompatibleWithProvider(
+      next,
+      current,
+      nextPresets.map((preset) => preset.id),
+    );
+    if (!aindaValido) setModel(nextPresets[0]?.id ?? "");
   }
 
   if (loadError) {
@@ -116,8 +133,12 @@ export function AiSettingsForm() {
     );
   }
 
-  const presets = data.catalog.flatMap((p) => p.models);
-  const configured = data.keys.openrouterConfigured;
+  const providerInfo = data.catalog.find((item) => item.id === provider);
+  const presets = providerInfo?.models ?? [];
+  const configured =
+    provider === "fireworks"
+      ? data.keys.fireworksConfigured
+      : data.keys.openrouterConfigured;
   const isCustom = model.trim() !== "" && !presets.some((p) => p.id === model);
 
   return (
@@ -138,7 +159,7 @@ export function AiSettingsForm() {
             )}
           </div>
           <CardDescription>
-            Efetivo agora: <span className="font-medium">openrouter</span>
+            Efetivo agora: <span className="font-medium">{data.config.provider}</span>
             {" · "}
             <span className="break-all font-mono text-xs">{data.config.model}</span>
           </CardDescription>
@@ -147,36 +168,64 @@ export function AiSettingsForm() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Modelo</CardTitle>
+          <CardTitle className="text-base">Provedor e modelo</CardTitle>
           <CardDescription>
-            Escolha o modelo usado na análise de documentos. A chave fica só no
-            servidor (.env).
+            Escolha o provedor e o modelo usados na análise de documentos. A
+            chave fica só no servidor (.env).
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <Label htmlFor="ai-model">Modelo (OpenRouter)</Label>
-          <select
-            id="ai-model"
-            value={isCustom ? "__custom__" : model}
-            onChange={(event) => {
-              if (event.target.value !== "__custom__") setModel(event.target.value);
-            }}
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {presets.map((preset) => (
-              <option key={preset.id} value={preset.id} title={preset.hint}>
-                {preset.label}
-              </option>
-            ))}
-            {isCustom && <option value="__custom__">Atual: {model}</option>}
-          </select>
-          <p className="break-all font-mono text-xs text-muted-foreground">{model}</p>
-          {!configured && (
-            <p className="text-sm text-amber-600">
-              Atenção: sem a chave do OpenRouter no servidor, as chamadas vão
-              falhar (503). Salve mesmo assim ou peça ao responsável pelo deploy.
-            </p>
-          )}
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ai-provider">Provedor</Label>
+            <select
+              id="ai-provider"
+              value={provider}
+              onChange={(event) =>
+                handleProviderChange(event.target.value as AiProviderId)
+              }
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {data.catalog.map((item) => (
+                <option key={item.id} value={item.id} title={item.description}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {providerInfo?.description && (
+              <p className="text-xs text-muted-foreground">
+                {providerInfo.description}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ai-model">
+              Modelo ({providerInfo?.name ?? provider})
+            </Label>
+            <select
+              id="ai-model"
+              value={isCustom ? "__custom__" : model}
+              onChange={(event) => {
+                if (event.target.value !== "__custom__") setModel(event.target.value);
+              }}
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id} title={preset.hint}>
+                  {preset.label}
+                </option>
+              ))}
+              {isCustom && <option value="__custom__">Atual: {model}</option>}
+            </select>
+            <p className="break-all font-mono text-xs text-muted-foreground">{model}</p>
+            {!configured && (
+              <p className="text-sm text-amber-600">
+                Atenção: sem a chave do {providerInfo?.name ?? provider} no
+                servidor, as chamadas vão falhar (503). Salve mesmo assim ou peça
+                ao responsável pelo deploy.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

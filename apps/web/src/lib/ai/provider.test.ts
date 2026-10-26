@@ -7,25 +7,38 @@ import {
   getDefaultLanguageModel,
   normalizeOverrides,
 } from "@/lib/ai/provider";
+import { DEFAULT_FIREWORKS_MODEL } from "@/lib/ai/providers/fireworks-config";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 
 const mocks = vi.hoisted(() => ({
+  createFireworksClient: vi.fn(),
   createOpenRouterClient: vi.fn(),
+}));
+
+vi.mock("@/lib/ai/providers/fireworks", () => ({
+  createFireworksClient: mocks.createFireworksClient,
 }));
 
 vi.mock("@/lib/ai/providers/openrouter", () => ({
   createOpenRouterClient: mocks.createOpenRouterClient,
 }));
 
+const fireworks = vi.fn((modelId: string) => ({ provider: "fireworks", modelId }));
 const openrouter = vi.fn((modelId: string, options?: unknown) => ({
+  provider: "openrouter",
   modelId,
   options,
 }));
 
 beforeEach(() => {
+  mocks.createFireworksClient.mockReset();
   mocks.createOpenRouterClient.mockReset();
+  fireworks.mockClear();
   openrouter.mockClear();
+  mocks.createFireworksClient.mockReturnValue(fireworks);
   mocks.createOpenRouterClient.mockReturnValue(openrouter);
+  vi.stubEnv("AI_PROVIDER", undefined);
+  vi.stubEnv("FIREWORKS_MODEL", undefined);
   vi.stubEnv("OPENROUTER_MODEL", undefined);
   vi.stubEnv("OPENROUTER_REASONING_EFFORT", undefined);
   vi.stubEnv("OPENROUTER_REASONING_MAX_TOKENS", undefined);
@@ -48,21 +61,39 @@ describe("normalizeOverrides", () => {
     expect(normalizeOverrides(valor)).toEqual({});
   });
 
-  it("descarta a linha inteira quando o provider é legado (fireworks)", () => {
-    expect(
-      normalizeOverrides({ provider: "fireworks", model: "modelo-antigo" }),
-    ).toEqual({});
-  });
-
   it("descarta a linha inteira quando o provider é legado (opencode)", () => {
     expect(
       normalizeOverrides({ provider: "opencode", model: "modelo-antigo" }),
     ).toEqual({});
   });
 
+  it("descarta a linha inteira quando o provider é inválido", () => {
+    expect(
+      normalizeOverrides({ provider: "firework", model: "modelo-antigo" }),
+    ).toEqual({});
+  });
+
+  it("mantém o provider fireworks", () => {
+    expect(normalizeOverrides({ provider: "fireworks" })).toEqual({
+      provider: "fireworks",
+    });
+  });
+
   it("mantém o provider openrouter", () => {
     expect(normalizeOverrides({ provider: "openrouter" })).toEqual({
       provider: "openrouter",
+    });
+  });
+
+  it("mantém o modelo junto do provider fireworks", () => {
+    expect(
+      normalizeOverrides({
+        provider: "fireworks",
+        model: DEFAULT_FIREWORKS_MODEL,
+      }),
+    ).toEqual({
+      provider: "fireworks",
+      model: DEFAULT_FIREWORKS_MODEL,
     });
   });
 
@@ -118,76 +149,117 @@ describe("normalizeOverrides", () => {
 });
 
 describe("getAiProvider", () => {
-  it("retorna sempre openrouter sem overrides", () => {
+  it("usa fireworks por padrão", () => {
+    expect(getAiProvider()).toBe("fireworks");
+    expect(getAiProvider({})).toBe("fireworks");
+  });
+
+  it("usa AI_PROVIDER quando não há override", () => {
+    vi.stubEnv("AI_PROVIDER", "openrouter");
+
     expect(getAiProvider()).toBe("openrouter");
   });
 
-  it("retorna sempre openrouter mesmo com override", () => {
-    expect(getAiProvider({ model: "meta/muse-spark-1.3" })).toBe("openrouter");
+  it("normaliza AI_PROVIDER (case-insensitive e com espaços)", () => {
+    vi.stubEnv("AI_PROVIDER", "  OpenRouter  ");
+
+    expect(getAiProvider()).toBe("openrouter");
+  });
+
+  it("ignora AI_PROVIDER inválido e usa fireworks", () => {
+    vi.stubEnv("AI_PROVIDER", "opencode");
+
+    expect(getAiProvider()).toBe("fireworks");
+  });
+
+  it("dá prioridade ao override sobre AI_PROVIDER", () => {
+    vi.stubEnv("AI_PROVIDER", "openrouter");
+
+    expect(getAiProvider({ provider: "fireworks" })).toBe("fireworks");
+  });
+
+  it("ignora provider inválido recebido fora do normalize", () => {
     expect(
-      getAiProvider({ provider: "fireworks" } as unknown as AiOverrides),
-    ).toBe("openrouter");
+      getAiProvider({ provider: "opencode" } as unknown as AiOverrides),
+    ).toBe("fireworks");
   });
 });
 
 describe("getAiModelId", () => {
-  it("usa o override do tenant quando presente", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-do-env");
+  it("usa o override quando presente", () => {
+    vi.stubEnv("FIREWORKS_MODEL", "modelo-do-env");
 
-    expect(getAiModelId({ model: "  meta/muse-spark-1.3  " })).toBe(
-      "meta/muse-spark-1.3",
-    );
+    expect(
+      getAiModelId({ provider: "fireworks", model: "  glm-flash-latest  " }),
+    ).toBe("glm-flash-latest");
   });
 
-  it("usa OPENROUTER_MODEL quando não há override", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "  modelo-do-env  ");
+  it("usa FIREWORKS_MODEL no provider padrão", () => {
+    vi.stubEnv("FIREWORKS_MODEL", "  modelo-fireworks  ");
 
-    expect(getAiModelId()).toBe("modelo-do-env");
-    expect(getAiModelId({})).toBe("modelo-do-env");
+    expect(getAiModelId()).toBe("modelo-fireworks");
+    expect(getAiModelId({})).toBe("modelo-fireworks");
+  });
+
+  it("usa OPENROUTER_MODEL quando o provider é openrouter", () => {
+    vi.stubEnv("AI_PROVIDER", "openrouter");
+    vi.stubEnv("OPENROUTER_MODEL", "  modelo-openrouter  ");
+
+    expect(getAiModelId()).toBe("modelo-openrouter");
+  });
+
+  it("usa o modelo padrão do Fireworks sem override nem env", () => {
+    expect(getAiModelId()).toBe(DEFAULT_FIREWORKS_MODEL);
+  });
+
+  it("usa o modelo padrão do OpenRouter quando o provider é openrouter", () => {
+    vi.stubEnv("AI_PROVIDER", "openrouter");
+
+    expect(getAiModelId()).toBe(DEFAULT_OPENROUTER_MODEL);
   });
 
   it("ignora override de modelo vazio e usa o env", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-do-env");
+    vi.stubEnv("FIREWORKS_MODEL", "modelo-do-env");
 
     expect(getAiModelId({ model: "   " })).toBe("modelo-do-env");
-  });
-
-  it("usa o modelo padrão quando não há override nem env", () => {
-    expect(getAiModelId()).toBe(DEFAULT_OPENROUTER_MODEL);
   });
 });
 
 describe("getDefaultLanguageModel", () => {
-  it("chama o client com o modelo padrão e sem reasoning quando effort é none", () => {
+  it("chama o client Fireworks com o modelo padrão", () => {
     const resultado = getDefaultLanguageModel();
 
-    expect(mocks.createOpenRouterClient).toHaveBeenCalledTimes(1);
-    expect(openrouter).toHaveBeenCalledWith(DEFAULT_OPENROUTER_MODEL, undefined);
-    expect(resultado).toBe(openrouter.mock.results[0]?.value);
+    expect(mocks.createFireworksClient).toHaveBeenCalledTimes(1);
+    expect(mocks.createOpenRouterClient).not.toHaveBeenCalled();
+    expect(fireworks).toHaveBeenCalledWith(DEFAULT_FIREWORKS_MODEL);
     expect(resultado).toEqual({
-      modelId: DEFAULT_OPENROUTER_MODEL,
-      options: undefined,
+      provider: "fireworks",
+      modelId: DEFAULT_FIREWORKS_MODEL,
     });
   });
 
-  it("chama o client com o modelo do override", () => {
-    getDefaultLanguageModel({ model: "meta/muse-spark-1.3" });
+  it("chama o client Fireworks com o modelo do override", () => {
+    getDefaultLanguageModel({
+      provider: "fireworks",
+      model: "accounts/fireworks/routers/glm-flash-latest",
+    });
 
-    expect(openrouter).toHaveBeenCalledWith(
-      "meta/muse-spark-1.3",
-      undefined,
+    expect(fireworks).toHaveBeenCalledWith(
+      "accounts/fireworks/routers/glm-flash-latest",
     );
   });
 
-  it("chama o client com o modelo do env", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-do-env");
+  it("usa o client OpenRouter (sem reasoning) quando o provider é openrouter", () => {
+    const resultado = getDefaultLanguageModel({ provider: "openrouter" });
 
-    getDefaultLanguageModel();
-
-    expect(openrouter).toHaveBeenCalledWith("modelo-do-env", undefined);
+    expect(mocks.createFireworksClient).not.toHaveBeenCalled();
+    expect(mocks.createOpenRouterClient).toHaveBeenCalledTimes(1);
+    expect(openrouter).toHaveBeenCalledWith(DEFAULT_OPENROUTER_MODEL, undefined);
+    expect(resultado).toBe(openrouter.mock.results[0]?.value);
   });
 
   it("encaminha o reasoning do contexto smoke quando configurado", () => {
+    vi.stubEnv("AI_PROVIDER", "openrouter");
     vi.stubEnv("OPENROUTER_REASONING_EFFORT", "high");
 
     getDefaultLanguageModel();
@@ -195,5 +267,15 @@ describe("getDefaultLanguageModel", () => {
     expect(openrouter).toHaveBeenCalledWith(DEFAULT_OPENROUTER_MODEL, {
       reasoning: { effort: "high" },
     });
+  });
+
+  it("propaga erro de configuração do Fireworks", () => {
+    const erro = new Error("FIREWORKS_API_KEY não configurada");
+    mocks.createFireworksClient.mockImplementation(() => {
+      throw erro;
+    });
+
+    expect(() => getDefaultLanguageModel()).toThrow(erro);
+    expect(openrouter).not.toHaveBeenCalled();
   });
 });

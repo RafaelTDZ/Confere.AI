@@ -1,32 +1,31 @@
 import "server-only";
 
 import { generateText, Output } from "ai";
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import {
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
 } from "@/lib/ai/tasks/document-model";
-import { getAiModelId, getAiProvider, type AiOverrides } from "@/lib/ai/provider";
 import {
   documentClassificationSchema,
   type DocumentClassification,
 } from "@/lib/ai/schemas";
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
-export type AnalyzeFileInput = {
-  bytes: Uint8Array;
-  mediaType: string;
-  filename: string;
-};
+export type { AnalyzeFileInput } from "@/lib/ai/document-content";
 
 async function classifyOnce(
-  file: AnalyzeFileInput,
+  prepared: PreparedDocument,
   pdfEngine: PdfEngine,
-  overrides?: AiOverrides,
 ) {
-  const isPdf = file.mediaType === "application/pdf";
   return generateText({
-    model: getDocumentLanguageModel({ isPdf, pdfEngine, overrides }),
+    model: getDocumentLanguageModel({
+      provider: prepared.provider,
+      modelId: prepared.modelId,
+      isPdf: prepared.isPdf,
+      pdfEngine,
+    }),
     output: Output.object({
       schema: documentClassificationSchema,
       name: "document_classification",
@@ -49,22 +48,14 @@ async function classifyOnce(
               "Retorne apenas os tipos realmente presentes.",
             ].join("\n"),
           },
-          {
-            type: "file",
-            mediaType: file.mediaType,
-            filename: file.filename,
-            data: file.bytes,
-          },
+          ...prepared.content,
         ],
       },
     ],
   });
 }
 
-export async function classifyDocument(
-  file: AnalyzeFileInput,
-  overrides?: AiOverrides,
-): Promise<{
+export async function classifyDocument(prepared: PreparedDocument): Promise<{
   classification: DocumentClassification;
   model: string;
   tokensIn: number;
@@ -72,21 +63,19 @@ export async function classifyDocument(
   latencyMs: number;
   usage: AiTaskUsage;
 }> {
-  const modelId = getAiModelId(overrides);
-  const isPdf = file.mediaType === "application/pdf";
   const started = Date.now();
 
   let result;
   try {
-    result = await classifyOnce(file, "native", overrides);
+    result = await classifyOnce(prepared, "native");
   } catch (error) {
     if (
-      isPdf &&
-      getAiProvider(overrides) === "openrouter" &&
+      prepared.isPdf &&
+      prepared.provider === "openrouter" &&
       shouldFallbackPdfEngine(error)
     ) {
       // Fallback: OCR via OpenRouter quando o processamento nativo falha
-      result = await classifyOnce(file, "mistral-ocr", overrides);
+      result = await classifyOnce(prepared, "mistral-ocr");
     } else {
       throw error;
     }
@@ -108,7 +97,7 @@ export async function classifyDocument(
 
   return {
     classification: { ...classification, types },
-    model: modelId,
+    model: prepared.modelId,
     tokensIn: usage.tokensIn,
     tokensOut: usage.tokensOut,
     latencyMs: usage.latencyMs,

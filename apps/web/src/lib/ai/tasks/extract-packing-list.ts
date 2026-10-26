@@ -1,13 +1,12 @@
 import "server-only";
 
 import { generateText, Output } from "ai";
-import type { AnalyzeFileInput } from "@/lib/ai/tasks/classify";
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import {
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
 } from "@/lib/ai/tasks/document-model";
-import { getAiModelId, getAiProvider, type AiOverrides } from "@/lib/ai/provider";
 import {
   packingListExtractionSchema,
   type PackingListExtraction,
@@ -15,13 +14,16 @@ import {
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 async function extractOnce(
-  file: AnalyzeFileInput,
+  prepared: PreparedDocument,
   pdfEngine: PdfEngine,
-  overrides?: AiOverrides,
 ) {
-  const isPdf = file.mediaType === "application/pdf";
   return generateText({
-    model: getDocumentLanguageModel({ isPdf, pdfEngine, overrides }),
+    model: getDocumentLanguageModel({
+      provider: prepared.provider,
+      modelId: prepared.modelId,
+      isPdf: prepared.isPdf,
+      pdfEngine,
+    }),
     output: Output.object({
       schema: packingListExtractionSchema,
       name: "packing_list_extraction",
@@ -40,12 +42,7 @@ async function extractOnce(
               "Se não houver um número de Invoice explícito, retorne null. Não invente nem deduza valores.",
             ].join("\n"),
           },
-          {
-            type: "file",
-            mediaType: file.mediaType,
-            filename: file.filename,
-            data: file.bytes,
-          },
+          ...prepared.content,
         ],
       },
     ],
@@ -53,8 +50,7 @@ async function extractOnce(
 }
 
 export async function extractPackingList(
-  file: AnalyzeFileInput,
-  overrides?: AiOverrides,
+  prepared: PreparedDocument,
 ): Promise<{
   packingList: PackingListExtraction;
   model: string;
@@ -63,20 +59,18 @@ export async function extractPackingList(
   latencyMs: number;
   usage: AiTaskUsage;
 }> {
-  const modelId = getAiModelId(overrides);
-  const isPdf = file.mediaType === "application/pdf";
   const started = Date.now();
 
   let result;
   try {
-    result = await extractOnce(file, "native", overrides);
+    result = await extractOnce(prepared, "native");
   } catch (error) {
     if (
-      isPdf &&
-      getAiProvider(overrides) === "openrouter" &&
+      prepared.isPdf &&
+      prepared.provider === "openrouter" &&
       shouldFallbackPdfEngine(error)
     ) {
-      result = await extractOnce(file, "mistral-ocr", overrides);
+      result = await extractOnce(prepared, "mistral-ocr");
     } else {
       throw error;
     }
@@ -94,7 +88,7 @@ export async function extractPackingList(
     packingList: {
       invoiceNumber: invoiceNumber || null,
     },
-    model: modelId,
+    model: prepared.modelId,
     tokensIn: usage.tokensIn,
     tokensOut: usage.tokensOut,
     latencyMs: usage.latencyMs,

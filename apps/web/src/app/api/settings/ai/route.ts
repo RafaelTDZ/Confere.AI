@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AiConfigError } from "@/lib/ai";
 import { AI_PROVIDER_CATALOG } from "@/lib/ai/catalog";
+import type { AiProviderId } from "@/lib/ai/provider";
 import {
   clearAiOverrides,
   getAiOverrides,
@@ -72,7 +73,7 @@ export async function PUT(request: Request) {
 
     const config = await saveAiOverrides(
       {
-        provider: body.provider as "openrouter",
+        provider: body.provider as AiProviderId,
         model: typeof body.model === "string" ? body.model : undefined,
       },
       gate.auth.userId,
@@ -91,7 +92,9 @@ export async function PUT(request: Request) {
     console.error("[api/settings/ai] PUT error:", error);
     const message =
       error instanceof Error ? error.message : "Falha ao salvar configurações";
-    const status = /obrigatório|inválid|longo/i.test(message) ? 400 : 500;
+    const status = /obrigatório|inválid|longo|pertence/i.test(message)
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

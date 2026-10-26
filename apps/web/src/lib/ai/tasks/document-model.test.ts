@@ -8,10 +8,15 @@ import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 
 const mocks = vi.hoisted(() => ({
   createOpenRouterClient: vi.fn(),
+  createFireworksClient: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/providers/openrouter", () => ({
   createOpenRouterClient: mocks.createOpenRouterClient,
+}));
+
+vi.mock("@/lib/ai/providers/fireworks", () => ({
+  createFireworksClient: mocks.createFireworksClient,
 }));
 
 type ModeloCriado = {
@@ -24,19 +29,31 @@ const criarModelo = vi.fn((modelId: string, options?: unknown) => ({
   options,
 }));
 
+const criarModeloFireworks = vi.fn((modelId: string) => ({ modelId }));
+
 function gerarModelo(options?: {
+  provider?: "fireworks" | "openrouter";
+  modelId?: string;
   isPdf?: boolean;
   pdfEngine?: "native" | "mistral-ocr";
-  overrides?: { provider?: "openrouter"; model?: string };
 }): ModeloCriado {
-  return getDocumentLanguageModel(options) as unknown as ModeloCriado;
+  return getDocumentLanguageModel({
+    provider: options?.provider ?? "openrouter",
+    modelId: options?.modelId ?? DEFAULT_OPENROUTER_MODEL,
+    ...(options?.isPdf === undefined ? {} : { isPdf: options.isPdf }),
+    ...(options?.pdfEngine === undefined
+      ? {}
+      : { pdfEngine: options.pdfEngine }),
+  }) as unknown as ModeloCriado;
 }
 
 beforeEach(() => {
   criarModelo.mockClear();
+  criarModeloFireworks.mockClear();
   mocks.createOpenRouterClient.mockReset();
   mocks.createOpenRouterClient.mockReturnValue(criarModelo);
-  vi.stubEnv("OPENROUTER_MODEL", undefined);
+  mocks.createFireworksClient.mockReset();
+  mocks.createFireworksClient.mockReturnValue(criarModeloFireworks);
   vi.stubEnv("OPENROUTER_REASONING_EFFORT", undefined);
   vi.stubEnv("OPENROUTER_REASONING_MAX_TOKENS", undefined);
   vi.stubEnv("OPENROUTER_REASONING_EXCLUDE", undefined);
@@ -83,7 +100,7 @@ describe("getDocumentLanguageModel", () => {
     });
   });
 
-  it("assume não-PDF quando as opções são omitidas", () => {
+  it("assume não-PDF quando isPdf é omitido", () => {
     const modelo = gerarModelo();
 
     expect(modelo.options).toEqual({
@@ -116,30 +133,43 @@ describe("getDocumentLanguageModel", () => {
     });
   });
 
-  it("usa o modelo do env como model id efetivo", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-do-env");
-
-    const modelo = gerarModelo();
-
-    expect(criarModelo).toHaveBeenCalledWith(
-      "modelo-do-env",
-      expect.any(Object),
-    );
-    expect(modelo.modelId).toBe("modelo-do-env");
-  });
-
-  it("prioriza o override do tenant no model id efetivo", () => {
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-do-env");
-
-    const modelo = gerarModelo({
-      overrides: { model: "modelo-do-tenant" },
-    });
+  it("usa o modelId recebido no OpenRouter", () => {
+    const modelo = gerarModelo({ modelId: "modelo-do-tenant" });
 
     expect(criarModelo).toHaveBeenCalledWith(
       "modelo-do-tenant",
       expect.any(Object),
     );
     expect(modelo.modelId).toBe("modelo-do-tenant");
+  });
+
+  it("usa o client Fireworks sem plugins nem reasoning", () => {
+    const modelo = gerarModelo({
+      provider: "fireworks",
+      modelId: "accounts/fireworks/routers/deepseek-flash-latest",
+      isPdf: true,
+      pdfEngine: "mistral-ocr",
+    });
+
+    expect(mocks.createFireworksClient).toHaveBeenCalledTimes(1);
+    expect(mocks.createFireworksClient).toHaveBeenCalledWith();
+    expect(criarModeloFireworks).toHaveBeenCalledWith(
+      "accounts/fireworks/routers/deepseek-flash-latest",
+    );
+    expect(mocks.createOpenRouterClient).not.toHaveBeenCalled();
+    expect(criarModelo).not.toHaveBeenCalled();
+    expect(modelo).toEqual({
+      modelId: "accounts/fireworks/routers/deepseek-flash-latest",
+    });
+  });
+
+  it("não monta reasoning no Fireworks mesmo com env configurado", () => {
+    vi.stubEnv("OPENROUTER_REASONING_EFFORT", "high");
+
+    const modelo = gerarModelo({ provider: "fireworks", modelId: "fw-model" });
+
+    expect(modelo).toEqual({ modelId: "fw-model" });
+    expect(mocks.createOpenRouterClient).not.toHaveBeenCalled();
   });
 });
 

@@ -1,13 +1,18 @@
 import "server-only";
 
+import { createFireworksClient } from "@/lib/ai/providers/fireworks";
+import { getFireworksModel } from "@/lib/ai/providers/fireworks-config";
 import { createOpenRouterClient } from "@/lib/ai/providers/openrouter";
 import {
   getOpenRouterModel,
   getOpenRouterReasoning,
 } from "@/lib/ai/providers/openrouter-model";
 
-/** Provedor único de IA: OpenRouter. */
-export type AiProviderId = "openrouter";
+/** Provedores de IA suportados. */
+export type AiProviderId = "fireworks" | "openrouter";
+
+/** Provedor padrão quando não há override nem AI_PROVIDER. */
+const DEFAULT_AI_PROVIDER: AiProviderId = "fireworks";
 
 /**
  * Override por tenant (persistido em tenant_settings.ai_overrides).
@@ -18,6 +23,10 @@ export type AiOverrides = {
   model?: string;
 };
 
+function isAiProviderId(value: unknown): value is AiProviderId {
+  return value === "fireworks" || value === "openrouter";
+}
+
 function sanitizeModel(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -25,18 +34,19 @@ function sanitizeModel(value: unknown): string | undefined {
   return trimmed;
 }
 
-/** Normaliza overrides vindos do banco/API (ignora valores inválidos). */
+/**
+ * Normaliza overrides vindos do banco/API (ignora valores inválidos).
+ * Provider desconhecido (legado `opencode`, typo) descarta a linha inteira:
+ * o modelo pode ser incompatível com o provider efetivo.
+ */
 export function normalizeOverrides(raw: unknown): AiOverrides {
   if (!raw || typeof raw !== "object") return {};
   const record = raw as Record<string, unknown>;
-  // Legado: providers "fireworks"/"opencode" foram removidos — descarta a
-  // linha inteira (inclui o modelo, incompatível com o OpenRouter) até a
-  // migration zerar essas linhas no banco.
-  if (record.provider !== undefined && record.provider !== "openrouter") {
+  if (record.provider !== undefined && !isAiProviderId(record.provider)) {
     return {};
   }
   const overrides: AiOverrides = {};
-  if (record.provider === "openrouter") {
+  if (isAiProviderId(record.provider)) {
     overrides.provider = record.provider;
   }
   const model = sanitizeModel(record.model);
@@ -44,21 +54,37 @@ export function normalizeOverrides(raw: unknown): AiOverrides {
   return overrides;
 }
 
+/**
+ * Provedor efetivo: override válido → AI_PROVIDER (case-insensitive) →
+ * padrão Fireworks. Valores desconhecidos em AI_PROVIDER são ignorados.
+ */
 export function getAiProvider(overrides?: AiOverrides): AiProviderId {
-  // Provedor único: ignora override/env, sempre OpenRouter.
-  // (parâmetro mantido para compatibilidade com os call sites)
-  void overrides;
-  return "openrouter";
+  if (isAiProviderId(overrides?.provider)) return overrides.provider;
+  const envProvider = process.env.AI_PROVIDER?.trim().toLowerCase();
+  if (isAiProviderId(envProvider)) return envProvider;
+  return DEFAULT_AI_PROVIDER;
 }
 
-/** ID do modelo efetivo (override do tenant ou OPENROUTER_MODEL). */
+/**
+ * ID do modelo efetivo: override do tenant → FIREWORKS_MODEL/OPENROUTER_MODEL
+ * conforme o provider efetivo → modelo padrão do provider.
+ */
 export function getAiModelId(overrides?: AiOverrides): string {
-  return overrides?.model?.trim() || getOpenRouterModel();
+  const overrideModel = overrides?.model?.trim();
+  if (overrideModel) return overrideModel;
+  if (getAiProvider(overrides) === "fireworks") return getFireworksModel();
+  return getOpenRouterModel();
 }
 
 /** Modelo de texto do provider efetivo (usado no smoke /api/ai/health). */
 export function getDefaultLanguageModel(overrides?: AiOverrides) {
   const modelId = getAiModelId(overrides);
+
+  if (getAiProvider(overrides) === "fireworks") {
+    const fireworks = createFireworksClient();
+    return fireworks(modelId);
+  }
+
   const openrouter = createOpenRouterClient();
   const reasoning = getOpenRouterReasoning("smoke");
   return openrouter(modelId, reasoning ? { reasoning } : undefined);

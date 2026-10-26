@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import { documentClassificationSchema } from "@/lib/ai/schemas";
 import { classifyDocument } from "@/lib/ai/tasks/classify";
 
@@ -8,11 +9,12 @@ const mocks = vi.hoisted(() => ({
   outputObject: vi.fn((options: unknown) => options),
   getDocumentLanguageModel: vi.fn(
     (options?: {
+      provider?: string;
+      modelId?: string;
       isPdf?: boolean;
       pdfEngine?: string;
-      overrides?: unknown;
     }) => ({
-      modelId: "model-x",
+      modelId: options?.modelId,
       options,
     }),
   ),
@@ -27,11 +29,6 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai/tasks/document-model", () => ({
   getDocumentLanguageModel: mocks.getDocumentLanguageModel,
   shouldFallbackPdfEngine: mocks.shouldFallbackPdfEngine,
-}));
-
-vi.mock("@/lib/ai/provider", () => ({
-  getAiModelId: () => "model-x",
-  getAiProvider: () => "openrouter",
 }));
 
 type ChamadaGenerateText = {
@@ -61,16 +58,51 @@ function resultadoComSucesso(output: unknown) {
   };
 }
 
-const ENTRADA_PDF = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "application/pdf",
+const PDF_BYTES = new Uint8Array([1, 2, 3]);
+
+const PREPARED_PDF: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: true,
   filename: "doc.pdf",
+  content: [
+    {
+      type: "file",
+      mediaType: "application/pdf",
+      filename: "doc.pdf",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
-const ENTRADA_IMAGEM = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "image/png",
+const PREPARED_IMAGE: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: false,
   filename: "doc.png",
+  content: [
+    {
+      type: "file",
+      mediaType: "image/png",
+      filename: "doc.png",
+      data: PDF_BYTES,
+    },
+  ],
+};
+
+const PREPARED_FIREWORKS_PDF: PreparedDocument = {
+  provider: "fireworks",
+  modelId: "fw-model",
+  isPdf: true,
+  filename: "doc.pdf",
+  content: [
+    {
+      type: "file",
+      mediaType: "image/jpeg",
+      filename: "doc-pagina-1.jpg",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -93,13 +125,13 @@ describe("classifyDocument", () => {
       }),
     );
 
-    const resultado = await classifyDocument(ENTRADA_PDF);
+    const resultado = await classifyDocument(PREPARED_PDF);
 
     expect(resultado.classification).toEqual({
       types: ["invoice", "packing_list"],
       notes: null,
     });
-    expect(resultado.model).toBe("model-x");
+    expect(resultado.model).toBe("model-doc");
     expect(resultado.tokensIn).toBe(10);
     expect(resultado.tokensOut).toBe(4);
     expect(resultado.usage).toEqual({
@@ -112,19 +144,20 @@ describe("classifyDocument", () => {
     expect(resultado.latencyMs).toBe(resultado.usage.latencyMs);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
     expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
   });
 
-  it("usa o schema de classificação e envia o arquivo na mensagem", async () => {
+  it("usa o schema de classificação e envia o conteúdo preparado", async () => {
     mocks.generateText.mockResolvedValue(
       resultadoComSucesso({ types: ["invoice"], notes: null }),
     );
 
-    await classifyDocument(ENTRADA_PDF);
+    await classifyDocument(PREPARED_PDF);
 
     const chamada = opcoesDaChamada(0);
 
@@ -136,11 +169,28 @@ describe("classifyDocument", () => {
     );
     expect(chamada.output?.schema).toBe(documentClassificationSchema);
     expect(chamada.messages?.[0]?.role).toBe("user");
-    expect(chamada.messages?.[0]?.content?.[1]).toMatchObject({
-      type: "file",
-      mediaType: "application/pdf",
-      filename: "doc.pdf",
-      data: ENTRADA_PDF.bytes,
+    expect(chamada.messages?.[0]?.content).toEqual([
+      { type: "text", text: expect.any(String) },
+      PREPARED_PDF.content[0],
+    ]);
+  });
+
+  it("envia as páginas convertidas quando o prepared vem do Fireworks", async () => {
+    mocks.generateText.mockResolvedValue(
+      resultadoComSucesso({ types: ["invoice"], notes: null }),
+    );
+
+    const resultado = await classifyDocument(PREPARED_FIREWORKS_PDF);
+
+    expect(resultado.model).toBe("fw-model");
+    expect(opcoesDaChamada(0).messages?.[0]?.content?.[1]).toEqual(
+      PREPARED_FIREWORKS_PDF.content[0],
+    );
+    expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
+      provider: "fireworks",
+      modelId: "fw-model",
+      isPdf: true,
+      pdfEngine: "native",
     });
   });
 
@@ -151,7 +201,7 @@ describe("classifyDocument", () => {
   ])("rejeita quando os tipos são %s", async (_rotulo, output) => {
     mocks.generateText.mockResolvedValue(resultadoComSucesso(output));
 
-    await expect(classifyDocument(ENTRADA_PDF)).rejects.toThrow(
+    await expect(classifyDocument(PREPARED_PDF)).rejects.toThrow(
       "A IA não identificou nenhum tipo de documento",
     );
   });
@@ -165,20 +215,22 @@ describe("classifyDocument", () => {
       );
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    const resultado = await classifyDocument(ENTRADA_PDF);
+    const resultado = await classifyDocument(PREPARED_PDF);
 
     expect(resultado.classification.types).toEqual(["bill_of_lading"]);
     expect(mocks.generateText).toHaveBeenCalledTimes(2);
     expect(mocks.shouldFallbackPdfEngine).toHaveBeenCalledWith(erro);
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(1, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(2, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "mistral-ocr",
-      overrides: undefined,
     });
   });
 
@@ -187,9 +239,19 @@ describe("classifyDocument", () => {
     mocks.generateText.mockRejectedValue(erro);
     mocks.shouldFallbackPdfEngine.mockReturnValue(false);
 
-    await expect(classifyDocument(ENTRADA_PDF)).rejects.toBe(erro);
+    await expect(classifyDocument(PREPARED_PDF)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).toHaveBeenCalledWith(erro);
+  });
+
+  it("não tenta fallback de OCR no Fireworks", async () => {
+    const erro = new Error("failed to parse PDF");
+    mocks.generateText.mockRejectedValue(erro);
+    mocks.shouldFallbackPdfEngine.mockReturnValue(true);
+
+    await expect(classifyDocument(PREPARED_FIREWORKS_PDF)).rejects.toBe(erro);
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+    expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
   });
 
   it("propaga o erro de imagem sem tentar fallback de PDF", async () => {
@@ -197,27 +259,14 @@ describe("classifyDocument", () => {
     mocks.generateText.mockRejectedValue(erro);
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    await expect(classifyDocument(ENTRADA_IMAGEM)).rejects.toBe(erro);
+    await expect(classifyDocument(PREPARED_IMAGE)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
     expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: false,
       pdfEngine: "native",
-      overrides: undefined,
-    });
-  });
-
-  it("encaminha os overrides do tenant para o modelo", async () => {
-    mocks.generateText.mockResolvedValue(
-      resultadoComSucesso({ types: ["invoice"], notes: null }),
-    );
-
-    await classifyDocument(ENTRADA_PDF, { model: "modelo-do-tenant" });
-
-    expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
-      isPdf: true,
-      pdfEngine: "native",
-      overrides: { model: "modelo-do-tenant" },
     });
   });
 });

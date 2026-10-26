@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { PreparedDocument } from "@/lib/ai/document-content";
 import type { InvoiceExtraction } from "@/lib/ai/schemas";
 import { invoiceExtractionSchema } from "@/lib/ai/schemas";
 import { extractInvoice } from "@/lib/ai/tasks/extract-invoice";
@@ -9,11 +10,12 @@ const mocks = vi.hoisted(() => ({
   outputObject: vi.fn((options: unknown) => options),
   getDocumentLanguageModel: vi.fn(
     (options?: {
+      provider?: string;
+      modelId?: string;
       isPdf?: boolean;
       pdfEngine?: string;
-      overrides?: unknown;
     }) => ({
-      modelId: "model-x",
+      modelId: options?.modelId,
       options,
     }),
   ),
@@ -30,13 +32,9 @@ vi.mock("@/lib/ai/tasks/document-model", () => ({
   shouldFallbackPdfEngine: mocks.shouldFallbackPdfEngine,
 }));
 
-vi.mock("@/lib/ai/provider", () => ({
-  getAiModelId: () => "model-x",
-  getAiProvider: () => "openrouter",
-}));
-
 type ChamadaGenerateText = {
   output?: { schema?: unknown; name?: string };
+  messages?: Array<{ content?: Array<Record<string, unknown>> }>;
 };
 
 function opcoesDaChamada(indice: number): ChamadaGenerateText {
@@ -97,16 +95,36 @@ function resultadoComSucesso(output: unknown) {
   };
 }
 
-const ENTRADA_PDF = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "application/pdf",
+const PDF_BYTES = new Uint8Array([1, 2, 3]);
+
+const PREPARED_PDF: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: true,
   filename: "doc.pdf",
+  content: [
+    {
+      type: "file",
+      mediaType: "application/pdf",
+      filename: "doc.pdf",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
-const ENTRADA_IMAGEM = {
-  bytes: new Uint8Array([1, 2, 3]),
-  mediaType: "image/png",
+const PREPARED_IMAGE: PreparedDocument = {
+  provider: "openrouter",
+  modelId: "model-doc",
+  isPdf: false,
   filename: "doc.png",
+  content: [
+    {
+      type: "file",
+      mediaType: "image/png",
+      filename: "doc.png",
+      data: PDF_BYTES,
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -124,10 +142,10 @@ describe("extractInvoice", () => {
   it("extrai a invoice com model, tokens e usage", async () => {
     mocks.generateText.mockResolvedValue(resultadoComSucesso(INVOICE));
 
-    const resultado = await extractInvoice(ENTRADA_PDF);
+    const resultado = await extractInvoice(PREPARED_PDF);
 
     expect(resultado.invoice).toEqual(INVOICE);
-    expect(resultado.model).toBe("model-x");
+    expect(resultado.model).toBe("model-doc");
     expect(resultado.tokensIn).toBe(10);
     expect(resultado.tokensOut).toBe(4);
     expect(resultado.usage).toEqual({
@@ -140,16 +158,17 @@ describe("extractInvoice", () => {
     expect(resultado.latencyMs).toBe(resultado.usage.latencyMs);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
   });
 
-  it("usa o schema de extração de invoice", async () => {
+  it("usa o schema de extração de invoice e envia o conteúdo preparado", async () => {
     mocks.generateText.mockResolvedValue(resultadoComSucesso(INVOICE));
 
-    await extractInvoice(ENTRADA_PDF);
+    await extractInvoice(PREPARED_PDF);
 
     expect(mocks.outputObject).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -158,12 +177,15 @@ describe("extractInvoice", () => {
       }),
     );
     expect(opcoesDaChamada(0).output?.schema).toBe(invoiceExtractionSchema);
+    expect(opcoesDaChamada(0).messages?.[0]?.content?.[1]).toEqual(
+      PREPARED_PDF.content[0],
+    );
   });
 
   it("rejeita quando a IA não retorna dados da invoice", async () => {
     mocks.generateText.mockResolvedValue(resultadoComSucesso(null));
 
-    await expect(extractInvoice(ENTRADA_PDF)).rejects.toThrow(
+    await expect(extractInvoice(PREPARED_PDF)).rejects.toThrow(
       "A IA não retornou dados da invoice",
     );
   });
@@ -175,20 +197,22 @@ describe("extractInvoice", () => {
       .mockResolvedValueOnce(resultadoComSucesso(INVOICE));
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    const resultado = await extractInvoice(ENTRADA_PDF);
+    const resultado = await extractInvoice(PREPARED_PDF);
 
     expect(resultado.invoice).toEqual(INVOICE);
     expect(mocks.generateText).toHaveBeenCalledTimes(2);
     expect(mocks.shouldFallbackPdfEngine).toHaveBeenCalledWith(erro);
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(1, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "native",
-      overrides: undefined,
     });
     expect(mocks.getDocumentLanguageModel).toHaveBeenNthCalledWith(2, {
+      provider: "openrouter",
+      modelId: "model-doc",
       isPdf: true,
       pdfEngine: "mistral-ocr",
-      overrides: undefined,
     });
   });
 
@@ -197,7 +221,7 @@ describe("extractInvoice", () => {
     mocks.generateText.mockRejectedValue(erro);
     mocks.shouldFallbackPdfEngine.mockReturnValue(false);
 
-    await expect(extractInvoice(ENTRADA_PDF)).rejects.toBe(erro);
+    await expect(extractInvoice(PREPARED_PDF)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).toHaveBeenCalledWith(erro);
   });
@@ -207,20 +231,8 @@ describe("extractInvoice", () => {
     mocks.generateText.mockRejectedValue(erro);
     mocks.shouldFallbackPdfEngine.mockReturnValue(true);
 
-    await expect(extractInvoice(ENTRADA_IMAGEM)).rejects.toBe(erro);
+    await expect(extractInvoice(PREPARED_IMAGE)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
-  });
-
-  it("encaminha os overrides do tenant para o modelo", async () => {
-    mocks.generateText.mockResolvedValue(resultadoComSucesso(INVOICE));
-
-    await extractInvoice(ENTRADA_PDF, { model: "modelo-do-tenant" });
-
-    expect(mocks.getDocumentLanguageModel).toHaveBeenCalledWith({
-      isPdf: true,
-      pdfEngine: "native",
-      overrides: { model: "modelo-do-tenant" },
-    });
   });
 });

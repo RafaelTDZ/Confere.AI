@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PdfConversionError } from "@/lib/ai";
 import { runAnalyzePipeline } from "@/lib/documents/analyze-pipeline";
 import {
   claimAiJob,
@@ -33,9 +34,18 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
         }),
     );
   } catch (error) {
+    // `PdfConversionError` já traz a mensagem acionável de PDF → imagens; ela
+    // vai direto para `ai_jobs.error_message`, sem prefixo genérico.
     const message =
       error instanceof Error ? error.message : "Falha ao analisar documento";
-    console.error("[ai-worker] job falhou", { jobId: job.id, message });
+    if (error instanceof PdfConversionError) {
+      console.error("[ai-worker] conversão de PDF falhou", {
+        jobId: job.id,
+        message,
+      });
+    } else {
+      console.error("[ai-worker] job falhou", { jobId: job.id, message });
+    }
 
     try {
       await markAiJobFailed(job.id, message);
