@@ -152,6 +152,7 @@ pnpm db:migration <nome>   # cria nova migration
 | `AI_ANALYZE_RATE_LIMIT` / `AI_ANALYZE_RATE_WINDOW_SECONDS` | Não | Rate limit por tenant no `/api/ai/analyze` (default: 30 req / 3600 s) |
 | `AI_MONTHLY_TOKEN_QUOTA` | Não | Quota mensal de tokens de IA por tenant (default: 10.000.000) |
 | `CRON_SECRET` | Não* | Segredo de `POST/GET /api/ai/jobs/run` (`Authorization: Bearer`). *Sem ele o endpoint responde 503; jobs órfãos só rodam via `after()` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Não | Exporta traces/métricas para um coletor OTLP fora da Vercel (na Vercel usa a observabilidade do projeto) |
 | `CHECK_EMAIL_RATE_LIMIT` / `CHECK_EMAIL_RATE_WINDOW_SECONDS` | Não | Rate limit por IP no `/api/auth/check-email` (default: 10 req / 60 s) |
 
 O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).
@@ -165,6 +166,7 @@ O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são apl
 - **Publishable key**: use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). `createSupabaseFetch` evita enviá-la em `Authorization: Bearer` (não é JWT).
 - **Claims**: `tenant_id` e `tenant_role` em `app_metadata` (nunca `user_metadata`).
 - **Fronteira server/client**: módulos com `import "server-only"` (Supabase admin/server, `lib/documents`, `lib/ai`, auth, security, settings) não podem ser importados por componentes client; a superfície client-safe é `*-shared.ts` + `lib/supabase/client`.
+- **Observabilidade**: `apps/web/src/instrumentation.ts` registra `@vercel/otel`; `lib/observability/tracing.ts` cria spans do pipeline (`ai.analyze`, `ai.job`, `ai.classify`, `ai.extract_*`, `ai.persist_extraction`) e métricas por capability. Local/testes são no-op; na Vercel os traces vão para a observabilidade do projeto.
 
 ## Banco de dados
 

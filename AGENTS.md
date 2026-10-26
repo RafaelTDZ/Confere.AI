@@ -113,9 +113,10 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
+| Observabilidade | OTel (`@vercel/otel` no `instrumentation.ts`); spans `ai.analyze`/`ai.job`/`ai.classify`/`ai.extract_*`/`ai.persist_extraction` e métricas por capability |
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 618 testes em 36 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
+| Testes automatizados | Vitest 5.0.5 — 622 testes em 37 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
@@ -165,6 +166,11 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   `<tenant>/_jobs/<jobId>/`, cria o job e responde `202`; o processamento continua no
   `after()` da request. `/api/ai/jobs/run` (Bearer `CRON_SECRET`) drena jobs `queued` ou
   `running` travados há 15 min (até 3 tentativas) — aponte o Vercel Cron para ele.
+- **Observabilidade**: `src/instrumentation.ts` registra `@vercel/otel` (na Vercel envia para a
+  observabilidade do projeto; local/testes viram no-op). `lib/observability/tracing.ts` expõe
+  `withSpan`/`recordAiCall`: spans `ai.analyze`, `ai.job`, `ai.classify`, `ai.extract_*` e
+  `ai.persist_extraction` + métricas `ai.call.duration|tokens|cost`. `OTEL_EXPORTER_OTLP_ENDPOINT`
+  é opcional para exportar fora da Vercel.
 - **Tipos do banco**: `lib/supabase/database.types.ts` é gerado do cloud (MCP
   `generate_typescript_types` ou `supabase gen types typescript --linked`) e tipa os cinco
   clients; regenere após cada migration. `knip.json` ignora o arquivo gerado. `MemberRole`

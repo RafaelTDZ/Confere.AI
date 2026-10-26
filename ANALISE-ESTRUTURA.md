@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 19 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03), 2 parciais (OBS-03, OPS-03) e nenhum em aberto. Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (618 testes; `documents` 94,19% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 20 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03, OBS-03), 1 parcial (OPS-03) e nenhum em aberto. Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (622 testes; `documents` 94,31% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 26 rotas |
-| Testes | `pnpm test` | ✅ 618 testes em 36 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 95,35% lines; `documents` 94,19% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 622 testes em 37 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 95,43% lines; `documents` 94,31% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 618 testes em 36 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, fila de jobs, auth/roles, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,19% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 622 testes em 37 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, fila de jobs, auth/roles, tracing/métricas, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,31% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -557,14 +557,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Integrar Sentry (server + client) com release/commit.
-- [ ] Instrumentar pipeline com spans (classify, extract, persist).
-- [ ] Adicionar métricas de duração, tokens e custo por capability.
-- [ ] Criar dashboard simples de `ai_logs`.
+- [x] Integrar Sentry (server + client) com release/commit — substituído por OpenTelemetry (`@vercel/otel` via `src/instrumentation.ts`), sem conta externa; Sentry segue opcional.
+- [x] Instrumentar pipeline com spans (classify, extract, persist) — `ai.analyze`, `ai.job`, `ai.classify`, `ai.extract_invoice`, `ai.extract_packing_list`, `ai.extract_bl` e `ai.persist_extraction`, com atributos de tenant/importação, modelo, tokens, latência e `deduped` (sem filenames/PII).
+- [x] Adicionar métricas de duração, tokens e custo por capability — histograma `ai.call.duration` e contadores `ai.call.tokens`/`ai.call.cost`, rotulados por `capability`/`model`/`status` e alimentados no mesmo ponto que grava `ai_logs`.
+- [ ] Criar dashboard simples de `ai_logs` — não feito; os dados já estão em `ai_logs` e nas métricas.
 
 **Critério de aceite:** erro em produção chega ao Sentry com contexto de tenant/importação (sem PII desnecessária).
 
-**Status (out/2026):** variáveis sem uso removidas de `.env.example`, `turbo.json` e README. A integração Sentry/OpenTelemetry continua pendente.
+**Status (out/2026):** concluído via OTel — `registerOTel({ serviceName: "confere-web" })` no `instrumentation.ts` (na Vercel usa a observabilidade do projeto; local/testes viram no-op). Spans e métricas usam `withSpan`/`recordAiCall` em `lib/observability/tracing.ts`; falhas de IA registram exceção e status no span, e o pipeline ainda marca a importação como `failed`. `OTEL_EXPORTER_OTLP_ENDPOINT` fica opcional no `.env.example`/`turbo.json`. Smoke local: `/login` responde 200 sem erro de inicialização do OTel.
 
 ---
 
@@ -816,7 +816,7 @@ Legenda de severidade:
 
 **Objetivo:** tornar o produto observável e escalável.
 
-- [ ] OBS-03 — Integrar Sentry/OpenTelemetry.
+- [x] OBS-03 — Integrar Sentry/OpenTelemetry.
 - [x] PERF-01 — Paginação e filtros nas listagens.
 - [x] OPS-01 — Limpar workspace residual.
 - [ ] OPS-03 — Reavaliar deploy com Root Directory `apps/web`.
