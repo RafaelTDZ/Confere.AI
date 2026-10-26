@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 15 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01), 2 parciais (OBS-03, OPS-03) e 4 em aberto (AI-01, DATA-01, DATA-02, DATA-03). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (572 testes; `documents` 93,95% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 16 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02), 2 parciais (OBS-03, OPS-03) e 3 em aberto (AI-01, DATA-01, DATA-03). Migrations: 20/20 aplicadas no cloud (última `20261026114439`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (575 testes; `documents` 94,04% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 572 testes em 31 arquivos (Vitest 5.0.5) |
+| Testes | `pnpm test` | ✅ 575 testes em 31 arquivos (Vitest 5.0.5) |
 | Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 572 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,95% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 575 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,04% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -412,12 +412,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Definir a regra de negócio: Invoice/BL são 1:1 por tenant?
-- [ ] Se sim, criar índices únicos parciais.
-- [ ] Se não, usar upsert/advisory lock ou RPC atômica.
-- [ ] Adicionar teste de concorrência.
+- [x] Definir a regra de negócio: Invoice/BL são 1:1 por tenant — sim: no máximo uma importação por `(tenant_id, bl_number)` e uma por `(tenant_id, invoice_number)`; o BL tem precedência sobre a Invoice na escolha da importação.
+- [x] Se sim, criar índices únicos parciais — `imports_tenant_bl_number_key` e `imports_tenant_invoice_number_key` (parciais, `where ... is not null`), substituindo os índices comuns de `20250813220000_import_reference_keys.sql`.
+- [ ] Se não, usar upsert/advisory lock ou RPC atômica — dispensado: a corrida é resolvida pelo índice único + retry.
+- [x] Adicionar teste de concorrência — fake ganhou `beforeInsert` e `unique`; teste simula a outra request gravando a importação vencedora entre o select e o insert.
 
 **Critério de aceite:** dois uploads simultâneos com a mesma chave resultam em uma única importação (ou em comportamento explicitamente definido).
+
+**Status (out/2026):** concluído — migration `20261026114439_unique_import_keys.sql` aplicada no cloud (20/20; dedupe defensivo + índices únicos parciais). `findOrCreateImport` perde a corrida com `23505`, relê pelas chaves (BL antes de Invoice) e reutiliza a vencedora (`created: false`); `fillImportKeysIfEmpty` descarta só a coluna conflitante e segue a análise, registrando `console.warn`. Smoke no banco confirmou que os dois índices rejeitam duplicata (bloco revertido, nenhuma linha criada).
 
 ---
 
@@ -784,7 +786,7 @@ Legenda de severidade:
 
 - [ ] DATA-01 — RPC transacional para merge/delete.
 - [ ] DATA-01 — Pipeline idempotente.
-- [ ] DATA-02 — Definir regra de unicidade de Invoice/BL.
+- [x] DATA-02 — Definir regra de unicidade de Invoice/BL.
 - [ ] Criar índices únicos parciais ou upsert atômico.
 - [ ] Testes de concorrência.
 

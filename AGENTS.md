@@ -165,6 +165,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   (grava Storage/`imports`/`documents`/`extraction_results`/`ai_logs` via admin;
   tenant_id sempre do JWT). Evita `permission denied for function current_tenant_id`
   quando os grants de `private.*` ainda não foram aplicados no cloud.
+- **Consolidação de importações**: `(tenant_id, bl_number)` e `(tenant_id, invoice_number)`
+  são únicos (índices parciais). Corrida no insert vira `23505` → releitura e reuso da
+  importação vencedora; BL tem precedência sobre Invoice e uma chave já usada por outra
+  importação não é copiada (`fillImportKeysIfEmpty` só descarta a coluna conflitante).
 - **Grants RLS** (recomendado): rode
   [`20250731190000_grant_private_rls_functions.sql`](supabase/migrations/20250731190000_grant_private_rls_functions.sql)
   no SQL Editor para selects autenticados com policies RLS funcionarem.
