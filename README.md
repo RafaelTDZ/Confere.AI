@@ -1,8 +1,9 @@
 # Confere.ia
 
 Plataforma SaaS multi-tenant para análise de documentos de importação com IA.
-Nesta etapa o produto expõe autenticação (login/signup) e a página protegida `/analise`
-(UI pronta; pipeline de upload e processamento ainda não conectado).
+O produto tem autenticação (login/signup), a página `/analise` e o pipeline de
+upload/processamento conectado: o upload vira um job na fila (`ai_jobs`), a IA
+classifica e extrai Invoice/Packing List/BL e a UI acompanha o status.
 
 ## Stack
 
@@ -40,7 +41,9 @@ supabase/
 | `/configuracoes` | Super-admin (`ADMIN_EMAILS`) | Provedor e modelo de IA para todos os usuários + teste de conexão |
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
 | `/api/ai/health` | Autenticado | Smoke da integração de IA (`generateText` no provider ativo) |
-| `/api/ai/analyze` | Autenticado | Upload + classificação de tipos + extração de Invoice |
+| `/api/ai/analyze` | Autenticado | Enfileira o upload e responde `202` com `jobId` (classificação/extração em background) |
+| `/api/ai/jobs/[jobId]` | Autenticado | Status do job (`queued`/`running`/`succeeded`/`failed`) + `importId` |
+| `/api/ai/jobs/run` | `CRON_SECRET` | Drena a fila de jobs (retry/cron do Vercel) |
 | `/api/settings/ai` | Super-admin (`ADMIN_EMAILS`) | GET/PUT/DELETE da config global de IA (tabela `app_settings`, chave `ai`) |
 
 ## Setup local
@@ -148,6 +151,7 @@ pnpm db:migration <nome>   # cria nova migration
 | `OPENROUTER_REASONING_EXCLUDE` | Não | `true`/`false` — remove reasoning tokens da resposta |
 | `AI_ANALYZE_RATE_LIMIT` / `AI_ANALYZE_RATE_WINDOW_SECONDS` | Não | Rate limit por tenant no `/api/ai/analyze` (default: 30 req / 3600 s) |
 | `AI_MONTHLY_TOKEN_QUOTA` | Não | Quota mensal de tokens de IA por tenant (default: 10.000.000) |
+| `CRON_SECRET` | Não* | Segredo de `POST/GET /api/ai/jobs/run` (`Authorization: Bearer`). *Sem ele o endpoint responde 503; jobs órfãos só rodam via `after()` |
 | `CHECK_EMAIL_RATE_LIMIT` / `CHECK_EMAIL_RATE_WINDOW_SECONDS` | Não | Rate limit por IP no `/api/auth/check-email` (default: 10 req / 60 s) |
 
 O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são aplicadas com a CLI do Supabase (`supabase link` + `supabase db push`).

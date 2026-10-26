@@ -105,7 +105,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 |------|--------|
 | Login / signup / logout | Funcional (cloud + publishable key) |
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
-| Página `/analise` | Dropzone → `/api/ai/analyze` (Storage + classify + extract Invoice persistido) |
+| Página `/analise` | Dropzone → `/api/ai/analyze` (202 + job), status via `/api/ai/jobs/[jobId]` e extrações persistidas |
 | Página `/importacoes` | Lista `imports` do tenant (RLS com o client autenticado) |
 | Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
 | Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
@@ -113,9 +113,9 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
-| Classificação + extração | `/api/ai/analyze`; Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
+| Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 462 testes; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
+| Testes automatizados | Vitest 5.0.5 — 610 testes em 35 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
@@ -161,6 +161,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Env vazio no processo** (`NEXT_PUBLIC_*=`) impede o `.env` de preencher a chave.
 - **Grants RLS** (`private.*` → `authenticated`) são obrigatórios no cloud após o schema inicial.
 - **OpenRouter**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se ausente e 401 sem sessão.
+- **Fila de análise (`ai_jobs`)**: `POST /api/ai/analyze` grava o arquivo em
+  `<tenant>/_jobs/<jobId>/`, cria o job e responde `202`; o processamento continua no
+  `after()` da request. `/api/ai/jobs/run` (Bearer `CRON_SECRET`) drena jobs `queued` ou
+  `running` travados há 15 min (até 3 tentativas) — aponte o Vercel Cron para ele.
 - **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze`
   (grava Storage/`imports`/`documents`/`extraction_results`/`ai_logs` via admin;
   tenant_id sempre do JWT). Evita `permission denied for function current_tenant_id`

@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 17 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01), 2 parciais (OBS-03, OPS-03) e 2 em aberto (AI-01, DATA-03). Migrations: 21/21 aplicadas no cloud (última `20261026122627`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (571 testes; `documents` 94,38% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 18 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01), 2 parciais (OBS-03, OPS-03) e 1 em aberto (DATA-03). Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (610 testes; `documents` 94,58% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -22,7 +22,7 @@ Os principais riscos não estão na organização das pastas, mas em **operaçã
 
 1. **Referências do Supabase divergentes** entre documentação, `.env` local e MCP ativo.
 2. **Nenhum teste automatizado**, mas o CI passa mesmo assim.
-3. **Pipeline de IA síncrono, caro e sujeito a timeout**.
+3. **Pipeline de IA síncrono, caro e sujeito a timeout** — resolvido em out/2026 com a fila `ai_jobs` + `202 Accepted`.
 4. **Uso amplo de `service_role` para leitura**, com isolamento por tenant feito manualmente.
 5. **Operações compostas sem transação** e risco de duplicidade em importações.
 6. **Tipos do banco não gerados**, permitindo divergências entre schema e TypeScript.
@@ -166,9 +166,9 @@ Upload (multipart)
 |---|---|---|
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
-| Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 571 testes em 31 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
+| Build | `pnpm build` | ✅ passou em ~1m04, 26 rotas |
+| Testes | `pnpm test` | ✅ 610 testes em 35 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 95,67% lines; `documents` 94,58% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 571 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,38% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 610 testes em 35 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, fila de jobs, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,58% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -298,13 +298,15 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Migrar para processamento assíncrono (fila: pg-boss, Inngest, QStash ou similar).
-- [ ] `POST /api/ai/analyze` responde `202 Accepted` + `importId`/`jobId`.
-- [ ] Adicionar endpoint/página de status do processamento.
-- [ ] Considerar paralelizar extrações independentes com controle de rate limit.
-- [ ] Manter `maxDuration` apenas como fallback.
+- [x] Migrar para processamento assíncrono (fila: pg-boss, Inngest, QStash ou similar) — fila no próprio Postgres (`ai_jobs`) com claim atômico (`claim_ai_job`/`claim_next_ai_job`), worker disparado pelo `after()` da request e endpoint de retry/cron (`/api/ai/jobs/run` com `CRON_SECRET`). Sem serviço externo.
+- [x] `POST /api/ai/analyze` responde `202 Accepted` + `importId`/`jobId`.
+- [x] Adicionar endpoint/página de status do processamento — `GET /api/ai/jobs/:id` (RLS por tenant) e polling no dropzone com estados Na fila/Analisando/Falhou.
+- [ ] Considerar paralelizar extrações independentes com controle de rate limit — não feito: o pipeline segue sequencial e o rate limit continua por tenant na aceitação do job.
+- [x] Manter `maxDuration` apenas como fallback — `maxDuration = 120` fica só no route/worker, fora do caminho da resposta.
 
 **Critério de aceite:** upload de PDF de 10 MB não bloqueia a request por mais de poucos segundos; falhas ficam registradas e reprocessáveis.
+
+**Status (out/2026):** concluído — migration `20261026124023_ai_jobs.sql` aplicada no cloud (22/22): tabela `ai_jobs` (status queued/running/succeeded/failed, tentativas, erro, resultado), RLS de leitura por tenant e funções de claim com `for update skip locked`/limite de tentativas. O upload vai para `import-documents` em `<tenant>/_jobs/<jobId>/`, o worker baixa o arquivo, roda `runAnalyzePipeline`, marca o job e remove o arquivo; job travado em `running` volta para a fila após 15 min (até 3 tentativas). `CRON_SECRET` (novo no `.env.example`/`turbo.json`) protege o dreno da fila. Testes cobrem route 202, `after()`, worker (sucesso/falha/download/reserva), status, retry e helpers de job.
 
 ---
 
@@ -759,7 +761,7 @@ Legenda de severidade:
 
 - [x] AI-02 — Dedupe por `tenant_id + sha256` antes da IA.
 - [x] Reaproveitar `extraction_results` (e copiar para outro import quando necessário).
-- [ ] AI-01 — Introduzir fila/processamento assíncrono.
+- [x] AI-01 — Introduzir fila/processamento assíncrono.
 - [ ] Adicionar status de processamento e retry.
 - [x] OBS-01 — Preencher `ai_logs.import_id`.
 - [x] OBS-02 — Rate limit e quota por tenant.
@@ -826,13 +828,12 @@ Legenda de severidade:
 
 ## 10. Decisões pendentes
 
-Estas decisões precisam ser tomadas antes de algumas correções. Três já foram tomadas em out/2026: leituras via RLS (item 3), a raiz permanece para o preview do v0 (item 4) e a suíte de testes foi reiniciada com Vitest (item 5).
+Estas decisões precisam ser tomadas antes de algumas correções. Todas as cinco abaixo já foram decididas em out/2026.
 
 1. **Invoice/BL são 1:1 por tenant?**
-   - Se sim: índices únicos parciais.
-   - Se não: regra explícita de consolidação e upsert.
+   - **Decidido (out/2026):** sim — índices únicos parciais em `(tenant_id, bl_number)` e `(tenant_id, invoice_number)`; BL tem precedência e a corrida é resolvida com retry em `23505`.
 2. **Qual infraestrutura de fila usar?**
-   - pg-boss (Postgres), Inngest, QStash ou worker próprio.
+   - **Decidido (out/2026):** fila no próprio Postgres (`ai_jobs`) com claim atômico, worker no `after()` da request e dreno via `/api/ai/jobs/run` (`CRON_SECRET`). Sem serviço externo; Inngest/QStash continuam opções se o volume crescer.
 3. **Leituras devem voltar para RLS ou continuar via service role?**
    - **Decidido (out/2026):** leituras via RLS com `getReadClient()`; `service_role` fica restrito a escritas administrativas, Storage e jobs.
 4. **O deploy continuará na raiz ou passará para `apps/web`?**

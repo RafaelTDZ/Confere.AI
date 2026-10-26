@@ -31,7 +31,7 @@ divergências entre documentos.
   - Sidebar com Nova análise (`/analise`), Importações (`/importacoes`) e Produtos (`/produtos`)
   - Overlay mobile com menu abrível
 - [x] **Página `/analise`**
-  - Dropzone de upload ligada a `POST /api/ai/analyze` (Storage + classify + extract Invoice)
+  - Dropzone de upload ligada a `POST /api/ai/analyze` (202 + job na fila; worker classifica e extrai)
   - Cards "Como funciona" e "Documentos necessários"
   - Barra de progresso de documentos recebidos (atualizada pelos tipos classificados)
 - [x] **Página `/importacoes`**
@@ -40,8 +40,8 @@ divergências entre documentos.
   - Placeholder (CRUD ainda não implementado)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
-- [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `openai/gpt-5.6-luna`; validado com chave real); pipeline de documentos ainda não ligado
-- [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` (Storage + `imports`/`documents`; extrai Invoice, número de Invoice explícito no Packing List e campos do BL)
+- [x] **Infra OpenRouter** — client servidor (`apps/web/src/lib/ai`) + smoke autenticado `GET /api/ai/health` (modelo default `~openai/gpt-luna-latest`; validado com chave real)
+- [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e responde `202`; worker persiste `imports`/`documents` e extrai Invoice, número de Invoice explícito no Packing List e campos do BL
 
 ### Não implementado (UI ou backend)
 
@@ -132,7 +132,7 @@ Browser
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
   ├─ /api/ai/health           → OpenRouter generateText (sessão obrigatória; chave só no servidor)
-  └─ /api/ai/analyze          → runAnalyzePipeline (upload + classify + extract Invoice)
+  └─ /api/ai/analyze          → cria job (202) → worker baixa o arquivo e roda classificação/extração
 
 apps/web/src
   ├─ app/                     → Rotas e pages finas
