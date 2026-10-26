@@ -123,10 +123,10 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/importacoes` | Lista `imports` do tenant (RLS com o client autenticado) |
 | Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
 | Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
-| Página `/configuracoes` | Owner/admin: consignee padrão do tenant; super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global + teste de conexão |
+| Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): consignee padrão do tenant + provedor/modelo de IA global + teste de conexão |
 | Página `/admin` | Super-admin (`ADMIN_EMAILS`): painel global somente leitura (tenants, contadores, uso de IA, detalhe por tenant auditado) |
 | Página `/produtos` | Placeholder (CRUD pendente) |
-| Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para owner/admin) |
+| Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Admin e Configurações só para super-admin) |
 | IA (Fireworks + OpenRouter) | Fireworks padrão (`deepseek-flash-latest`, GLM alternativa; PDF→imagens) + OpenRouter opcional; `/api/ai/health` |
 | Observabilidade | OTel (`@vercel/otel` no `instrumentation.ts`); spans `ai.analyze`/`ai.job`/`ai.classify`/`ai.extract_*`/`ai.persist_extraction` e métricas por capability |
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
