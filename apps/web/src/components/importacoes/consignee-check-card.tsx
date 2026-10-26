@@ -38,7 +38,7 @@ export function ConsigneeCheckCard({
         <CardDescription>
           {defaultConsignee
             ? "O consignee vinculado a esta importação é sempre o padrão do tenant; o documento é apenas comparado com ele."
-            : "Defina um consignee padrão em Empresas para vincular todas as importações automaticamente."}
+            : "Defina um consignee padrão em Configurações para vincular todas as importações automaticamente."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -67,10 +67,10 @@ export function ConsigneeCheckCard({
               Nenhum consignee padrão definido.
             </p>
             <Link
-              href="/empresas"
+              href="/configuracoes"
               className="text-sm font-medium text-primary hover:underline"
             >
-              Definir em Empresas
+              Definir em Configurações
             </Link>
           </div>
         )}

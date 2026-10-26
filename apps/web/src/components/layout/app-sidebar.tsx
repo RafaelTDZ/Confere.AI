@@ -33,14 +33,14 @@ const ADMIN_NAV_ITEMS = [
 
 type AppSidebarProps = {
   email: string;
-  isAdmin: boolean;
+  canManageSettings: boolean;
 };
 
-export function AppSidebar({ email, isAdmin }: AppSidebarProps) {
+export function AppSidebar({ email, canManageSettings }: AppSidebarProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = isAdmin
+  const items = canManageSettings
     ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS]
     : NAV_ITEMS;
 

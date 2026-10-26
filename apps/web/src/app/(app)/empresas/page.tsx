@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Building2, CircleAlert, CircleCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Building2, CircleCheck } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -11,20 +10,11 @@ import {
 } from "@/components/ui/card";
 import { getAuthContext } from "@/lib/auth";
 import {
-  formatAddressLine,
-  formatCnpj,
   listTenantParties,
-  type ConsigneeDefault,
   type PartyRow,
 } from "@/lib/documents";
-import {
-  getDefaultConsignee,
-  listTenantPartyOptions,
-  type TenantPartyOption,
-} from "@/lib/documents/consignee-settings";
 import { buildPage, DEFAULT_PAGE_SIZE, type Page } from "@/lib/pagination";
 import { cn, formatDate } from "@/lib/utils";
-import { DefaultConsigneeForm } from "@/components/empresas/default-consignee-form";
 import { EmpresaRowActions } from "@/components/empresas/empresa-row-actions";
 import { ListFilters } from "@/components/ui/list-filters";
 import { Pagination } from "@/components/ui/pagination";
@@ -42,15 +32,6 @@ export default async function EmpresasPage({
   const auth = await getAuthContext();
   const hasFilters = Boolean(params.q?.trim());
 
-  const [partyResult, consigneeResult, optionsResult] = await Promise.allSettled([
-    listTenantParties(auth.tenantId, {
-      page: params.page,
-      search: params.q,
-    }),
-    getDefaultConsignee(auth.tenantId),
-    listTenantPartyOptions(auth.tenantId),
-  ]);
-
   let partyPage: Page<PartyRow> = buildPage<PartyRow>(
     [],
     0,
@@ -58,30 +39,14 @@ export default async function EmpresasPage({
     DEFAULT_PAGE_SIZE,
   );
   let error: string | null = null;
-  if (partyResult.status === "fulfilled") {
-    partyPage = partyResult.value;
-  } else {
-    error = toErrorMessage(partyResult.reason);
+  try {
+    partyPage = await listTenantParties(auth.tenantId, {
+      page: params.page,
+      search: params.q,
+    });
+  } catch (err) {
+    error = toErrorMessage(err);
   }
-
-  let defaultConsignee: ConsigneeDefault | null = null;
-  let partyOptions: TenantPartyOption[] = [];
-  const settingsFailures: string[] = [];
-  if (consigneeResult.status === "fulfilled") {
-    defaultConsignee = consigneeResult.value;
-  } else {
-    settingsFailures.push(toErrorMessage(consigneeResult.reason));
-  }
-  if (optionsResult.status === "fulfilled") {
-    partyOptions = optionsResult.value;
-  } else {
-    settingsFailures.push(toErrorMessage(optionsResult.reason));
-  }
-  const settingsError =
-    settingsFailures.length > 0
-      ? [...new Set(settingsFailures)].join(" ")
-      : null;
-  const canEditConsignee = auth.role === "owner" || auth.role === "admin";
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
@@ -104,62 +69,6 @@ export default async function EmpresasPage({
           Consignee e notify gravados a partir das análises neste tenant.
         </p>
       </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle className="text-base">Consignee padrão</CardTitle>
-            <Badge variant="secondary">Vale para todas as importações</Badge>
-          </div>
-          <CardDescription>
-            O consignee padrão é vinculado automaticamente a todas as
-            importações; o documento é comparado e as divergências aparecem na
-            importação.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {settingsError ? (
-            <p className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              Não foi possível carregar o consignee padrão: {settingsError}
-            </p>
-          ) : (
-            <>
-              {defaultConsignee ? (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">{defaultConsignee.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    CNPJ{" "}
-                    {defaultConsignee.cnpj
-                      ? formatCnpj(defaultConsignee.cnpj)
-                      : "—"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatAddressLine(defaultConsignee.address) || "—"}
-                  </p>
-                  <Link
-                    href={`/empresas/${defaultConsignee.id}`}
-                    className="text-sm font-medium text-primary hover:underline"
-                  >
-                    Editar cadastro
-                  </Link>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Nenhum consignee padrão definido. Sem ele, a IA continua
-                  pedindo confirmação do consignee.
-                </p>
-              )}
-
-              <DefaultConsigneeForm
-                options={partyOptions}
-                currentId={defaultConsignee?.id ?? null}
-                canEdit={canEditConsignee}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
 
       {error ? (
         <Card>
