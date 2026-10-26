@@ -160,6 +160,7 @@ O Next.js lê o `.env` da raiz do monorepo. Migrations no projeto cloud são apl
 - **Proxy same-origin**: o browser chama `/supabase/*` via route handler em `apps/web/src/app/supabase/[...path]/route.ts` (bufferiza o body e filtra headers hop-by-hop). Destino: `SUPABASE_INTERNAL_URL` → `NEXT_PUBLIC_SUPABASE_URL`.
 - **Publishable key**: use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). `createSupabaseFetch` evita enviá-la em `Authorization: Bearer` (não é JWT).
 - **Claims**: `tenant_id` e `tenant_role` em `app_metadata` (nunca `user_metadata`).
+- **Fronteira server/client**: módulos com `import "server-only"` (Supabase admin/server, `lib/documents`, `lib/ai`, auth, security, settings) não podem ser importados por componentes client; a superfície client-safe é `*-shared.ts` + `lib/supabase/client`.
 
 ## Banco de dados
 

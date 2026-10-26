@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 13 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02), 2 parciais (OBS-03, OPS-03) e 6 em aberto (AI-01, DATA-01, DATA-02, DATA-03, SEC-03, PERF-01). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (533 testes; `documents` 93,73% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 23/10/2026 (status dos achados):** 14 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03), 2 parciais (OBS-03, OPS-03) e 5 em aberto (AI-01, DATA-01, DATA-02, DATA-03, PERF-01). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (536 testes; `documents` 93,73% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 533 testes em 29 arquivos (Vitest 5.0.5) |
+| Testes | `pnpm test` | ✅ 536 testes em 30 arquivos (Vitest 5.0.5) |
 | Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 533 testes em 29 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit e quota). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,73% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 536 testes em 30 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,73% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -484,11 +484,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Adicionar `import "server-only"` em `lib/supabase/admin.ts`, `storage.ts`, `analyze-pipeline.ts` e módulos de dados.
-- [ ] Manter `*-shared.ts` como única superfície client-safe.
-- [ ] Adicionar lint rule/import boundary se possível.
+- [x] Adicionar `import "server-only"` em `lib/supabase/admin.ts`, `storage.ts`, `analyze-pipeline.ts` e módulos de dados.
+- [x] Manter `*-shared.ts` como única superfície client-safe.
+- [x] Adicionar lint rule/import boundary se possível — guard em `lib/server-only.test.ts` garante o marcador em todo módulo não client-safe e o `next build` bloqueia imports no bundle client.
 
 **Critério de aceite:** tentativa de importar um módulo server-only em componente client falha no build com mensagem clara.
+
+**Status (out/2026):** concluído — 29 módulos de servidor (Supabase, documents, ai, auth, security e settings) usam `import "server-only"`; `*-shared.ts` e `supabase/client.ts` seguem client-safe. Validado negativamente: um componente client importando `lib/supabase/admin.ts` falha o `next build` com "You're importing a module that depends on server-only". O Vitest resolve o pacote para um stub vazio (`src/test/server-only.ts`).
 
 ---
 
@@ -767,7 +769,7 @@ Legenda de severidade:
 - [x] Aplicar grants de `private.*` para `authenticated`.
 - [x] SEC-01 — Migrar leituras para o client autenticado.
 - [x] SEC-02 — Adicionar `tenant_id` em todas as funções administrativas.
-- [ ] SEC-03 — Adicionar `server-only`.
+- [x] SEC-03 — Adicionar `server-only`.
 - [ ] Adicionar testes de autorização por role (`viewer` não escreve).
 
 **Saída esperada:** RLS ativo nas leituras; `service_role` restrito a jobs/escritas administrativas.

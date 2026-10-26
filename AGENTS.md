@@ -148,6 +148,11 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   `sb-confere-auth-token*` se o browser ainda falhar.
 - **Proxy `/supabase`**: não use rewrite do `next.config` (404 no App Router). O route handler
   deve filtrar hop-by-hop — senão "Failed to fetch" no login (senha).
+- **`server-only`**: módulos de servidor (`lib/supabase/{admin,server,read-client,public-client}`,
+  `lib/documents/*`, `lib/ai/*` exceto `schemas`/`usage`, `lib/auth/index`, `lib/security`,
+  `lib/settings`) começam com `import "server-only"` — importar no client quebra o build.
+  Componentes client usam apenas `*-shared.ts` e `lib/supabase/client`. O Vitest troca o pacote
+  por um stub (`src/test/server-only.ts`). Guard: `src/lib/server-only.test.ts`.
 - **`SUPABASE_INTERNAL_URL` vazio** quebra o proxy. Remova a linha ou deixe comentada.
 - **`.env` na raiz é gitignored.** Não vem no clone — copie de `.env.example`.
   O Next carrega só o `.env` da raiz (`apps/web/next.config.ts`); não use `apps/web/.env.local`.
