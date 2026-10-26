@@ -38,8 +38,16 @@ import {
   fillImportKeysIfEmpty,
   clearAutoReferenceIfNeeded,
   getImportDetail,
+  updateImportConsignee,
+  updateImportConsigneeDivergences,
   updateImportStatus,
 } from "@/lib/documents/imports";
+import {
+  compareConsignee,
+  snapshotFromExtractedParty,
+  type ConsigneeDefault,
+} from "@/lib/documents/consignee-check";
+import { getDefaultConsignee } from "@/lib/documents/consignee-settings";
 import {
   IMPORT_DOCUMENT_TYPES,
   normalizeImportKey,
@@ -151,6 +159,61 @@ async function persistExtractionWithSpan(
 }
 
 type PipelineTracker = { importId?: string };
+
+function documentConsigneeFrom(
+  invoice: InvoiceExtraction | null,
+  bl: BlExtraction | null,
+) {
+  return snapshotFromExtractedParty(
+    invoice?.importer ??
+      bl?.consigneeDetails ??
+      (bl?.consignee
+        ? { name: bl.consignee, cnpj: null, address: null }
+        : null),
+  );
+}
+
+/**
+ * Consignee padrão do tenant: se configurado, ele é sempre o consignee da
+ * importação; o documento só alimenta a verificação de divergências. Sem
+ * padrão, limpa a verificação (`null`) e mantém o consignee extraído.
+ */
+async function applyDefaultConsignee(params: {
+  tenantId: string;
+  importId: string;
+  invoice: InvoiceExtraction | null;
+  bl: BlExtraction | null;
+}): Promise<ConsigneeDefault | null> {
+  const defaultConsignee = await getDefaultConsignee(params.tenantId);
+  const documentConsignee = documentConsigneeFrom(params.invoice, params.bl);
+  const divergences = compareConsignee(documentConsignee, defaultConsignee);
+
+  if (defaultConsignee) {
+    await updateImportConsignee({
+      tenantId: params.tenantId,
+      importId: params.importId,
+      partyId: defaultConsignee.id,
+    });
+  }
+
+  await updateImportConsigneeDivergences({
+    tenantId: params.tenantId,
+    importId: params.importId,
+    divergences: defaultConsignee ? divergences : null,
+  });
+
+  return defaultConsignee;
+}
+
+/** Remove o papel `consignee` dos pendentes (o padrão não é cadastrado à mão). */
+function withoutConsigneeRoles(items: PendingParty[]): PendingParty[] {
+  return items
+    .map((item) => ({
+      ...item,
+      roles: item.roles.filter((role) => role !== "consignee"),
+    }))
+    .filter((item) => item.roles.length > 0);
+}
 
 async function buildReusableResult(
   params: AnalyzePipelineParams,
@@ -278,6 +341,15 @@ async function buildReusableResult(
     }
   }
 
+  tracker.importId = importId;
+
+  const defaultConsignee = await applyDefaultConsignee({
+    tenantId: params.tenantId,
+    importId,
+    invoice,
+    bl,
+  });
+
   let pendingParties: PendingParty[] = [];
   if (invoice) {
     try {
@@ -285,13 +357,17 @@ async function buildReusableResult(
         tenantId: params.tenantId,
         importId,
         invoice,
+        skipConsignee: Boolean(defaultConsignee),
       });
     } catch (partyErr) {
       console.error(
         "[analyze-pipeline] falha ao resolver consignee/notify (cache):",
         partyErr,
       );
-      pendingParties = pendingPartiesFromInvoice(invoice);
+      const fallback = pendingPartiesFromInvoice(invoice);
+      pendingParties = defaultConsignee
+        ? withoutConsigneeRoles(fallback)
+        : fallback;
     }
   }
 
@@ -301,6 +377,7 @@ async function buildReusableResult(
         tenantId: params.tenantId,
         importId,
         bl,
+        skipConsignee: Boolean(defaultConsignee),
       });
       pendingParties = combinePendingParties([
         ...pendingParties,
@@ -311,9 +388,10 @@ async function buildReusableResult(
         "[analyze-pipeline] falha ao resolver consignee/notify do BL (cache):",
         partyErr,
       );
+      const fallback = pendingPartiesFromBl(bl);
       pendingParties = combinePendingParties([
         ...pendingParties,
-        ...pendingPartiesFromBl(bl),
+        ...(defaultConsignee ? withoutConsigneeRoles(fallback) : fallback),
       ]);
     }
   }
@@ -852,6 +930,13 @@ async function executeAnalyzePipeline(
     });
   }
 
+  const defaultConsignee = await applyDefaultConsignee({
+    tenantId: params.tenantId,
+    importId,
+    invoice,
+    bl,
+  });
+
   try {
     await updateImportStatus({
       tenantId: params.tenantId,
@@ -872,13 +957,17 @@ async function executeAnalyzePipeline(
         tenantId: params.tenantId,
         importId,
         invoice,
+        skipConsignee: Boolean(defaultConsignee),
       });
     } catch (partyErr) {
       console.error(
         "[analyze-pipeline] falha ao resolver consignee/notify:",
         partyErr,
       );
-      pendingParties = pendingPartiesFromInvoice(invoice);
+      const fallback = pendingPartiesFromInvoice(invoice);
+      pendingParties = defaultConsignee
+        ? withoutConsigneeRoles(fallback)
+        : fallback;
     }
   }
 
@@ -888,6 +977,7 @@ async function executeAnalyzePipeline(
         tenantId: params.tenantId,
         importId,
         bl,
+        skipConsignee: Boolean(defaultConsignee),
       });
       pendingParties = combinePendingParties([
         ...pendingParties,
@@ -898,9 +988,10 @@ async function executeAnalyzePipeline(
         "[analyze-pipeline] falha ao resolver consignee/notify do BL:",
         partyErr,
       );
+      const fallback = pendingPartiesFromBl(bl);
       pendingParties = combinePendingParties([
         ...pendingParties,
-        ...pendingPartiesFromBl(bl),
+        ...(defaultConsignee ? withoutConsigneeRoles(fallback) : fallback),
       ]);
     }
   }

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { Building2 } from "lucide-react";
 import { PartesForm } from "@/components/analise/partes-form";
+import { ConsigneeCheckCard } from "@/components/importacoes/consignee-check-card";
 import { BackButton } from "@/components/layout/back-button";
 import { getAuthContext } from "@/lib/auth";
 import {
@@ -46,6 +47,12 @@ export default async function PartesPage({
           documentos que ainda não estão cadastradas neste tenant.
         </p>
       </header>
+
+      <ConsigneeCheckCard
+        defaultConsignee={state.defaultConsignee}
+        documentConsignee={state.documentConsignee}
+        divergences={state.consigneeDivergences}
+      />
 
       <PartesForm
         importId={importId}

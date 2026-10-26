@@ -179,7 +179,16 @@ export default async function ImportacoesPage({
                             {row.bl_number || "—"}
                           </td>
                           <td className="px-6 py-3">
-                            <Badge variant={status.variant}>{status.label}</Badge>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Badge variant={status.variant}>
+                                {status.label}
+                              </Badge>
+                              {(row.consignee_divergences?.length ?? 0) > 0 && (
+                                <Badge variant="warning">
+                                  Divergência consignee
+                                </Badge>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-3 text-muted-foreground">
                             {formatDate(row.created_at)}

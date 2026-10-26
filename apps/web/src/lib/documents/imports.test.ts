@@ -9,6 +9,8 @@ import {
   ImportConflictError,
   ImportValidationError,
   listTenantImports,
+  updateImportConsignee,
+  updateImportConsigneeDivergences,
   updateImportRecord,
 } from "@/lib/documents/imports";
 import { ImportNotFoundError } from "@/lib/documents/parties";
@@ -51,6 +53,7 @@ function importSeed(params: {
   updatedAt?: string;
   consigneeId?: string | null;
   notifyId?: string | null;
+  consigneeDivergences?: unknown;
 }): FakeRow {
   const createdAt = params.createdAt ?? CREATED_EARLY;
   return {
@@ -66,6 +69,7 @@ function importSeed(params: {
     created_by: "user-seed",
     consignee_id: params.consigneeId ?? null,
     notify_id: params.notifyId ?? null,
+    consignee_divergences: params.consigneeDivergences ?? null,
   };
 }
 
@@ -527,6 +531,48 @@ describe("listTenantImports", () => {
     expect(page.rows.some((row) => row.id === "import-b-by-bl")).toBe(false);
   });
 
+  it("parseia consignee_divergences e ignora valor inválido", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-divergences",
+        tenantId: TENANT_A,
+        referenceNumber: "DIV-1",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        consigneeDivergences: [
+          {
+            field: "name",
+            label: "Nome",
+            documentValue: "EMPRESA DOC",
+            defaultConsigneeValue: "EMPRESA PADRÃO",
+          },
+        ],
+      }),
+      importSeed({
+        id: "import-divergences-invalid",
+        tenantId: TENANT_A,
+        referenceNumber: "DIV-2",
+        createdAt: "2026-03-15T00:00:00.000Z",
+        consigneeDivergences: "inválido",
+      }),
+    );
+
+    const page = await listTenantImports(TENANT_A, { search: "DIV-" });
+
+    expect(page.rows.map((row) => row.id)).toEqual([
+      "import-divergences",
+      "import-divergences-invalid",
+    ]);
+    expect(page.rows[0]?.consignee_divergences).toEqual([
+      {
+        field: "name",
+        label: "Nome",
+        documentValue: "EMPRESA DOC",
+        defaultConsigneeValue: "EMPRESA PADRÃO",
+      },
+    ]);
+    expect(page.rows[1]?.consignee_divergences).toBeNull();
+  });
+
   it("propaga erro do banco ao listar", async () => {
     readClient.failNext(
       { message: "conexão indisponível" },
@@ -814,7 +860,92 @@ describe("getImportDetail", () => {
       documents: [],
       invoice: null,
       bl: null,
+      defaultConsignee: null,
+      documentConsignee: null,
+      consigneeDivergences: [],
     });
+  });
+
+  it("devolve o consignee padrão, o consignee do documento e as divergências", async () => {
+    admin.rows("tenant_settings").push({
+      tenant_id: TENANT_A,
+      default_consignee_party_id: "party-a-consignee",
+      ai_overrides: {},
+      confidence_threshold: 0.8,
+      validation_rules: {},
+      updated_at: CREATED_EARLY,
+    });
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-consignee-default",
+        tenantId: TENANT_A,
+        createdAt: "2026-04-01T00:00:00.000Z",
+      }),
+    );
+    admin.rows("documents").push(
+      documentSeed({
+        id: "doc-consignee-default-invoice",
+        tenantId: TENANT_A,
+        importId: "import-consignee-default",
+        docType: "invoice",
+      }),
+    );
+    admin.rows("extraction_results").push(
+      extractionSeed({
+        id: "extraction-consignee-default",
+        documentId: "doc-consignee-default-invoice",
+        payload: {
+          number: "INV-DEF",
+          importer: {
+            name: "Outro Importador",
+            cnpj: "11.222.333/0001-81",
+            address: {
+              street: "Rua B",
+              city: "São Paulo",
+              country: "Brazil",
+            },
+          },
+        },
+        createdAt: CREATED_EARLY,
+      }),
+    );
+
+    const detail = await getImportDetail(TENANT_A, "import-consignee-default");
+
+    expect(detail.defaultConsignee).toEqual({
+      id: "party-a-consignee",
+      name: "Consignatário A",
+      cnpj: "11.222.333/0001-81",
+      address: {
+        street: "Rua A",
+        number: "100",
+        complement: null,
+        postalCode: null,
+        city: "São Paulo",
+        state: "SP",
+        country: "Brasil",
+        other: null,
+      },
+    });
+    expect(detail.documentConsignee).toMatchObject({
+      name: "Outro Importador",
+      cnpj: "11.222.333/0001-81",
+      address: { street: "Rua B", city: "São Paulo", country: "Brazil" },
+    });
+    expect(detail.consigneeDivergences).toEqual([
+      {
+        field: "name",
+        label: "Nome",
+        documentValue: "OUTRO IMPORTADOR",
+        defaultConsigneeValue: "CONSIGNATÁRIO A",
+      },
+      {
+        field: "street",
+        label: "Logradouro",
+        documentValue: "RUA B",
+        defaultConsigneeValue: "RUA A",
+      },
+    ]);
   });
 
   it("propaga erro ao listar documentos", async () => {
@@ -863,6 +994,98 @@ describe("getImportDetail", () => {
     });
     expect(detail.invoice).toEqual({ number: "INV-NEW" });
     expect(detail.bl).toEqual({ number: "BL-DETAIL" });
+  });
+});
+
+describe("updateImportConsignee", () => {
+  it("vincula o consignee padrão somente na importação do tenant", async () => {
+    await updateImportConsignee({
+      tenantId: TENANT_A,
+      importId: "import-update",
+      partyId: "party-a-consignee",
+    });
+
+    expect(findImport("import-update", TENANT_A)).toMatchObject({
+      consignee_id: "party-a-consignee",
+      notify_id: null,
+    });
+  });
+
+  it("propaga erro do banco", async () => {
+    adminClient.failNext(
+      { message: "falha ao atualizar consignee" },
+      { table: "imports", operation: "update" },
+    );
+
+    await expect(
+      updateImportConsignee({
+        tenantId: TENANT_A,
+        importId: "import-update",
+        partyId: "party-a-consignee",
+      }),
+    ).rejects.toThrow("falha ao atualizar consignee");
+  });
+});
+
+describe("updateImportConsigneeDivergences", () => {
+  it("grava as divergências verificadas", async () => {
+    const divergences = [
+      {
+        field: "name",
+        label: "Nome",
+        documentValue: "EMPRESA DOC",
+        defaultConsigneeValue: "EMPRESA PADRÃO",
+      },
+    ];
+
+    await updateImportConsigneeDivergences({
+      tenantId: TENANT_A,
+      importId: "import-update",
+      divergences,
+    });
+
+    expect(findImport("import-update", TENANT_A)?.consignee_divergences).toEqual(
+      divergences,
+    );
+  });
+
+  it("grava lista vazia como verificado sem divergência", async () => {
+    await updateImportConsigneeDivergences({
+      tenantId: TENANT_A,
+      importId: "import-update",
+      divergences: [],
+    });
+
+    expect(findImport("import-update", TENANT_A)?.consignee_divergences).toEqual(
+      [],
+    );
+  });
+
+  it("grava null quando não há verificação", async () => {
+    await updateImportConsigneeDivergences({
+      tenantId: TENANT_A,
+      importId: "import-update",
+      divergences: null,
+    });
+
+    expect(
+      findImport("import-update", TENANT_A)?.consignee_divergences,
+    ).toBeNull();
+  });
+
+  it("propaga erro do banco", async () => {
+    adminClient.failNext(
+      { message: "falha ao atualizar divergências" },
+      { table: "imports", operation: "update" },
+    );
+
+    await expect(
+      updateImportConsigneeDivergences({
+        tenantId: TENANT_A,
+        importId: "import-update",
+        divergences: [],
+      }),
+    ).rejects.toThrow("falha ao atualizar divergências");
   });
 });
 

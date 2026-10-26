@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { CircleCheck, Package } from "lucide-react";
+import { ConsigneeCheckCard } from "@/components/importacoes/consignee-check-card";
 import { ImportacaoForm } from "@/components/importacoes/importacao-form";
 import { BackButton } from "@/components/layout/back-button";
 import { getAuthContext } from "@/lib/auth";
@@ -51,6 +52,12 @@ export default async function ImportacaoDetailPage({
           Dados consolidados após a análise dos documentos desta operação.
         </p>
       </header>
+
+      <ConsigneeCheckCard
+        defaultConsignee={detail.defaultConsignee}
+        documentConsignee={detail.documentConsignee}
+        divergences={detail.consigneeDivergences}
+      />
 
       <ImportacaoForm
         key={detail.id}

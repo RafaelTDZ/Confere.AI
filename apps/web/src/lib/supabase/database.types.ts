@@ -381,6 +381,7 @@ export type Database = {
       imports: {
         Row: {
           bl_number: string | null;
+          consignee_divergences: Json | null;
           consignee_id: string | null;
           created_at: string;
           created_by: string | null;
@@ -397,6 +398,7 @@ export type Database = {
         };
         Insert: {
           bl_number?: string | null;
+          consignee_divergences?: Json | null;
           consignee_id?: string | null;
           created_at?: string;
           created_by?: string | null;
@@ -413,6 +415,7 @@ export type Database = {
         };
         Update: {
           bl_number?: string | null;
+          consignee_divergences?: Json | null;
           consignee_id?: string | null;
           created_at?: string;
           created_by?: string | null;
@@ -713,6 +716,7 @@ export type Database = {
         Row: {
           ai_overrides: Json;
           confidence_threshold: number;
+          default_consignee_party_id: string | null;
           tenant_id: string;
           updated_at: string;
           validation_rules: Json;
@@ -720,6 +724,7 @@ export type Database = {
         Insert: {
           ai_overrides?: Json;
           confidence_threshold?: number;
+          default_consignee_party_id?: string | null;
           tenant_id: string;
           updated_at?: string;
           validation_rules?: Json;
@@ -727,6 +732,7 @@ export type Database = {
         Update: {
           ai_overrides?: Json;
           confidence_threshold?: number;
+          default_consignee_party_id?: string | null;
           tenant_id?: string;
           updated_at?: string;
           validation_rules?: Json;

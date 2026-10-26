@@ -21,6 +21,7 @@ const CLIENT_SAFE = new Set([
   "supabase/database.types.ts",
   "supabase/fetch.ts",
   "supabase/public-key.ts",
+  "documents/consignee-check.ts",
 ]);
 
 function listTypeScriptFiles(dir: string): string[] {

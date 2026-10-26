@@ -3,6 +3,11 @@ import type {
   DocumentType,
   InvoiceExtraction,
 } from "@/lib/ai/schemas";
+import type {
+  ConsigneeDefault,
+  ConsigneeDivergence,
+  ConsigneeSnapshot,
+} from "@/lib/documents/consignee-check";
 
 export type ImportStatus =
   | "uploaded"
@@ -20,6 +25,7 @@ export type ImportRow = {
   invoice_number: string | null;
   bl_number: string | null;
   created_at: string;
+  consignee_divergences?: ConsigneeDivergence[] | null;
 };
 
 export const IMPORT_DOCUMENT_TYPES: DocumentType[] = [
@@ -49,6 +55,9 @@ export type ImportDetail = ImportRow & {
   documents: ImportDocumentRow[];
   invoice: InvoiceExtraction | null;
   bl: BlExtraction | null;
+  defaultConsignee: ConsigneeDefault | null;
+  documentConsignee: ConsigneeSnapshot | null;
+  consigneeDivergences: ConsigneeDivergence[];
 };
 
 export const IMPORT_STATUS_LABELS: Record<

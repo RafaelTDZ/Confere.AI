@@ -8,6 +8,14 @@ import type {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import {
+  compareConsignee,
+  snapshotFromExtractedParty,
+  type ConsigneeDefault,
+  type ConsigneeDivergence,
+  type ConsigneeSnapshot,
+} from "@/lib/documents/consignee-check";
+import { getDefaultConsignee } from "@/lib/documents/consignee-settings";
+import {
   EMPTY_PARTY_ADDRESS,
   formatAddressLine,
   formatCnpj,
@@ -36,6 +44,9 @@ export type ImportPartiesState = {
   pendingParties: PendingParty[];
   linked: boolean;
   invoice: InvoiceExtraction | null;
+  defaultConsignee: ConsigneeDefault | null;
+  documentConsignee: ConsigneeSnapshot | null;
+  consigneeDivergences: ConsigneeDivergence[];
 };
 
 export class PartyValidationError extends Error {
@@ -439,11 +450,15 @@ async function resolveExtractedParties(params: {
   tenantId: string;
   importId: string;
   extracted: Array<{ role: PartyRole; party: InvoiceParty }>;
+  skipConsignee?: boolean;
 }): Promise<PendingParty[]> {
   const links: { consigneeId?: string; notifyId?: string } = {};
   const pending: PendingParty[] = [];
+  const extracted = params.skipConsignee
+    ? params.extracted.filter((item) => item.role !== "consignee")
+    : params.extracted;
 
-  for (const { role, party } of params.extracted) {
+  for (const { role, party } of extracted) {
     if (!hasPartyIdentity(party)) continue;
 
     const found = await findPartyByCnpj(params.tenantId, party.cnpj ?? "");
@@ -474,10 +489,13 @@ export async function resolveInvoiceParties(params: {
   tenantId: string;
   importId: string;
   invoice: InvoiceExtraction;
+  /** Tenants com consignee padrão não devem resolver o consignee do documento. */
+  skipConsignee?: boolean;
 }): Promise<PendingParty[]> {
   return resolveExtractedParties({
     tenantId: params.tenantId,
     importId: params.importId,
+    skipConsignee: params.skipConsignee,
     extracted: [
       { role: "consignee", party: params.invoice.importer },
       { role: "notify", party: params.invoice.notify },
@@ -489,6 +507,8 @@ export async function resolveBlParties(params: {
   tenantId: string;
   importId: string;
   bl: BlExtraction;
+  /** Tenants com consignee padrão não devem resolver o consignee do documento. */
+  skipConsignee?: boolean;
 }): Promise<PendingParty[]> {
   const extracted: Array<{ role: PartyRole; party: InvoiceParty }> = [
     {
@@ -509,6 +529,7 @@ export async function resolveBlParties(params: {
   return resolveExtractedParties({
     tenantId: params.tenantId,
     importId: params.importId,
+    skipConsignee: params.skipConsignee,
     extracted,
   });
 }
@@ -611,32 +632,61 @@ async function getBlExtractionForImport(
   } as BlExtraction;
 }
 
+function withoutConsigneeRole(parties: PendingParty[]): PendingParty[] {
+  return parties
+    .map((party) => ({
+      ...party,
+      roles: party.roles.filter((role) => role !== "consignee"),
+    }))
+    .filter((party) => party.roles.length > 0);
+}
+
 export async function getImportPartiesState(
   tenantId: string,
   importId: string,
 ): Promise<ImportPartiesState> {
   await getImportRow(tenantId, importId);
+  const defaultConsignee = await getDefaultConsignee(tenantId);
+  const skipConsignee = Boolean(defaultConsignee);
   const [invoice, bl] = await Promise.all([
     getInvoiceExtractionForImport(importId),
     getBlExtractionForImport(importId),
   ]);
   const pendingFromInvoice = invoice
-    ? await resolveInvoiceParties({ tenantId, importId, invoice })
+    ? await resolveInvoiceParties({
+        tenantId,
+        importId,
+        invoice,
+        skipConsignee,
+      })
     : [];
   const pendingFromBl = bl
-    ? await resolveBlParties({ tenantId, importId, bl })
+    ? await resolveBlParties({ tenantId, importId, bl, skipConsignee })
     : [];
-  const pendingParties = combinePendingParties([
+  const combined = combinePendingParties([
     ...pendingFromInvoice,
     ...pendingFromBl,
   ]);
+  const pendingParties = skipConsignee
+    ? withoutConsigneeRole(combined)
+    : combined;
   const refreshed = await getImportRow(tenantId, importId);
+  const documentConsignee = snapshotFromExtractedParty(
+    invoice?.importer ??
+      bl?.consigneeDetails ??
+      (bl?.consignee
+        ? { name: bl.consignee, cnpj: null, address: null }
+        : null),
+  );
 
   return {
     importId,
     pendingParties,
     linked: Boolean(refreshed.consignee_id || refreshed.notify_id),
     invoice,
+    defaultConsignee,
+    documentConsignee,
+    consigneeDivergences: compareConsignee(documentConsignee, defaultConsignee),
   };
 }
 
@@ -647,14 +697,21 @@ export async function registerImportParties(params: {
 }): Promise<void> {
   await getImportRow(params.tenantId, params.importId);
 
-  if (params.parties.length === 0) {
+  // Com consignee padrão, o vínculo do consignee é imutável por aqui.
+  const defaultConsignee = await getDefaultConsignee(params.tenantId);
+  const parties = defaultConsignee
+    ? withoutConsigneeRole(params.parties)
+    : params.parties;
+
+  if (parties.length === 0) {
+    if (defaultConsignee) return;
     throw new PartyValidationError("Informe ao menos uma parte para cadastrar");
   }
 
   let consigneeId: string | undefined;
   let notifyId: string | undefined;
 
-  for (const party of params.parties) {
+  for (const party of parties) {
     const roles = [...new Set(party.roles)].filter(
       (role): role is PartyRole => role === "consignee" || role === "notify",
     );

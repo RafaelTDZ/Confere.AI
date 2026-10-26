@@ -30,11 +30,18 @@ export {
   type PartyRow,
 } from "@/lib/documents/parties";
 export {
+  formatAddressLine,
+  formatCnpj,
   parsePartyAddress,
   type PendingParty,
   type PartyAddress,
   type PartyRole,
 } from "@/lib/documents/parties-shared";
+export type {
+  ConsigneeDefault,
+  ConsigneeDivergence,
+  ConsigneeSnapshot,
+} from "@/lib/documents/consignee-check";
 export {
   listTenantNcms,
   getNcmById,

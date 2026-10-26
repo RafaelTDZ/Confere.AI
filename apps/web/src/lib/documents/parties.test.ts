@@ -55,6 +55,7 @@ const CNPJ_NOVO_NOTIFY = "33444555000163";
 const CNPJ_NOVO_CONSIGNEE = "44555666000174";
 const CNPJ_NOVO = "55666777000185";
 const CNPJ_OUTRA_EMPRESA = "99888777000166";
+const CNPJ_DEFAULT = "66777888000190";
 
 function address(overrides: Partial<PartyAddress> = {}): PartyAddress {
   return { ...EMPTY_PARTY_ADDRESS, ...overrides };
@@ -310,6 +311,32 @@ function findRow(table: string, id: string): FakeRow {
 
 function findImport(id: string): FakeRow {
   return findRow("imports", id);
+}
+
+function configureDefaultConsignee(partyId = "party-default"): void {
+  admin.rows("parties").push(
+    partySeed({
+      id: "party-default",
+      tenantId: "tenant-a",
+      name: "Consignatário Padrão",
+      cnpjDigits: CNPJ_DEFAULT,
+      address: {
+        street: "Rua Padrão",
+        number: "500",
+        city: "Campinas",
+        state: "SP",
+        country: "Brasil",
+      },
+    }),
+  );
+  admin.rows("tenant_settings").push({
+    tenant_id: "tenant-a",
+    default_consignee_party_id: partyId,
+    ai_overrides: {},
+    confidence_threshold: 0.8,
+    validation_rules: {},
+    updated_at: "2026-01-01T00:00:00.000Z",
+  });
 }
 
 function partiesWithCnpj(digits: string): FakeRow[] {
@@ -966,6 +993,57 @@ describe("registerImportParties", () => {
       notify_id: created?.id,
     });
   });
+
+  it("descarta o papel consignee quando há consignee padrão", async () => {
+    configureDefaultConsignee();
+
+    await registerImportParties({
+      tenantId: "tenant-a",
+      importId: "import-a",
+      parties: [
+        pendingParty({
+          roles: ["consignee"],
+          name: "Novo Consignatário",
+          cnpj: CNPJ_NOVO_CONSIGNEE,
+        }),
+      ],
+    });
+
+    expect(findImport("import-a")).toMatchObject({
+      consignee_id: null,
+      notify_id: null,
+    });
+    expect(partiesWithCnpj(CNPJ_NOVO_CONSIGNEE)).toHaveLength(0);
+  });
+
+  it("cadastra apenas o notify quando a parte tem os dois papéis", async () => {
+    configureDefaultConsignee();
+
+    await registerImportParties({
+      tenantId: "tenant-a",
+      importId: "import-a",
+      parties: [
+        pendingParty({
+          roles: ["consignee", "notify"],
+          name: "Empresa Dupla",
+          cnpj: CNPJ_NOVO,
+          address: address({
+            street: "Rua Dupla",
+            city: "Campinas",
+            state: "SP",
+            country: "Brasil",
+          }),
+        }),
+      ],
+    });
+
+    const [created] = partiesWithCnpj(CNPJ_NOVO);
+    expect(created?.id).toEqual(expect.any(String));
+    expect(findImport("import-a")).toMatchObject({
+      consignee_id: null,
+      notify_id: created?.id,
+    });
+  });
 });
 
 describe("getImportPartiesState", () => {
@@ -977,6 +1055,9 @@ describe("getImportPartiesState", () => {
       pendingParties: [],
       linked: false,
       invoice: null,
+      defaultConsignee: null,
+      documentConsignee: null,
+      consigneeDivergences: [],
     });
   });
 
@@ -1017,6 +1098,54 @@ describe("getImportPartiesState", () => {
     await expect(
       getImportPartiesState("tenant-a", "import-b"),
     ).rejects.toBeInstanceOf(ImportNotFoundError);
+  });
+});
+
+describe("getImportPartiesState com consignee padrão", () => {
+  beforeEach(() => {
+    configureDefaultConsignee();
+  });
+
+  it("ignora o consignee pendente e expõe padrão, documento e divergências", async () => {
+    const state = await getImportPartiesState("tenant-a", "import-invoice");
+
+    expect(state.defaultConsignee).toMatchObject({
+      id: "party-default",
+      name: "Consignatário Padrão",
+    });
+    expect(state.documentConsignee).toMatchObject({
+      name: "Alfa Importadora",
+      cnpj: CNPJ_EXISTENTE,
+    });
+    expect(state.consigneeDivergences.map((item) => item.field)).toEqual([
+      "name",
+      "cnpj",
+      "street",
+      "city",
+    ]);
+    expect(state.pendingParties.map((party) => party.roles)).toEqual([
+      ["notify"],
+    ]);
+    expect(findImport("import-invoice").consignee_id).toBeNull();
+    expect(state.linked).toBe(false);
+  });
+
+  it("mantém o notify do BL e não cria pendente de consignee", async () => {
+    const state = await getImportPartiesState("tenant-a", "import-bl");
+
+    expect(state.pendingParties).toEqual([]);
+    expect(findImport("import-bl").notify_id).toBe("party-a");
+    expect(findImport("import-bl").consignee_id).toBeNull();
+    expect(state.linked).toBe(true);
+    expect(state.documentConsignee).toMatchObject({
+      name: "Novo Consignatário",
+      cnpj: CNPJ_NOVO_CONSIGNEE,
+    });
+    expect(state.consigneeDivergences.map((item) => item.field)).toEqual([
+      "name",
+      "cnpj",
+      "street",
+    ]);
   });
 });
 
@@ -1067,6 +1196,33 @@ describe("resolveInvoiceParties", () => {
     expect(admin.rows("parties")).toHaveLength(before);
     expect(findImport("import-b").notify_id).toBeNull();
   });
+
+  it("ignora o consignee do documento quando skipConsignee", async () => {
+    const pending = await resolveInvoiceParties({
+      tenantId: "tenant-a",
+      importId: "import-a",
+      invoice: makeInvoice({
+        importer: makeParty({
+          name: "Alfa Importadora",
+          cnpj: CNPJ_EXISTENTE,
+        }),
+        notify: makeParty({
+          name: "Novo Notify",
+          cnpj: CNPJ_NOVO_NOTIFY,
+        }),
+      }),
+      skipConsignee: true,
+    });
+
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      roles: ["notify"],
+      name: "Novo Notify",
+      cnpj: CNPJ_NOVO_NOTIFY,
+    });
+    expect(findImport("import-a").consignee_id).toBeNull();
+    expect(findImport("import-a").notify_id).toBeNull();
+  });
 });
 
 describe("resolveBlParties", () => {
@@ -1115,5 +1271,27 @@ describe("resolveBlParties", () => {
     ]);
     expect(findImport("import-a").consignee_id).toBeNull();
     expect(findImport("import-a").notify_id).toBeNull();
+  });
+
+  it("ignora o consignee do BL quando skipConsignee", async () => {
+    const pending = await resolveBlParties({
+      tenantId: "tenant-a",
+      importId: "import-a",
+      bl: makeBl({
+        consigneeDetails: makeParty({
+          name: "Novo Consignatário",
+          cnpj: CNPJ_NOVO_CONSIGNEE,
+        }),
+        notifyPartyDetails: makeParty({
+          name: "Alfa Importadora",
+          cnpj: CNPJ_EXISTENTE,
+        }),
+      }),
+      skipConsignee: true,
+    });
+
+    expect(pending).toEqual([]);
+    expect(findImport("import-a").notify_id).toBe("party-a");
+    expect(findImport("import-a").consignee_id).toBeNull();
   });
 });

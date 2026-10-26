@@ -31,7 +31,10 @@ const mocks = vi.hoisted(() => ({
   fillImportKeysIfEmpty: vi.fn(),
   clearAutoReferenceIfNeeded: vi.fn(),
   getImportDetail: vi.fn(),
+  updateImportConsignee: vi.fn(),
+  updateImportConsigneeDivergences: vi.fn(),
   updateImportStatus: vi.fn(),
+  getDefaultConsignee: vi.fn(),
   persistExtractionResult: vi.fn(),
   findLatestExtractionsByDocumentIds: vi.fn(),
   buildUniqueStoragePath: vi.fn(),
@@ -88,7 +91,13 @@ vi.mock("@/lib/documents/imports", () => ({
   fillImportKeysIfEmpty: mocks.fillImportKeysIfEmpty,
   clearAutoReferenceIfNeeded: mocks.clearAutoReferenceIfNeeded,
   getImportDetail: mocks.getImportDetail,
+  updateImportConsignee: mocks.updateImportConsignee,
+  updateImportConsigneeDivergences: mocks.updateImportConsigneeDivergences,
   updateImportStatus: mocks.updateImportStatus,
+}));
+
+vi.mock("@/lib/documents/consignee-settings", () => ({
+  getDefaultConsignee: mocks.getDefaultConsignee,
 }));
 
 vi.mock("@/lib/documents/extractions", () => ({
@@ -398,6 +407,10 @@ function setDefaultMocks() {
   mocks.updateImportStatus.mockResolvedValue(undefined);
   mocks.getImportDetail.mockResolvedValue({});
 
+  mocks.getDefaultConsignee.mockResolvedValue(null);
+  mocks.updateImportConsignee.mockResolvedValue(undefined);
+  mocks.updateImportConsigneeDivergences.mockResolvedValue(undefined);
+
   mocks.resolveInvoiceParties.mockResolvedValue([]);
   mocks.resolveBlParties.mockResolvedValue([]);
   mocks.pendingPartiesFromInvoice.mockReturnValue([]);
@@ -509,6 +522,7 @@ describe("runAnalyzePipeline", () => {
       tenantId: TENANT_ID,
       importId: "import-1",
       invoice,
+      skipConsignee: false,
     });
     expect(result.pendingParties).toEqual([]);
   });
@@ -880,11 +894,13 @@ describe("runAnalyzePipeline", () => {
       tenantId: TENANT_ID,
       importId: "import-old",
       invoice,
+      skipConsignee: false,
     });
     expect(mocks.resolveBlParties).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
       importId: "import-old",
       bl,
+      skipConsignee: false,
     });
   });
 
@@ -946,6 +962,7 @@ describe("runAnalyzePipeline", () => {
       tenantId: TENANT_ID,
       importId: "import-existing",
       invoice,
+      skipConsignee: false,
     });
     expect(mocks.resolveBlParties).not.toHaveBeenCalled();
   });
@@ -1413,6 +1430,7 @@ describe("runAnalyzePipeline", () => {
       tenantId: TENANT_ID,
       importId: "import-1",
       invoice,
+      skipConsignee: false,
     });
     expect(mocks.pendingPartiesFromInvoice).toHaveBeenCalledWith(invoice);
     expect(mocks.updateImportStatus).toHaveBeenCalledWith({
@@ -1425,6 +1443,151 @@ describe("runAnalyzePipeline", () => {
       "classify:success",
       "extract_invoice:success",
     ]);
+  });
+});
+
+describe("consignee padrão do tenant", () => {
+  const defaultConsignee = {
+    id: "party-default",
+    name: "Consignatário Padrão",
+    cnpj: "11.222.333/0001-81",
+    address: {
+      ...emptyAddress(),
+      street: "Rua A",
+      number: "100",
+      city: "São Paulo",
+      state: "SP",
+      country: "Brasil",
+    },
+  };
+
+  it("vincula o padrão e registra as divergências do documento", async () => {
+    const invoice = makeInvoice({
+      importer: makeParty({
+        name: "Outro Importador",
+        cnpj: "11.222.333/0001-81",
+        address: {
+          ...emptyAddress(),
+          street: "Rua B",
+          city: "Campinas",
+          country: "Brazil",
+        },
+      }),
+    });
+    mocks.extractInvoice.mockResolvedValue(
+      makeExtractionResult("invoice", invoice, "invoice-model"),
+    );
+    mocks.getDefaultConsignee.mockResolvedValue(defaultConsignee);
+
+    await runAnalyzePipeline(baseParams());
+
+    expect(mocks.getDefaultConsignee).toHaveBeenCalledWith(TENANT_ID);
+    expect(mocks.updateImportConsignee).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      partyId: "party-default",
+    });
+    expect(mocks.updateImportConsigneeDivergences).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      divergences: [
+        {
+          field: "name",
+          label: "Nome",
+          documentValue: "OUTRO IMPORTADOR",
+          defaultConsigneeValue: "CONSIGNATÁRIO PADRÃO",
+        },
+        {
+          field: "street",
+          label: "Logradouro",
+          documentValue: "RUA B",
+          defaultConsigneeValue: "RUA A",
+        },
+        {
+          field: "city",
+          label: "Cidade",
+          documentValue: "CAMPINAS",
+          defaultConsigneeValue: "SÃO PAULO",
+        },
+      ],
+    });
+    expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      invoice,
+      skipConsignee: true,
+    });
+  });
+
+  it("vincula o padrão mesmo sem consignee extraído (sem divergências)", async () => {
+    mocks.getDefaultConsignee.mockResolvedValue(defaultConsignee);
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.importId).toBe("import-1");
+    expect(mocks.updateImportConsignee).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      partyId: "party-default",
+    });
+    expect(mocks.updateImportConsigneeDivergences).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      divergences: [],
+    });
+  });
+
+  it("sem padrão não vincula consignee e grava verificação nula", async () => {
+    mocks.getDefaultConsignee.mockResolvedValue(null);
+
+    await runAnalyzePipeline(baseParams());
+
+    expect(mocks.updateImportConsignee).not.toHaveBeenCalled();
+    expect(mocks.updateImportConsigneeDivergences).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      divergences: null,
+    });
+    expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith(
+      expect.objectContaining({ skipConsignee: false }),
+    );
+  });
+
+  it("aplica o consignee padrão também no reuso de upload", async () => {
+    const invoice = makeInvoice();
+    mocks.getDefaultConsignee.mockResolvedValue(defaultConsignee);
+    mocks.findTenantDocumentsBySha256.mockResolvedValue([
+      makeTenantDoc({ id: "old-invoice", docType: "invoice" }),
+    ]);
+    mocks.findLatestExtractionsByDocumentIds.mockResolvedValue(
+      new Map([
+        [
+          "old-invoice",
+          makeLatestExtraction({
+            id: "old-extraction-invoice",
+            documentId: "old-invoice",
+            model: "invoice-model",
+            payload: invoice,
+          }),
+        ],
+      ]),
+    );
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.deduped).toBe(true);
+    expect(result.importId).toBe("import-old");
+    expect(mocks.updateImportConsignee).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-old",
+      partyId: "party-default",
+    });
+    expect(mocks.resolveInvoiceParties).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-old",
+      invoice,
+      skipConsignee: true,
+    });
   });
 });
 

@@ -9,6 +9,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { ImportNotFoundError } from "@/lib/documents/parties";
 import {
+  compareConsignee,
+  parseConsigneeDivergences,
+  snapshotFromExtractedParty,
+  type ConsigneeDivergence,
+} from "@/lib/documents/consignee-check";
+import { getDefaultConsignee } from "@/lib/documents/consignee-settings";
+import {
   displayImportReference,
   fallbackSavedReference,
   IMPORT_STATUS_LABELS,
@@ -74,7 +81,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 const IMPORT_LIST_SELECT =
-  "id, reference_number, status, supplier_name, invoice_number, bl_number, created_at";
+  "id, reference_number, status, supplier_name, invoice_number, bl_number, created_at, consignee_divergences";
 
 const IMPORT_DETAIL_SELECT = `${IMPORT_LIST_SELECT}, updated_at, consignee_id, notify_id`;
 
@@ -191,7 +198,17 @@ export async function listTenantImports(
     throw new Error(error.message);
   }
 
-  return buildPage(data ?? [], count ?? 0, page, pageSize);
+  return buildPage(
+    (data ?? []).map((row) => ({
+      ...row,
+      consignee_divergences: parseConsigneeDivergences(
+        row.consignee_divergences,
+      ),
+    })),
+    count ?? 0,
+    page,
+    pageSize,
+  );
 }
 
 /**
@@ -584,10 +601,19 @@ export async function getImportDetail(
     return (extraction?.payload as T | undefined) ?? null;
   }
 
-  const [invoice, bl] = await Promise.all([
+  const [invoice, bl, defaultConsignee] = await Promise.all([
     latestExtractionPayload<InvoiceExtraction>(invoiceDocIds),
     latestExtractionPayload<BlExtraction>(blDocIds),
+    getDefaultConsignee(tenantId),
   ]);
+
+  const documentConsignee = snapshotFromExtractedParty(
+    invoice?.importer ??
+      bl?.consigneeDetails ??
+      (bl?.consignee
+        ? { name: bl.consignee, cnpj: null, address: null }
+        : null),
+  );
 
   const [consignee, notify] = await Promise.all([
     getPartySummary(tenantId, data.consignee_id ?? null),
@@ -611,7 +637,55 @@ export async function getImportDetail(
     })),
     invoice,
     bl,
+    defaultConsignee,
+    documentConsignee,
+    consigneeDivergences: compareConsignee(documentConsignee, defaultConsignee),
   };
+}
+
+/**
+ * Vincula a importação ao consignee padrão do tenant (regra: um consignee por
+ * tenant, sempre ele — independentemente do documento).
+ */
+export async function updateImportConsignee(params: {
+  tenantId: string;
+  importId: string;
+  partyId: string;
+}): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("imports")
+    .update({ consignee_id: params.partyId })
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId);
+
+  if (error) {
+    throw new Error(error.message || "Falha ao atualizar consignee da importação");
+  }
+}
+
+/**
+ * Grava a verificação do documento contra o consignee padrão.
+ * `null` = não verificado (sem padrão configurado); `[]` = verificado sem
+ * divergências.
+ */
+export async function updateImportConsigneeDivergences(params: {
+  tenantId: string;
+  importId: string;
+  divergences: ConsigneeDivergence[] | null;
+}): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("imports")
+    .update({ consignee_divergences: params.divergences ?? null })
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId);
+
+  if (error) {
+    throw new Error(
+      error.message || "Falha ao atualizar divergências do consignee",
+    );
+  }
 }
 
 export async function updateImportRecord(
