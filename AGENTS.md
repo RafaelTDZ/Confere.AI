@@ -178,9 +178,11 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Fireworks (padrão)**: `FIREWORKS_API_KEY` só no servidor. A API não aceita PDF — o pipeline
   renderiza as páginas em JPEG (`pdf-to-img`, 30 páginas/~7 MB) uma vez por análise e reusa nas
   4 tasks. Use o ID completo (`accounts/fireworks/routers/deepseek-flash-latest`); aliases curtos
-  não funcionam. A migration `20261026140000_ai_fireworks_default.sql` força a config global para
-  Fireworks e **só deve ser aplicada depois** de configurar a chave; sem ela, use
-  `AI_PROVIDER=openrouter` ou o dropdown em `/configuracoes`.
+  não funcionam. A migration `20261026142326_ai_fireworks_default.sql` força a config global para
+  Fireworks e **já foi aplicada no cloud em 26/10/2026**; em outro ambiente, configure a chave
+  antes de aplicar. Sem a chave, use `AI_PROVIDER=openrouter` ou o dropdown em `/configuracoes`.
+  No Windows o `pdf-to-img` pode logar aviso de `standard_fonts` (caminho posix); PDFs com fontes
+  embutidas convertem normalmente e no Linux/Vercel os assets estão no tracing.
 - **OpenRouter (opção)**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se a
   chave do provider ativo faltar e 401 sem sessão.
 - **Fila de análise (`ai_jobs`)**: `POST /api/ai/analyze` grava o arquivo em

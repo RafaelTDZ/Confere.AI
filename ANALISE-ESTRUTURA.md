@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 20 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03, OBS-03), 1 parcial (OPS-03) e nenhum em aberto. Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (622 testes; `documents` 94,31% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 20 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03, OBS-03), 1 parcial (OPS-03) e nenhum em aberto. Migrations: 23/23 aplicadas no cloud (última `20261026142326`); `app_settings` com `provider=fireworks` e `model=accounts/fireworks/routers/deepseek-flash-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (699 testes; `documents` 94,35% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -306,7 +306,7 @@ Legenda de severidade:
 
 **Critério de aceite:** upload de PDF de 10 MB não bloqueia a request por mais de poucos segundos; falhas ficam registradas e reprocessáveis.
 
-**Status (out/2026):** concluído — migration `20261026124023_ai_jobs.sql` aplicada no cloud (22/22): tabela `ai_jobs` (status queued/running/succeeded/failed, tentativas, erro, resultado), RLS de leitura por tenant e funções de claim com `for update skip locked`/limite de tentativas. O upload vai para `import-documents` em `<tenant>/_jobs/<jobId>/`, o worker baixa o arquivo, roda `runAnalyzePipeline`, marca o job e remove o arquivo; job travado em `running` volta para a fila após 15 min (até 3 tentativas). `CRON_SECRET` (novo no `.env.example`/`turbo.json`) protege o dreno da fila. Testes cobrem route 202, `after()`, worker (sucesso/falha/download/reserva), status, retry e helpers de job.
+**Status (out/2026):** concluído - migration `20261026124023_ai_jobs.sql` aplicada no cloud (23/23 no total): tabela `ai_jobs` (status queued/running/succeeded/failed, tentativas, erro, resultado), RLS de leitura por tenant e funções de claim com `for update skip locked`/limite de tentativas. O upload vai para `import-documents` em `<tenant>/_jobs/<jobId>/`, o worker baixa o arquivo, roda `runAnalyzePipeline`, marca o job e remove o arquivo; job travado em `running` volta para a fila após 15 min (até 3 tentativas). `CRON_SECRET` (novo no `.env.example`/`turbo.json`) protege o dreno da fila. Testes cobrem route 202, `after()`, worker (sucesso/falha/download/reserva), status, retry e helpers de job.
 
 ---
 

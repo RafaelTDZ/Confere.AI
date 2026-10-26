@@ -204,6 +204,8 @@ OPENROUTER_API_KEY=<sk-or-v1-...>   # opcional (provider alternativo)
 OPENROUTER_MODEL=~openai/gpt-luna-latest
 ```
 
+A migration `20261026142326_ai_fireworks_default.sql` já está aplicada no cloud e a config global aponta para Fireworks; **configure `FIREWORKS_API_KEY` na Vercel antes do deploy** (sem ela, health e análises respondem 503/502). Para voltar ao OpenRouter, troque em `/configuracoes`.
+
 O proxy `/supabase` segue automaticamente `NEXT_PUBLIC_SUPABASE_URL`. Use `SUPABASE_INTERNAL_URL` apenas se precisar de um destino diferente no servidor.
 
 > Root Directory = `apps/web` no dashboard (padrão Turborepo) segue opcional; `next` e `typescript` permanecem na raiz por causa do preview do v0.

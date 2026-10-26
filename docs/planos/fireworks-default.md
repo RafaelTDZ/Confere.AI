@@ -6,11 +6,14 @@
 > **Implementação (26/10/2026):** fases 1 e 2 concluídas no commit `03f00e6`
 > (`feat(web): adicionar Fireworks e conversao de PDF`) — provider/catálogo/settings/UI,
 > PDF→imagens (`pdf-to-img`), pipeline/tasks, tracing do Next e testes (699). A migration
-> `20261026140000_ai_fireworks_default.sql` foi criada, mas **não aplicada**: falta
-> `FIREWORKS_API_KEY` no ambiente, e forçar `fireworks` agora derrubaria health/análises (503).
-> A config global no banco segue `openrouter`, então o app continua operando com OpenRouter.
-> Para ativar: (1) configurar `FIREWORKS_API_KEY` local + Vercel; (2) aplicar a migration com
-> CLI 2.34.3; (3) smoke em `/api/ai/health` e numa análise real (PDF de 2+ páginas).
+> `20261026142326_ai_fireworks_default.sql` foi **aplicada no cloud** (23/23) e `app_settings`
+> está `fireworks` + router DeepSeek. `FIREWORKS_API_KEY` configurada no `.env` local (gitignored).
+> Smoke direto via AI SDK com a chave real: `Output.object` OK, visão OK (imagem → `12345`) e
+> múltiplas imagens OK (duas páginas somando `24690`); routers DeepSeek e GLM responderam.
+> Smoke E2E pela UI em 26/10/2026: upload de PDF → job `succeeded` (1 tentativa) → importação
+> `awaiting_review` com invoice `12345`/supplier `Fireworks Test`; `ai_logs` com `classify`
+> (2,0s) e `extract_invoice` (2,5s). O artefato de teste foi removido (DB + Storage).
+> Pendente: configurar `FIREWORKS_API_KEY` na Vercel.
 
 ## 0. Verificação técnica (26/10/2026)
 
