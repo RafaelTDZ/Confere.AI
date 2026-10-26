@@ -43,6 +43,7 @@ divergências entre documentos.
 - [x] **Infra Fireworks + OpenRouter** — clients servidor (`apps/web/src/lib/ai`), Fireworks como padrão (`accounts/fireworks/routers/deepseek-flash-latest`) e OpenRouter como opção; smoke autenticado `GET /api/ai/health`; PDF no Fireworks é convertido em imagens
 - [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e responde `202`; worker persiste `imports`/`documents` e extrai Invoice, número de Invoice explícito no Packing List e campos do BL
 - [x] **Observabilidade** — `@vercel/otel` no `instrumentation.ts` + spans/métricas do pipeline em `lib/observability/tracing.ts`
+- [x] **Painel admin global** — `/admin` somente leitura (super-admin): tenants, contadores, uso de IA e detalhe por tenant com auditoria em `audit_logs`
 
 ### Não implementado (UI ou backend)
 

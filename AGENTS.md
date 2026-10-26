@@ -124,6 +124,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
 | Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
 | Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
+| Página `/admin` | Super-admin (`ADMIN_EMAILS`): painel global somente leitura (tenants, contadores, uso de IA, detalhe por tenant auditado) |
 | Página `/produtos` | Placeholder (CRUD pendente) |
 | Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
 | IA (Fireworks + OpenRouter) | Fireworks padrão (`deepseek-flash-latest`, GLM alternativa; PDF→imagens) + OpenRouter opcional; `/api/ai/health` |
@@ -198,6 +199,11 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   job ler via service role usando o `tenant_id` do job; requests normais seguem em RLS
   (`getReadClient`). Sem isso, `persistExtractionResult` falha no cron/`after()` por falta de
   cookie.
+- **Painel `/admin` (super-admin)**: somente leitura, gate por `ADMIN_EMAILS` (`isSuperAdmin`),
+  leitura cross-tenant via `createSupabaseAdminClient()` e auditoria em `audit_logs`
+  (`action = admin.view_tenant`) no tenant do admin. **RLS intocada**; os módulos `lib/admin/*`
+  são `server-only` e nunca devem ser importados no client. A conta em `ADMIN_EMAILS` enxerga
+  dados de todos os tenants — mantenha MFA/2FA e o allowlist mínimo.
 - **Observabilidade**: `src/instrumentation.ts` registra `@vercel/otel` (na Vercel envia para a
   observabilidade do projeto; local/testes viram no-op). `lib/observability/tracing.ts` expõe
   `withSpan`/`recordAiCall`: spans `ai.analyze`, `ai.job`, `ai.classify`, `ai.extract_*` e

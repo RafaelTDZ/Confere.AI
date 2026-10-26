@@ -45,6 +45,8 @@ supabase/
 | `/api/ai/jobs/[jobId]` | Autenticado | Status do job (`queued`/`running`/`succeeded`/`failed`) + `importId` |
 | `/api/ai/jobs/run` | `CRON_SECRET` | Drena a fila de jobs (retry/cron do Vercel) |
 | `/api/settings/ai` | Super-admin (`ADMIN_EMAILS`) | GET/PUT/DELETE da config global de IA (tabela `app_settings`, chave `ai`) |
+| `/admin` | Super-admin (`ADMIN_EMAILS`) | Painel global somente leitura: tenants, contadores e uso de IA |
+| `/admin/[tenantId]` | Super-admin (`ADMIN_EMAILS`) | Detalhe read-only do tenant (importações, empresas, NCMs, `ai_logs`); acesso auditado |
 
 ## Setup local
 
