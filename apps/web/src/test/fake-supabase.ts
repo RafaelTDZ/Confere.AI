@@ -113,6 +113,10 @@ export type FakeStorageOptions = {
 
 export type FakeSupabaseOptions = {
   storage?: FakeStorageOptions;
+  /** Executado antes de cada insert (simula corrida: outra request grava a linha primeiro). */
+  beforeInsert?: (table: string, row: FakeRow) => void;
+  /** Colunas com índice único por tabela. Só valida quando todas as colunas são não nulas (índice parcial). */
+  unique?: Record<string, string[][]>;
 };
 
 function toFakeError(error: FakeError | string): FakeError {
@@ -163,6 +167,7 @@ export class FakeSupabase {
   readonly tables: FakeTables;
   readonly queries: FakeQueryLog[] = [];
   readonly storage: FakeStorageClient;
+  readonly options: FakeSupabaseOptions;
   private readonly pendingErrors: Array<{
     error: FakeError;
     target: FakeErrorTarget;
@@ -170,6 +175,11 @@ export class FakeSupabase {
 
   constructor(tables: FakeTables = {}, options: FakeSupabaseOptions = {}) {
     this.tables = tables;
+    this.options = {
+      storage: options.storage,
+      beforeInsert: options.beforeInsert,
+      unique: options.unique,
+    };
     this.storage = new FakeStorageClient(options.storage);
   }
 
@@ -216,6 +226,29 @@ export class FakeSupabase {
       this.tables[table] = rows;
     }
     return rows;
+  }
+
+  /**
+   * Simula um índice único (parcial) antes de inserir: só acusa conflito quando
+   * todas as colunas do índice estão preenchidas — como no Postgres, chave nula
+   * não colide.
+   */
+  findUniqueConflict(table: string, row: FakeRow): FakeError | null {
+    const uniqueSets = this.options.unique?.[table];
+    if (!uniqueSets) return null;
+    for (const columns of uniqueSets) {
+      if (columns.some((column) => row[column] == null)) continue;
+      const duplicate = this.rows(table).find((candidate) =>
+        columns.every((column) => candidate[column] === row[column]),
+      );
+      if (duplicate) {
+        return {
+          code: "23505",
+          message: `duplicate key value violates unique constraint "${table}_unique_${columns.join("_")}"`,
+        };
+      }
+    }
+    return null;
   }
 }
 
@@ -367,10 +400,21 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
           : this.payload
             ? [this.payload]
             : [];
-        const inserted = inputs.map((row) => ({
-          ...row,
-          id: row.id ?? randomUUID(),
-        }));
+        const inserted: FakeRow[] = [];
+        for (const row of inputs) {
+          this.db.options.beforeInsert?.(this.table, { ...row });
+          const conflict = this.db.findUniqueConflict(this.table, row);
+          if (conflict) {
+            this.db.queries.push({
+              table: this.table,
+              operation: this.operation,
+              filters: [...this.filters],
+            });
+            this.response = { data: null, error: conflict };
+            return this.response;
+          }
+          inserted.push({ ...row, id: row.id ?? randomUUID() });
+        }
         rows.push(...inserted);
         data = this.returnsRows
           ? inserted.map((row) => this.project(row))

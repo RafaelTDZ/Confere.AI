@@ -49,6 +49,31 @@ export class ImportConflictError extends Error {
   }
 }
 
+/**
+ * Erro interno de persistência da importação. Preserva o `code` do Postgres
+ * (ex.: `23505` de violação de índice único) para que as camadas acima possam
+ * reagir a corridas sem parsear a mensagem.
+ */
+class ImportPersistenceError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ImportPersistenceError";
+    this.code = code;
+  }
+}
+
+/** `23505` = unique_violation. Aceita tanto o erro interno quanto o erro cru do PostgREST. */
+function isUniqueViolation(error: unknown): boolean {
+  if (error instanceof ImportPersistenceError) return error.code === "23505";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "23505"
+  );
+}
+
 const IMPORT_LIST_SELECT =
   "id, reference_number, status, supplier_name, invoice_number, bl_number, created_at";
 
@@ -234,11 +259,98 @@ async function createImportRecord(params: {
     .single();
 
   if (error || !data) {
-    throw new Error(error?.message || "Falha ao criar importação");
+    throw new ImportPersistenceError(
+      error?.message || "Falha ao criar importação",
+      error?.code,
+    );
   }
   return data.id as string;
 }
 
+const KEY_CONFLICT_INDEXES: Record<string, "bl_number" | "invoice_number"> = {
+  imports_tenant_bl_number_key: "bl_number",
+  imports_tenant_invoice_number_key: "invoice_number",
+};
+
+/** Descobre qual chave de consolidação colidiu a partir da mensagem do Postgres. */
+function conflictingKeyColumn(
+  message: string | undefined,
+): "bl_number" | "invoice_number" | null {
+  if (!message) return null;
+  for (const [indexName, column] of Object.entries(KEY_CONFLICT_INDEXES)) {
+    if (message.includes(indexName)) return column;
+  }
+  return null;
+}
+
+/**
+ * Grava o patch de chaves tolerando disputa pelo índice único.
+ *
+ * Em `23505`, descarta a coluna conflitante (a chave já pertence a outra
+ * importação) e tenta de novo uma única vez. Se ainda falhar — ou se o índice
+ * não for reconhecido — apenas registra `console.warn`: uma chave disputada não
+ * pode interromper a análise.
+ */
+async function updateImportKeys(params: {
+  tenantId: string;
+  importId: string;
+  patch: Record<string, string>;
+}): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const patch: Record<string, string> = { ...params.patch };
+  let conflict: string | null = null;
+
+  while (Object.keys(patch).length > 0) {
+    const { error } = await admin
+      .from("imports")
+      .update(patch)
+      .eq("id", params.importId)
+      .eq("tenant_id", params.tenantId);
+
+    if (!error) return;
+    if (error.code !== "23505") {
+      throw new Error(
+        error.message || "Falha ao atualizar chaves da importação",
+      );
+    }
+
+    // A segunda colisão encerra a tentativa: o retry é único.
+    const column: "bl_number" | "invoice_number" | null =
+      conflict === null ? conflictingKeyColumn(error.message) : null;
+    if (!column) {
+      console.warn(
+        "[imports] chave de consolidação já pertence a outra importação",
+        {
+          importId: params.importId,
+          tenantId: params.tenantId,
+          conflict,
+          error: error.message,
+        },
+      );
+      return;
+    }
+    conflict = column;
+    delete patch[column];
+  }
+
+  console.warn(
+    "[imports] chave de consolidação já pertence a outra importação",
+    {
+      importId: params.importId,
+      tenantId: params.tenantId,
+      conflict,
+    },
+  );
+}
+
+/**
+ * Preenche as chaves de consolidação ainda vazias da importação.
+ *
+ * Regra 1:1 por tenant — `bl_number` e `invoice_number` identificam no máximo
+ * uma importação cada; quando o documento traz as duas, o BL precede a Invoice
+ * na escolha da importação. A chave que já pertence a outra importação não é
+ * copiada (fica nula) e o processamento continua.
+ */
 export async function fillImportKeysIfEmpty(params: {
   tenantId: string;
   importId: string;
@@ -272,16 +384,11 @@ export async function fillImportKeysIfEmpty(params: {
 
   if (Object.keys(patch).length === 0) return;
 
-  const admin = createSupabaseAdminClient();
-  const { error: updateError } = await admin
-    .from("imports")
-    .update(patch)
-    .eq("id", params.importId)
-    .eq("tenant_id", params.tenantId);
-
-  if (updateError) {
-    throw new Error(updateError.message || "Falha ao atualizar chaves da importação");
-  }
+  await updateImportKeys({
+    tenantId: params.tenantId,
+    importId: params.importId,
+    patch,
+  });
 }
 
 export async function clearAutoReferenceIfNeeded(params: {
@@ -314,6 +421,42 @@ export async function clearAutoReferenceIfNeeded(params: {
   }
 }
 
+/** Reaproveita uma importação existente: completa chaves, limpa referência automática e marca `processing`. */
+async function reuseImport(
+  params: {
+    tenantId: string;
+    invoiceNumber: string | null;
+    blNumber: string | null;
+    supplierName: string | null;
+  },
+  existing: ImportLookupRow,
+): Promise<void> {
+  await fillImportKeysIfEmpty({
+    tenantId: params.tenantId,
+    importId: existing.id,
+    invoiceNumber: params.invoiceNumber,
+    blNumber: params.blNumber,
+    supplierName: params.supplierName,
+  });
+  await clearAutoReferenceIfNeeded({
+    tenantId: params.tenantId,
+    importId: existing.id,
+  });
+  await updateImportStatus({
+    tenantId: params.tenantId,
+    importId: existing.id,
+    status: "processing",
+  });
+}
+
+/**
+ * Localiza a importação das chaves informadas ou cria uma nova.
+ *
+ * Regra 1:1 por tenant — BL precede Invoice na busca; a chave que já pertence a
+ * outra importação não é copiada. Se outra request criar a importação entre a
+ * busca e o insert (corrida), o índice único devolve `23505`: buscamos de novo e
+ * reutilizamos a importação vencedora.
+ */
 export async function findOrCreateImport(params: {
   tenantId: string;
   userId: string;
@@ -323,27 +466,23 @@ export async function findOrCreateImport(params: {
 }): Promise<{ importId: string; created: boolean }> {
   const existing = await findImportByKeys(params);
   if (existing) {
-    await fillImportKeysIfEmpty({
-      tenantId: params.tenantId,
-      importId: existing.id,
-      invoiceNumber: params.invoiceNumber,
-      blNumber: params.blNumber,
-      supplierName: params.supplierName,
-    });
-    await clearAutoReferenceIfNeeded({
-      tenantId: params.tenantId,
-      importId: existing.id,
-    });
-    await updateImportStatus({
-      tenantId: params.tenantId,
-      importId: existing.id,
-      status: "processing",
-    });
+    await reuseImport(params, existing);
     return { importId: existing.id, created: false };
   }
 
-  const importId = await createImportRecord(params);
-  return { importId, created: true };
+  try {
+    const importId = await createImportRecord(params);
+    return { importId, created: true };
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+
+    // Perdemos a corrida: outra request já gravou (ao menos) uma das chaves.
+    const winner = await findImportByKeys(params);
+    if (!winner) throw error;
+
+    await reuseImport(params, winner);
+    return { importId: winner.id, created: false };
+  }
 }
 
 export async function updateImportStatus(params: {

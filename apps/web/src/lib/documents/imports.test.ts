@@ -733,6 +733,48 @@ describe("findOrCreateImport", () => {
       }),
     ).rejects.toThrow("falha ao buscar");
   });
+
+  it("reaproveita a importação vencedora quando o insert perde a corrida", async () => {
+    let raced = false;
+    const db = new FakeSupabase(
+      { imports: [] },
+      {
+        unique: { imports: [["tenant_id", "bl_number"]] },
+        beforeInsert: (table) => {
+          if (table !== "imports" || raced) return;
+          raced = true;
+          db.rows("imports").push(
+            importSeed({
+              id: "import-winner",
+              tenantId: TENANT_A,
+              blNumber: "BL-RACE",
+            }),
+          );
+        },
+      },
+    );
+    mocks.adminClient = db;
+    mocks.readClient = db;
+
+    const result = await findOrCreateImport({
+      tenantId: TENANT_A,
+      userId: "user-a",
+      invoiceNumber: null,
+      blNumber: "BL-RACE",
+      supplierName: null,
+    });
+
+    expect(result).toEqual({ importId: "import-winner", created: false });
+    expect(
+      db.queries.filter((query) => query.operation === "insert"),
+    ).toHaveLength(1);
+    expect(db.rows("imports")).toHaveLength(1);
+    expect(db.rows("imports")[0]).toMatchObject({
+      id: "import-winner",
+      bl_number: "BL-RACE",
+      status: "processing",
+    });
+  });
 });
 
 describe("getImportDetail", () => {
@@ -1094,6 +1136,75 @@ describe("fillImportKeysIfEmpty", () => {
     ).rejects.toThrow("falha ao atualizar chaves");
 
     expect(findImport("import-by-invoice", TENANT_A)?.bl_number).toBeNull();
+  });
+
+  it("não copia a Invoice quando a chave já pertence a outra importação", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-invoice-owner",
+        tenantId: TENANT_A,
+        invoiceNumber: "INV-CONFLICT",
+        createdAt: CREATED_LATE,
+      }),
+      importSeed({
+        id: "import-bl-owner",
+        tenantId: TENANT_A,
+        createdAt: CREATED_LATE,
+      }),
+    );
+    adminClient.failNext(
+      {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "imports_tenant_invoice_number_key"',
+      },
+      { table: "imports", operation: "update" },
+    );
+
+    await expect(
+      fillImportKeysIfEmpty({
+        tenantId: TENANT_A,
+        importId: "import-bl-owner",
+        blNumber: "BL-CONFLICT",
+        invoiceNumber: "INV-CONFLICT",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(findImport("import-bl-owner", TENANT_A)).toMatchObject({
+      bl_number: "BL-CONFLICT",
+      invoice_number: null,
+    });
+    expect(
+      findImport("import-invoice-owner", TENANT_A)?.invoice_number,
+    ).toBe("INV-CONFLICT");
+    expect(importsUpdates()).toBe(2);
+  });
+
+  it("não lança quando o índice do conflito não é reconhecido", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    adminClient.failNext(
+      {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "imports_outro_indice_key"',
+      },
+      { table: "imports", operation: "update" },
+    );
+
+    await expect(
+      fillImportKeysIfEmpty({
+        tenantId: TENANT_A,
+        importId: "import-by-invoice",
+        blNumber: "BL-NOVO",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(findImport("import-by-invoice", TENANT_A)?.bl_number).toBeNull();
+    expect(importsUpdates()).toBe(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[imports] chave de consolidação já pertence a outra importação",
+      expect.objectContaining({ importId: "import-by-invoice" }),
+    );
   });
 });
 
