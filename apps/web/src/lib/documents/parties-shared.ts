@@ -70,23 +70,138 @@ function trimmedOrNull(value: unknown): string | null {
   return next.length > 0 ? next : null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const STREET_LABELS = [
+  "logradouro",
+  "endereço",
+  "endereco",
+  "address",
+  "street",
+  "rua",
+] as const;
+
+const NUMBER_LABELS = [
+  "número",
+  "numero",
+  "number",
+  "nº",
+  "n°",
+  "no.",
+] as const;
+
+const COMPLEMENT_LABELS = [
+  "complemento",
+  "complement",
+  "apartamento",
+  "apto",
+  "sala",
+  "bloco",
+  "andar",
+] as const;
+
+const POSTAL_LABELS = [
+  "código postal",
+  "codigo postal",
+  "postal code",
+  "zip code",
+  "zip",
+  "cep",
+] as const;
+
+const CITY_LABELS = ["município", "municipio", "cidade", "city"] as const;
+
+const STATE_LABELS = [
+  "província",
+  "provincia",
+  "province",
+  "estado",
+  "state",
+  "uf",
+] as const;
+
+const COUNTRY_LABELS = ["país", "pais", "country"] as const;
+
+const OTHER_LABELS = [
+  "observação",
+  "observacao",
+  "referência",
+  "referencia",
+  "neighborhood",
+  "district",
+  "bairro",
+  "distrito",
+  "região",
+  "regiao",
+  "region",
+  "obs",
+] as const;
+
+/**
+ * Remove rótulos que a IA às vezes repete no valor ("BAIRRO: ZONA INDUSTRIAL",
+ * "CEP: 01310-100"). Só remove quando o rótulo é seguido de separador, para não
+ * cortar valores legítimos como "Rua das Flores" ou "Sala 5".
+ */
+function stripAddressLabels(
+  value: string | null,
+  labels: readonly string[],
+): string | null {
+  if (!value) return null;
+  let next = value.trim();
+  let changed = true;
+
+  while (changed && next.length > 0) {
+    changed = false;
+    for (const label of labels) {
+      const pattern = new RegExp(
+        `^${escapeRegExp(label)}\\s*[:=\\-–—]\\s*`,
+        "i",
+      );
+      const stripped = next.replace(pattern, "").trim();
+      if (stripped !== next) {
+        next = stripped;
+        changed = true;
+      }
+    }
+  }
+
+  return next.length > 0 ? next : null;
+}
+
 export function parsePartyAddress(value: unknown): PartyAddress {
   if (typeof value === "string") {
-    return { ...EMPTY_PARTY_ADDRESS, other: trimmedOrNull(value) };
+    return {
+      ...EMPTY_PARTY_ADDRESS,
+      other: stripAddressLabels(trimmedOrNull(value), OTHER_LABELS),
+    };
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ...EMPTY_PARTY_ADDRESS };
   }
   const row = value as Record<string, unknown>;
   return {
-    street: trimmedOrNull(row.street),
-    number: trimmedOrNull(row.number ?? row.street_number),
-    complement: trimmedOrNull(row.complement),
-    postalCode: trimmedOrNull(row.postalCode ?? row.postal_code),
-    city: trimmedOrNull(row.city),
-    state: trimmedOrNull(row.state),
-    country: trimmedOrNull(row.country),
-    other: trimmedOrNull(row.other ?? row.other_info),
+    street: stripAddressLabels(trimmedOrNull(row.street), STREET_LABELS),
+    number: stripAddressLabels(
+      trimmedOrNull(row.number ?? row.street_number),
+      NUMBER_LABELS,
+    ),
+    complement: stripAddressLabels(
+      trimmedOrNull(row.complement),
+      COMPLEMENT_LABELS,
+    ),
+    postalCode: stripAddressLabels(
+      trimmedOrNull(row.postalCode ?? row.postal_code),
+      POSTAL_LABELS,
+    ),
+    city: stripAddressLabels(trimmedOrNull(row.city), CITY_LABELS),
+    state: stripAddressLabels(trimmedOrNull(row.state), STATE_LABELS),
+    country: stripAddressLabels(trimmedOrNull(row.country), COUNTRY_LABELS),
+    other: stripAddressLabels(
+      trimmedOrNull(row.other ?? row.other_info),
+      OTHER_LABELS,
+    ),
   };
 }
 

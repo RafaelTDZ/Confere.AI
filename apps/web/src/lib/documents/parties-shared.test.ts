@@ -83,6 +83,49 @@ describe("parsePartyAddress", () => {
     });
   });
 
+  it("remove rótulos repetidos nos campos de endereço", () => {
+    expect(
+      parsePartyAddress({
+        street: "Rua: RUA DOS BORORÓS, 665",
+        number: "Nº: 665",
+        complement: "Complemento: Sala 5",
+        postal_code: "CEP: 01310-100",
+        city: "Cidade: São Paulo",
+        state: "UF: SP",
+        country: "País: Brasil",
+        other: "BAIRRO: ZONA INDUSTRIAL",
+      }),
+    ).toEqual({
+      ...EMPTY_PARTY_ADDRESS,
+      street: "RUA DOS BORORÓS, 665",
+      number: "665",
+      complement: "Sala 5",
+      postalCode: "01310-100",
+      city: "São Paulo",
+      state: "SP",
+      country: "Brasil",
+      other: "ZONA INDUSTRIAL",
+    });
+  });
+
+  it("remove rótulos encadeados e preserva valores sem rótulo", () => {
+    expect(
+      parsePartyAddress({ other: "Bairro - Distrito: ZONA INDUSTRIAL" }).other,
+    ).toBe("ZONA INDUSTRIAL");
+    expect(parsePartyAddress("Bairro: ZONA INDUSTRIAL").other).toBe(
+      "ZONA INDUSTRIAL",
+    );
+    expect(
+      parsePartyAddress({
+        street: "RUA DOS BORORÓS, 665",
+        other: "Bairro Novo",
+      }),
+    ).toMatchObject({
+      street: "RUA DOS BORORÓS, 665",
+      other: "Bairro Novo",
+    });
+  });
+
   it("retorna endereço vazio para objeto inválido, array ou null", () => {
     const empty = { ...EMPTY_PARTY_ADDRESS };
     expect(parsePartyAddress({})).toEqual(empty);

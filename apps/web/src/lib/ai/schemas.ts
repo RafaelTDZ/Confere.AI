@@ -26,20 +26,40 @@ export const documentClassificationSchema = z.object({
 export type DocumentClassification = z.infer<typeof documentClassificationSchema>;
 
 const partyAddressSchema = z.object({
-  street: z.string().nullable().describe("Logradouro / rua"),
-  number: z.string().nullable().describe("Número do endereço"),
+  street: z
+    .string()
+    .nullable()
+    .describe("Logradouro / rua (apenas o nome, sem rótulo 'Rua:')"),
+  number: z
+    .string()
+    .nullable()
+    .describe("Número do endereço (apenas o número, sem rótulo)"),
   complement: z
     .string()
     .nullable()
-    .describe("Complemento (sala, bloco, andar)"),
-  postalCode: z.string().nullable().describe("CEP ou código postal"),
-  city: z.string().nullable().describe("Cidade"),
-  state: z.string().nullable().describe("Estado / UF / província"),
-  country: z.string().nullable().describe("País"),
+    .describe("Complemento (sala, bloco, andar), sem rótulo 'Complemento:'"),
+  postalCode: z
+    .string()
+    .nullable()
+    .describe("CEP ou código postal (apenas o código, sem 'CEP:')"),
+  city: z
+    .string()
+    .nullable()
+    .describe("Cidade (apenas o nome, sem rótulo 'Cidade:')"),
+  state: z
+    .string()
+    .nullable()
+    .describe("Estado / UF / província (apenas a sigla/nome, sem rótulo)"),
+  country: z
+    .string()
+    .nullable()
+    .describe("País (apenas o nome, sem rótulo 'País:')"),
   other: z
     .string()
     .nullable()
-    .describe("Bairro, referência ou outras informações de endereço"),
+    .describe(
+      "Bairro, referência ou outras informações de endereço (apenas o valor, sem rótulo 'Bairro:')",
+    ),
 });
 
 const partySchema = z.object({
