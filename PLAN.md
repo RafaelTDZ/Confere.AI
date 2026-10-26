@@ -44,6 +44,7 @@ divergências entre documentos.
 - [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e responde `202`; worker persiste `imports`/`documents` e extrai Invoice, número de Invoice explícito no Packing List e campos do BL
 - [x] **Observabilidade** — `@vercel/otel` no `instrumentation.ts` + spans/métricas do pipeline em `lib/observability/tracing.ts`
 - [x] **Painel admin global** — `/admin` somente leitura (super-admin): tenants, contadores, uso de IA e detalhe por tenant com auditoria em `audit_logs`
+- [x] **Consignee padrão** — uma empresa do tenant vinculada a todas as importações; documento comparado e divergências (nome, CNPJ, endereço) exibidas na importação e no formulário de partes
 
 ### Não implementado (UI ou backend)
 

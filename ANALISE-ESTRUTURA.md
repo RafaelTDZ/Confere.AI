@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 20 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03, OBS-03), 1 parcial (OPS-03) e nenhum em aberto. Migrations: 23/23 aplicadas no cloud (última `20261026142326`); `app_settings` com `provider=fireworks` e `model=accounts/fireworks/routers/deepseek-flash-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (699 testes; `documents` 94,35% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 20 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03, OBS-03), 1 parcial (OPS-03) e nenhum em aberto. Migrations: 24/24 aplicadas no cloud (última `20261026171036`); `app_settings` com `provider=fireworks` e `model=accounts/fireworks/routers/deepseek-flash-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (782 testes; `documents` 94,71% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 

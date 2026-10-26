@@ -38,6 +38,7 @@ supabase/
 | `/login` | Público | Login em 2 etapas (email → senha) |
 | `/signup` | Público | Cadastro com nome, email e senha |
 | `/analise` | Protegido | Nova análise de importação (dropzone + orientações) |
+| `/empresas` | Protegido | Empresas do tenant; define o consignee padrão (owner/admin) |
 | `/configuracoes` | Super-admin (`ADMIN_EMAILS`) | Provedor e modelo de IA para todos os usuários + teste de conexão |
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
 | `/api/ai/health` | Autenticado | Smoke da integração de IA (`generateText` no provider ativo) |
@@ -45,12 +46,13 @@ supabase/
 | `/api/ai/jobs/[jobId]` | Autenticado | Status do job (`queued`/`running`/`succeeded`/`failed`) + `importId` |
 | `/api/ai/jobs/run` | `CRON_SECRET` | Drena a fila de jobs (retry/cron do Vercel) |
 | `/api/settings/ai` | Super-admin (`ADMIN_EMAILS`) | GET/PUT/DELETE da config global de IA (tabela `app_settings`, chave `ai`) |
+| `/api/settings/consignee` | Owner/admin | PUT do consignee padrão do tenant (`partyId` ou `null`) |
 | `/admin` | Super-admin (`ADMIN_EMAILS`) | Painel global somente leitura: tenants, contadores e uso de IA |
 | `/admin/[tenantId]` | Super-admin (`ADMIN_EMAILS`) | Detalhe read-only do tenant (importações, empresas, NCMs, `ai_logs`); acesso auditado |
 
 ## Setup local
 
-Pré-requisitos: Node >= 22.12, pnpm 10. O projeto usa **Supabase cloud** — não é necessário Docker nem Supabase local.
+Pré-requisitos: Node >= 22.13, pnpm 10. O projeto usa **Supabase cloud** — não é necessário Docker nem Supabase local.
 
 ### Passo a passo
 

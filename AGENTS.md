@@ -121,7 +121,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | Dropzone → `/api/ai/analyze` (202 + job), status via `/api/ai/jobs/[jobId]` e extrações persistidas |
 | Página `/importacoes` | Lista `imports` do tenant (RLS com o client autenticado) |
-| Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
+| Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]`; define o **consignee padrão** (owner/admin) em `/empresas` |
 | Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
 | Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
 | Página `/admin` | Super-admin (`ADMIN_EMAILS`): painel global somente leitura (tenants, contadores, uso de IA, detalhe por tenant auditado) |
@@ -199,6 +199,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   job ler via service role usando o `tenant_id` do job; requests normais seguem em RLS
   (`getReadClient`). Sem isso, `persistExtractionResult` falha no cron/`after()` por falta de
   cookie.
+- **Consignee padrão**: `tenant_settings.default_consignee_party_id` (uma party do tenant) é
+  vinculado a todas as importações pelo pipeline; o documento é comparado campo a campo e as
+  divergências ficam em `imports.consignee_divergences` (o detalhe recalcula ao vivo). Configuração
+  em `/empresas` (owner/admin); o notify continua por documento.
 - **Painel `/admin` (super-admin)**: somente leitura, gate por `ADMIN_EMAILS` (`isSuperAdmin`),
   leitura cross-tenant via `createSupabaseAdminClient()` e auditoria em `audit_logs`
   (`action = admin.view_tenant`) no tenant do admin. **RLS intocada**; os módulos `lib/admin/*`
