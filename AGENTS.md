@@ -183,6 +183,9 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   antes de aplicar. Sem a chave, use `AI_PROVIDER=openrouter` ou o dropdown em `/configuracoes`.
   No Windows o `pdf-to-img` pode logar aviso de `standard_fonts` (caminho posix); PDFs com fontes
   embutidas convertem normalmente e no Linux/Vercel os assets estão no tracing.
+  No deploy, `@napi-rs/canvas` **precisa** ser dependência direta e ter o import estático em
+  `pdf-pages.ts`: o `pdfjs-dist` o requer em runtime e, sem isso, a função falha com
+  `Cannot find module '@napi-rs/canvas'`. Não remova o import.
 - **OpenRouter (opção)**: `OPENROUTER_API_KEY` só no servidor; `/api/ai/health` retorna 503 se a
   chave do provider ativo faltar e 401 sem sessão.
 - **Fila de análise (`ai_jobs`)**: `POST /api/ai/analyze` grava o arquivo em

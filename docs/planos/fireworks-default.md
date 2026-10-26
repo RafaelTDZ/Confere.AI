@@ -14,6 +14,11 @@
 > `awaiting_review` com invoice `12345`/supplier `Fireworks Test`; `ai_logs` com `classify`
 > (2,0s) e `extract_invoice` (2,5s). O artefato de teste foi removido (DB + Storage).
 > Pendente: configurar `FIREWORKS_API_KEY` na Vercel.
+>
+> **Produção (26/10/2026):** envs `FIREWORKS_API_KEY`, `FIREWORKS_MODEL`, `AI_PROVIDER` e
+> `CRON_SECRET` configuradas na Vercel (Production/Preview) e deploy READY. O primeiro upload em
+> produção falhou com `Cannot find module '@napi-rs/canvas'`; corrigido no commit `b7bbc30`
+> (dependência direta + import estático no `pdf-pages.ts` para o tracer incluir o nativo).
 
 ## 0. Verificação técnica (26/10/2026)
 
