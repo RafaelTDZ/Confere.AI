@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 23/10/2026 (status dos achados):** 14 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03), 2 parciais (OBS-03, OPS-03) e 5 em aberto (AI-01, DATA-01, DATA-02, DATA-03, PERF-01). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (536 testes; `documents` 93,73% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 15 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01), 2 parciais (OBS-03, OPS-03) e 4 em aberto (AI-01, DATA-01, DATA-02, DATA-03). Migrations: 19/19 aplicadas no cloud (última `20261023201029`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (572 testes; `documents` 93,95% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 536 testes em 30 arquivos (Vitest 5.0.5) |
+| Testes | `pnpm test` | ✅ 572 testes em 31 arquivos (Vitest 5.0.5) |
 | Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 536 testes em 30 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,73% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 572 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 93,95% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -640,11 +640,13 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Adicionar `limit/offset` ou cursor.
-- [ ] Adicionar busca/filtro por status e referência.
-- [ ] Virtualizar tabela se necessário.
+- [x] Adicionar `limit/offset` ou cursor — `range()` + `count: "exact"` em `listTenantImports`, `listTenantParties` e `listTenantNcms`, retornando `Page<T>` (`rows`, `total`, `page`, `pageSize`, `totalPages`).
+- [x] Adicionar busca/filtro por status e referência — `q` (referência em imports; nome/CNPJ em empresas; código/descrição em NCM) e `status` em importações.
+- [x] Virtualizar tabela se necessário — dispensado: 20 linhas por página (máximo 100) cabem sem virtualização.
 
 **Critério de aceite:** listagens carregam no máximo N registros por página, com navegação.
+
+**Status (out/2026):** concluído — `lib/pagination.ts` centraliza `DEFAULT_PAGE_SIZE=20`, `MAX_PAGE_SIZE=100`, `normalizePage`, `normalizePageSize`, `normalizeSearch` (remove `,()"'` e limita a 120 caracteres), `escapeLike` e `buildPage`. As três listagens usam `count: "exact"` + `range` e mantêm `.eq("tenant_id", ...)` sobre `getReadClient()` (RLS). `/importacoes`, `/empresas` e `/ncm` ganharam `ListFilters` (form GET `q`/`status`) e `Pagination` (Anterior/Próxima preservando filtros); `/api/ncms` GET devolve `ncms`, `total`, `page` e `pageSize`. Testes cobrem paginação, busca case-insensitive/escape de `%`/`_`, filtro de status válido/inválido e isolamento por tenant.
 
 ---
 
@@ -809,7 +811,7 @@ Legenda de severidade:
 **Objetivo:** tornar o produto observável e escalável.
 
 - [ ] OBS-03 — Integrar Sentry/OpenTelemetry.
-- [ ] PERF-01 — Paginação e filtros nas listagens.
+- [x] PERF-01 — Paginação e filtros nas listagens.
 - [x] OPS-01 — Limpar workspace residual.
 - [ ] OPS-03 — Reavaliar deploy com Root Directory `apps/web`.
 - [x] DX-01 — Completar `turbo.json.globalEnv`.
