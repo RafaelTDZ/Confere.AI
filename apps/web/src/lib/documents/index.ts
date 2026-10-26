@@ -12,6 +12,7 @@ export {
   updateImportRecord,
   ImportConflictError,
   ImportValidationError,
+  type ImportListOptions,
 } from "@/lib/documents/imports";
 export {
   getMonthlyTokenUsage,
@@ -46,3 +47,4 @@ export {
   formatNcmCode,
   type NcmRow,
 } from "@/lib/documents/ncms";
+export type { ListOptions, Page } from "@/lib/pagination";

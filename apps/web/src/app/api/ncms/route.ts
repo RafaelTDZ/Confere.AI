@@ -25,8 +25,13 @@ function parseNcmBody(body: unknown): { code: string; description: string } {
 export async function GET() {
   try {
     const auth = await getAuthContext();
-    const ncms = await listTenantNcms(auth.tenantId);
-    return NextResponse.json({ ncms });
+    const page = await listTenantNcms(auth.tenantId);
+    return NextResponse.json({
+      ncms: page.rows,
+      total: page.total,
+      page: page.page,
+      pageSize: page.pageSize,
+    });
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json(

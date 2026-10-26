@@ -11,6 +11,7 @@ const LIB_DIR = fileURLToPath(new URL(".", import.meta.url));
  */
 const CLIENT_SAFE = new Set([
   "utils.ts",
+  "pagination.ts",
   "ai/schemas.ts",
   "ai/usage.ts",
   "auth/tenant.ts",

@@ -19,6 +19,15 @@ import {
   type PartyRole,
   type PendingParty,
 } from "@/lib/documents/parties-shared";
+import {
+  buildPage,
+  escapeLike,
+  normalizePage,
+  normalizePageSize,
+  normalizeSearch,
+  type ListOptions,
+  type Page,
+} from "@/lib/pagination";
 
 export type { PendingParty } from "@/lib/documents/parties-shared";
 
@@ -207,19 +216,40 @@ async function upsertParty(params: {
   return data.id as string;
 }
 
-export async function listTenantParties(tenantId: string): Promise<PartyRow[]> {
+export async function listTenantParties(
+  tenantId: string,
+  options: ListOptions = {},
+): Promise<Page<PartyRow>> {
+  const page = normalizePage(options.page);
+  const pageSize = normalizePageSize(options.pageSize);
+  const search = normalizeSearch(options.search);
+  const from = (page - 1) * pageSize;
+
   const supabase = await getReadClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("parties")
-    .select(PARTY_SELECT)
-    .eq("tenant_id", tenantId)
-    .order("name", { ascending: true });
+    .select(PARTY_SELECT, { count: "exact" })
+    .eq("tenant_id", tenantId);
+
+  if (search) {
+    const term = escapeLike(search);
+    query = query.or(`name.ilike.%${term}%,cnpj.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("name", { ascending: true })
+    .range(from, from + pageSize - 1);
 
   if (error) {
     throw new Error(error.message || "Falha ao listar empresas");
   }
 
-  return ((data ?? []) as PartyTableRow[]).map(mapPartyRow);
+  return buildPage(
+    ((data ?? []) as PartyTableRow[]).map(mapPartyRow),
+    count ?? 0,
+    page,
+    pageSize,
+  );
 }
 
 export async function getPartyById(

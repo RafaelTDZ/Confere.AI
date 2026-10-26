@@ -395,11 +395,42 @@ function importsUpdates(): number {
   ).length;
 }
 
+function seedLikeSearch(): FakeSupabase {
+  return new FakeSupabase({
+    imports: [
+      importSeed({
+        id: "import-percent",
+        tenantId: TENANT_A,
+        referenceNumber: "PO 100% REAL",
+        createdAt: CREATED_EARLY,
+      }),
+      importSeed({
+        id: "import-underscore",
+        tenantId: TENANT_A,
+        referenceNumber: "PO_100X REAL",
+        createdAt: CREATED_MID,
+      }),
+      importSeed({
+        id: "import-plain",
+        tenantId: TENANT_A,
+        referenceNumber: "PO 100X REAL",
+        createdAt: CREATED_LATE,
+      }),
+      importSeed({
+        id: "import-percent-b",
+        tenantId: TENANT_B,
+        referenceNumber: "PO 100% REAL",
+        createdAt: CREATED_LATE,
+      }),
+    ],
+  });
+}
+
 describe("listTenantImports", () => {
   it("retorna somente as importações do tenant ordenadas por created_at desc", async () => {
-    const imports = await listTenantImports(TENANT_A);
+    const page = await listTenantImports(TENANT_A);
 
-    expect(imports.map((row) => row.id)).toEqual([
+    expect(page.rows.map((row) => row.id)).toEqual([
       "import-a-late",
       "import-shared",
       "import-by-invoice",
@@ -412,10 +443,96 @@ describe("listTenantImports", () => {
       "import-merge-target",
       "import-a-early",
     ]);
-    expect(imports.some((row) => row.id === "import-b-by-bl")).toBe(false);
-    expect(imports).not.toContainEqual(
+    expect(page.rows.some((row) => row.id === "import-b-by-bl")).toBe(false);
+    expect(page.rows).not.toContainEqual(
       expect.objectContaining({ reference_number: "PO-SHARED-B" }),
     );
+  });
+
+  it("pagina por padrão em 1 com 20 itens e total global", async () => {
+    const page = await listTenantImports(TENANT_A);
+
+    expect(page.page).toBe(1);
+    expect(page.pageSize).toBe(20);
+    expect(page.rows).toHaveLength(11);
+    expect(page.total).toBe(11);
+    expect(page.totalPages).toBe(1);
+  });
+
+  it("devolve a página e o tamanho solicitados mantendo o total global", async () => {
+    const page = await listTenantImports(TENANT_A, { page: 2, pageSize: 5 });
+
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(5);
+    expect(page.total).toBe(11);
+    expect(page.totalPages).toBe(3);
+    expect(page.rows.map((row) => row.id)).toEqual([
+      "import-update-invoice",
+      "import-update",
+      "import-detail-empty",
+      "import-detail",
+      "import-merge-target",
+    ]);
+  });
+
+  it("busca por referência sem diferenciar maiúsculas e minúsculas", async () => {
+    const page = await listTenantImports(TENANT_A, { search: "  shared  " });
+
+    expect(page.rows.map((row) => row.id)).toEqual(["import-shared"]);
+    expect(page.total).toBe(1);
+    expect(page.totalPages).toBe(1);
+    expect(page.rows[0]?.reference_number).toBe("PO-SHARED-A");
+  });
+
+  it("escapa % e _ para que a busca trate os caracteres como literais", async () => {
+    mocks.readClient = seedLikeSearch();
+
+    const percent = await listTenantImports(TENANT_A, { search: "100%" });
+    expect(percent.rows.map((row) => row.id)).toEqual(["import-percent"]);
+    expect(percent.total).toBe(1);
+
+    const underscore = await listTenantImports(TENANT_A, { search: "po_100" });
+    expect(underscore.rows.map((row) => row.id)).toEqual(["import-underscore"]);
+    expect(underscore.total).toBe(1);
+
+    const withoutWildcard = await listTenantImports(TENANT_A, { search: "100" });
+    expect(withoutWildcard.total).toBe(3);
+  });
+
+  it("filtra por status válido do catálogo", async () => {
+    const page = await listTenantImports(TENANT_A, { status: "completed" });
+
+    expect(page.rows.map((row) => row.id)).toEqual(["import-by-invoice"]);
+    expect(page.total).toBe(1);
+  });
+
+  it("ignora status desconhecido", async () => {
+    const page = await listTenantImports(TENANT_A, { status: "inexistente" });
+
+    expect(page.total).toBe(11);
+    expect(page.rows).toHaveLength(11);
+  });
+
+  it("combina busca, status e paginação", async () => {
+    const page = await listTenantImports(TENANT_A, {
+      search: "po-",
+      status: "processing",
+      page: 1,
+      pageSize: 2,
+    });
+
+    expect(page.page).toBe(1);
+    expect(page.pageSize).toBe(2);
+    expect(page.rows).toHaveLength(2);
+    expect(page.total).toBe(6);
+    expect(page.totalPages).toBe(3);
+  });
+
+  it("isola o total por tenant", async () => {
+    const page = await listTenantImports(TENANT_A);
+
+    expect(page.total).toBe(11);
+    expect(page.rows.some((row) => row.id === "import-b-by-bl")).toBe(false);
   });
 
   it("propaga erro do banco ao listar", async () => {
@@ -432,10 +549,10 @@ describe("listTenantImports", () => {
   it("lista importações sem usar o admin client", async () => {
     mocks.failAdminClient = true;
 
-    const imports = await listTenantImports(TENANT_A);
+    const page = await listTenantImports(TENANT_A);
 
-    expect(imports.map((row) => row.id)).toContain("import-detail");
-    expect(imports.map((row) => row.id)).not.toContain("import-b-by-bl");
+    expect(page.rows.map((row) => row.id)).toContain("import-detail");
+    expect(page.rows.map((row) => row.id)).not.toContain("import-b-by-bl");
   });
 });
 

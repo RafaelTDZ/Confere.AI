@@ -3,6 +3,15 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { normalizeNcmCode } from "@/lib/documents/ncms-shared";
+import {
+  buildPage,
+  escapeLike,
+  normalizePage,
+  normalizePageSize,
+  normalizeSearch,
+  type ListOptions,
+  type Page,
+} from "@/lib/pagination";
 
 export { formatNcmCode } from "@/lib/documents/ncms-shared";
 
@@ -49,19 +58,35 @@ function validateNcmPayload(params: { code: string; description: string }): {
   return { code, description };
 }
 
-export async function listTenantNcms(tenantId: string): Promise<NcmRow[]> {
+export async function listTenantNcms(
+  tenantId: string,
+  options: ListOptions = {},
+): Promise<Page<NcmRow>> {
+  const page = normalizePage(options.page);
+  const pageSize = normalizePageSize(options.pageSize);
+  const search = normalizeSearch(options.search);
+  const from = (page - 1) * pageSize;
+
   const supabase = await getReadClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("ncms")
-    .select(NCM_SELECT)
-    .eq("tenant_id", tenantId)
-    .order("code", { ascending: true });
+    .select(NCM_SELECT, { count: "exact" })
+    .eq("tenant_id", tenantId);
+
+  if (search) {
+    const term = escapeLike(search);
+    query = query.or(`code.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("code", { ascending: true })
+    .range(from, from + pageSize - 1);
 
   if (error) {
     throw new Error(error.message || "Falha ao listar NCMs");
   }
 
-  return (data ?? []) as NcmRow[];
+  return buildPage((data ?? []) as NcmRow[], count ?? 0, page, pageSize);
 }
 
 export async function getNcmById(

@@ -530,15 +530,46 @@ describe("pendingPartiesFromBl", () => {
   });
 });
 
+function seedPartyPagination(): FakeSupabase {
+  const names = [
+    "Alfa Importadora",
+    "Beta Comércio",
+    "Delta Logística",
+    "Empresa 100% Nacional",
+    "Empresa 100X Nacional",
+    "Gama Exportadora",
+    "Gama_Exportadora",
+    "Zeta Comércio",
+  ];
+  return new FakeSupabase({
+    parties: [
+      ...names.map((name, index) =>
+        partySeed({
+          id: `party-p-${index + 1}`,
+          tenantId: "tenant-a",
+          name,
+          cnpjDigits: `${String(index + 1).repeat(8)}0001${String(index + 1).repeat(2)}`,
+        }),
+      ),
+      partySeed({
+        id: "party-p-b",
+        tenantId: "tenant-b",
+        name: "Alfa Importadora",
+        cnpjDigits: CNPJ_OUTRO_TENANT,
+      }),
+    ],
+  });
+}
+
 describe("listTenantParties", () => {
   it("lista somente as empresas do tenant, ordenadas por nome", async () => {
-    const parties = await listTenantParties("tenant-a");
+    const page = await listTenantParties("tenant-a");
 
-    expect(parties.map((party) => party.name)).toEqual([
+    expect(page.rows.map((party) => party.name)).toEqual([
       "Alfa Importadora",
       "Zeta Comércio",
     ]);
-    expect(parties[0]).toMatchObject({
+    expect(page.rows[0]).toMatchObject({
       id: "party-a",
       cnpj: formatCnpj(CNPJ_EXISTENTE),
       address: {
@@ -549,17 +580,90 @@ describe("listTenantParties", () => {
         country: "Brasil",
       },
     });
-    expect(parties).not.toContainEqual(
+    expect(page.rows).not.toContainEqual(
       expect.objectContaining({ id: "party-b" }),
     );
+    expect(page.total).toBe(2);
+    expect(page.totalPages).toBe(1);
+  });
+
+  it("pagina por padrão em 1 com 20 itens e total global", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const page = await listTenantParties("tenant-a");
+
+    expect(page.page).toBe(1);
+    expect(page.pageSize).toBe(20);
+    expect(page.rows).toHaveLength(8);
+    expect(page.total).toBe(8);
+    expect(page.totalPages).toBe(1);
+  });
+
+  it("devolve a página e o tamanho solicitados mantendo o total global", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const page = await listTenantParties("tenant-a", { page: 2, pageSize: 5 });
+
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(5);
+    expect(page.total).toBe(8);
+    expect(page.totalPages).toBe(2);
+    expect(page.rows.map((party) => party.name)).toEqual([
+      "Gama Exportadora",
+      "Gama_Exportadora",
+      "Zeta Comércio",
+    ]);
+  });
+
+  it("busca por nome sem diferenciar maiúsculas e minúsculas", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const page = await listTenantParties("tenant-a", { search: "  ALFA  " });
+
+    expect(page.rows.map((party) => party.name)).toEqual(["Alfa Importadora"]);
+    expect(page.total).toBe(1);
+  });
+
+  it("busca também pelo CNPJ", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const page = await listTenantParties("tenant-a", { search: "11.111" });
+
+    expect(page.rows.map((party) => party.id)).toEqual(["party-p-1"]);
+    expect(page.total).toBe(1);
+  });
+
+  it("escapa % e _ para que a busca trate os caracteres como literais", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const percent = await listTenantParties("tenant-a", { search: "100%" });
+    expect(percent.rows.map((party) => party.name)).toEqual([
+      "Empresa 100% Nacional",
+    ]);
+    expect(percent.total).toBe(1);
+
+    const underscore = await listTenantParties("tenant-a", { search: "gama_" });
+    expect(underscore.rows.map((party) => party.name)).toEqual([
+      "Gama_Exportadora",
+    ]);
+    expect(underscore.total).toBe(1);
+  });
+
+  it("isola o total por tenant mesmo com busca", async () => {
+    mocks.readClient = seedPartyPagination();
+
+    const page = await listTenantParties("tenant-a", { search: "alfa" });
+
+    expect(page.total).toBe(1);
+    expect(page.rows.map((party) => party.id)).toEqual(["party-p-1"]);
   });
 
   it("lista empresas sem usar o admin client", async () => {
     mocks.failAdminClient = true;
 
-    const parties = await listTenantParties("tenant-a");
+    const page = await listTenantParties("tenant-a");
 
-    expect(parties.map((party) => party.id)).toEqual([
+    expect(page.rows.map((party) => party.id)).toEqual([
       "party-a",
       "party-a-late",
     ]);

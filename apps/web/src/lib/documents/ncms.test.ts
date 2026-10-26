@@ -83,15 +83,71 @@ function validPayload(overrides: { code?: string; description?: string } = {}) {
   };
 }
 
+function seedPagination(): FakeSupabase {
+  return new FakeSupabase({
+    ncms: [
+      ncmSeed({
+        id: "ncm-p-1",
+        tenantId: "tenant-a",
+        code: "10000001",
+        description: "Soja em grãos",
+      }),
+      ncmSeed({
+        id: "ncm-p-2",
+        tenantId: "tenant-a",
+        code: "10000002",
+        description: "Milho em grãos",
+      }),
+      ncmSeed({
+        id: "ncm-p-3",
+        tenantId: "tenant-a",
+        code: "10000003",
+        description: "Café torrado",
+      }),
+      ncmSeed({
+        id: "ncm-p-4",
+        tenantId: "tenant-a",
+        code: "10000004",
+        description: "Açúcar refinado",
+      }),
+      ncmSeed({
+        id: "ncm-p-5",
+        tenantId: "tenant-a",
+        code: "10000005",
+        description: "Algodão em pluma",
+      }),
+      ncmSeed({
+        id: "ncm-p-6",
+        tenantId: "tenant-a",
+        code: "10000006",
+        description: "Café 100% solúvel",
+      }),
+      ncmSeed({
+        id: "ncm-p-7",
+        tenantId: "tenant-a",
+        code: "10000007",
+        description: "Café 100X solúvel",
+      }),
+      ncmSeed({
+        id: "ncm-p-b",
+        tenantId: "tenant-b",
+        code: "10000000",
+        description: "Soja em grãos",
+      }),
+    ],
+  });
+}
+
 describe("listTenantNcms", () => {
   it("lista somente as NCMs do tenant ordenadas por código", async () => {
-    const ncms = await listTenantNcms("tenant-a");
+    const page = await listTenantNcms("tenant-a");
 
-    expect(ncms.map((ncm) => ncm.code)).toEqual(["12345678", "99999999"]);
-    expect(ncms.map((ncm) => ncm.id)).toEqual(["ncm-a-1", "ncm-a-2"]);
-    expect(ncms).not.toContainEqual(
+    expect(page.rows.map((ncm) => ncm.code)).toEqual(["12345678", "99999999"]);
+    expect(page.rows.map((ncm) => ncm.id)).toEqual(["ncm-a-1", "ncm-a-2"]);
+    expect(page.rows).not.toContainEqual(
       expect.objectContaining({ id: "ncm-b-1" }),
     );
+    expect(page.total).toBe(2);
 
     const query = admin.queries.find((entry) => entry.table === "ncms");
     expect(query?.filters).toContainEqual({
@@ -101,8 +157,81 @@ describe("listTenantNcms", () => {
     });
   });
 
-  it("retorna lista vazia quando o tenant não possui NCMs", async () => {
-    await expect(listTenantNcms("tenant-c")).resolves.toEqual([]);
+  it("pagina por padrão em 1 com 20 itens e total global", async () => {
+    mocks.readClient = seedPagination();
+
+    const page = await listTenantNcms("tenant-a");
+
+    expect(page.page).toBe(1);
+    expect(page.pageSize).toBe(20);
+    expect(page.rows).toHaveLength(7);
+    expect(page.total).toBe(7);
+    expect(page.totalPages).toBe(1);
+  });
+
+  it("devolve a página e o tamanho solicitados mantendo o total global", async () => {
+    mocks.readClient = seedPagination();
+
+    const page = await listTenantNcms("tenant-a", { page: 2, pageSize: 5 });
+
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(5);
+    expect(page.total).toBe(7);
+    expect(page.totalPages).toBe(2);
+    expect(page.rows.map((ncm) => ncm.code)).toEqual([
+      "10000006",
+      "10000007",
+    ]);
+  });
+
+  it("busca por descrição sem diferenciar maiúsculas e minúsculas", async () => {
+    mocks.readClient = seedPagination();
+
+    const page = await listTenantNcms("tenant-a", { search: "  CAFÉ  " });
+
+    expect(page.total).toBe(3);
+    expect(page.rows.map((ncm) => ncm.id)).toEqual([
+      "ncm-p-3",
+      "ncm-p-6",
+      "ncm-p-7",
+    ]);
+  });
+
+  it("busca também pelo código", async () => {
+    mocks.readClient = seedPagination();
+
+    const page = await listTenantNcms("tenant-a", { search: "10000006" });
+
+    expect(page.rows.map((ncm) => ncm.id)).toEqual(["ncm-p-6"]);
+    expect(page.total).toBe(1);
+  });
+
+  it("escapa % e _ para que a busca trate os caracteres como literais", async () => {
+    mocks.readClient = seedPagination();
+
+    const percent = await listTenantNcms("tenant-a", { search: "100%" });
+    expect(percent.rows.map((ncm) => ncm.id)).toEqual(["ncm-p-6"]);
+
+    const underscore = await listTenantNcms("tenant-a", { search: "café_100" });
+    expect(underscore.rows).toHaveLength(0);
+    expect(underscore.total).toBe(0);
+  });
+
+  it("isola o total por tenant mesmo com busca", async () => {
+    mocks.readClient = seedPagination();
+
+    const page = await listTenantNcms("tenant-a", { search: "soja" });
+
+    expect(page.rows.map((ncm) => ncm.id)).toEqual(["ncm-p-1"]);
+    expect(page.total).toBe(1);
+  });
+
+  it("retorna página vazia quando o tenant não possui NCMs", async () => {
+    const page = await listTenantNcms("tenant-c");
+
+    expect(page.rows).toEqual([]);
+    expect(page.total).toBe(0);
+    expect(page.totalPages).toBe(1);
   });
 
   it("propaga erro do banco ao listar", async () => {
@@ -116,9 +245,9 @@ describe("listTenantNcms", () => {
   it("lista NCMs sem usar o admin client", async () => {
     mocks.failAdminClient = true;
 
-    const ncms = await listTenantNcms("tenant-a");
+    const page = await listTenantNcms("tenant-a");
 
-    expect(ncms.map((ncm) => ncm.id)).toEqual(["ncm-a-1", "ncm-a-2"]);
+    expect(page.rows.map((ncm) => ncm.id)).toEqual(["ncm-a-1", "ncm-a-2"]);
   });
 });
 

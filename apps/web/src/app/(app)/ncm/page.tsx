@@ -10,20 +10,27 @@ import {
 } from "@/components/ui/card";
 import { getAuthContext } from "@/lib/auth";
 import { formatNcmCode, listTenantNcms, type NcmRow } from "@/lib/documents";
+import { buildPage, DEFAULT_PAGE_SIZE, type Page } from "@/lib/pagination";
 import { cn, formatDate } from "@/lib/utils";
+import { ListFilters } from "@/components/ui/list-filters";
+import { Pagination } from "@/components/ui/pagination";
 
 export default async function NcmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; page?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const auth = await getAuthContext();
+  const hasFilters = Boolean(params.q?.trim());
 
-  let ncms: NcmRow[] = [];
+  let ncmPage: Page<NcmRow> = buildPage<NcmRow>([], 0, 1, DEFAULT_PAGE_SIZE);
   let error: string | null = null;
   try {
-    ncms = await listTenantNcms(auth.tenantId);
+    ncmPage = await listTenantNcms(auth.tenantId, {
+      page: params.page,
+      search: params.q,
+    });
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -64,71 +71,112 @@ export default async function NcmPage({
             <CardDescription>{error}</CardDescription>
           </CardHeader>
         </Card>
-      ) : ncms.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Nenhuma NCM cadastrada</CardTitle>
-            <CardDescription>
-              Cadastre o primeiro código NCM/HS para este tenant.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>{createButton}</CardContent>
-        </Card>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {ncms.length} {ncms.length === 1 ? "NCM" : "NCMs"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="border-y bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Código</th>
-                  <th className="px-6 py-3 font-medium">Descrição</th>
-                  <th className="px-6 py-3 font-medium">Atualizado em</th>
-                  <th className="px-6 py-3 font-medium">
-                    <span className="sr-only">Ações</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {ncms.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b last:border-0 hover:bg-muted/30"
+        <>
+          <ListFilters
+            action="/ncm"
+            searchValue={params.q}
+            searchPlaceholder="Buscar por código ou descrição"
+            clearHref="/ncm"
+          />
+
+          {ncmPage.total === 0 ? (
+            hasFilters ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Nenhum resultado</CardTitle>
+                  <CardDescription>
+                    Nenhuma NCM corresponde aos filtros aplicados.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Link
+                    href="/ncm"
+                    className={cn(buttonVariants({ variant: "outline" }))}
                   >
-                    <td className="px-6 py-3 font-medium">
-                      <Link
-                        href={`/ncm/${row.id}`}
-                        className="hover:underline"
+                    Limpar filtros
+                  </Link>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Nenhuma NCM cadastrada
+                  </CardTitle>
+                  <CardDescription>
+                    Cadastre o primeiro código NCM/HS para este tenant.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>{createButton}</CardContent>
+              </Card>
+            )
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {ncmPage.total} {ncmPage.total === 1 ? "NCM" : "NCMs"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead className="border-y bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-6 py-3 font-medium">Código</th>
+                      <th className="px-6 py-3 font-medium">Descrição</th>
+                      <th className="px-6 py-3 font-medium">Atualizado em</th>
+                      <th className="px-6 py-3 font-medium">
+                        <span className="sr-only">Ações</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ncmPage.rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="border-b last:border-0 hover:bg-muted/30"
                       >
-                        {formatNcmCode(row.code)}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-3 text-muted-foreground">
-                      {row.description}
-                    </td>
-                    <td className="px-6 py-3 text-muted-foreground">
-                      {formatDate(row.updated_at)}
-                    </td>
-                    <td className="px-6 py-3 text-right">
-                      <Link
-                        href={`/ncm/${row.id}`}
-                        className={cn(
-                          buttonVariants({ variant: "outline", size: "sm" }),
-                        )}
-                      >
-                        Editar
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                        <td className="px-6 py-3 font-medium">
+                          <Link
+                            href={`/ncm/${row.id}`}
+                            className="hover:underline"
+                          >
+                            {formatNcmCode(row.code)}
+                          </Link>
+                        </td>
+                        <td className="px-6 py-3 text-muted-foreground">
+                          {row.description}
+                        </td>
+                        <td className="px-6 py-3 text-muted-foreground">
+                          {formatDate(row.updated_at)}
+                        </td>
+                        <td className="px-6 py-3 text-right">
+                          <Link
+                            href={`/ncm/${row.id}`}
+                            className={cn(
+                              buttonVariants({ variant: "outline", size: "sm" }),
+                            )}
+                          >
+                            Editar
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+
+          {ncmPage.total > 0 && (
+            <Pagination
+              page={ncmPage.page}
+              totalPages={ncmPage.totalPages}
+              pathname="/ncm"
+              searchParams={params}
+            />
+          )}
+        </>
       )}
     </div>
   );

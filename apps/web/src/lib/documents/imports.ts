@@ -7,6 +7,7 @@ import { ImportNotFoundError } from "@/lib/documents/parties";
 import {
   displayImportReference,
   fallbackSavedReference,
+  IMPORT_STATUS_LABELS,
   normalizeImportKey,
   type ImportDetail,
   type ImportDocumentRow,
@@ -18,6 +19,15 @@ import {
   listImportStoragePaths,
   moveDocumentsToImport,
 } from "@/lib/documents/documents";
+import {
+  buildPage,
+  escapeLike,
+  normalizePage,
+  normalizePageSize,
+  normalizeSearch,
+  type ListOptions,
+  type Page,
+} from "@/lib/pagination";
 
 export type {
   ImportDetail,
@@ -113,25 +123,51 @@ async function findImportByKeys(params: {
   return null;
 }
 
+export type ImportListOptions = ListOptions & { status?: string | null };
+
+function normalizeImportStatus(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return Object.prototype.hasOwnProperty.call(IMPORT_STATUS_LABELS, value)
+    ? value
+    : null;
+}
+
 /**
  * Lista imports do tenant com o client do usuário (RLS aplicado).
  * O filtro por tenant_id permanece como defesa em profundidade.
  */
 export async function listTenantImports(
   tenantId: string,
-): Promise<ImportRow[]> {
+  options: ImportListOptions = {},
+): Promise<Page<ImportRow>> {
+  const page = normalizePage(options.page);
+  const pageSize = normalizePageSize(options.pageSize);
+  const search = normalizeSearch(options.search);
+  const status = normalizeImportStatus(options.status);
+  const from = (page - 1) * pageSize;
+
   const supabase = await getReadClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("imports")
-    .select(IMPORT_LIST_SELECT)
-    .eq("tenant_id", tenantId)
-    .order("created_at", { ascending: false });
+    .select(IMPORT_LIST_SELECT, { count: "exact" })
+    .eq("tenant_id", tenantId);
+
+  if (search) {
+    query = query.ilike("reference_number", `%${escapeLike(search)}%`);
+  }
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, from + pageSize - 1);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as ImportRow[];
+  return buildPage((data ?? []) as ImportRow[], count ?? 0, page, pageSize);
 }
 
 export async function deleteImportRecord(

@@ -6,7 +6,7 @@ export type FakeTables = Record<string, FakeRow[]>;
 
 export type FakeFilter = {
   column: string;
-  operator: "eq" | "in";
+  operator: "eq" | "in" | "ilike" | "or";
   value: unknown;
 };
 
@@ -24,7 +24,75 @@ export type FakeError = {
 export type FakeResponse = {
   data: unknown;
   error: FakeError | null;
+  count?: number | null;
 };
+
+type FakeOrCondition = {
+  column: string;
+  pattern: string;
+};
+
+/**
+ * Converte um padrão SQL LIKE em RegExp ancorada e case-insensitive.
+ * `%` casa qualquer sequência, `_` casa um caractere e `\` escapa ambos.
+ */
+function likeToRegExp(pattern: string): RegExp {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index] ?? "";
+    if (char === "\\") {
+      const next = pattern[index + 1];
+      if (next !== undefined) {
+        source += next.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        index += 1;
+        continue;
+      }
+      source += "\\\\";
+      continue;
+    }
+    if (char === "%") {
+      source += ".*";
+      continue;
+    }
+    if (char === "_") {
+      source += ".";
+      continue;
+    }
+    source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`, "i");
+}
+
+function matchesLike(value: unknown, pattern: string): boolean {
+  if (value == null) return false;
+  const text = typeof value === "string" ? value : String(value);
+  return likeToRegExp(pattern).test(text);
+}
+
+/** Aceita apenas a sintaxe usada no projeto: `col.ilike.%termo%,outra.ilike.%termo%`. */
+function parseOrExpression(expression: string): FakeOrCondition[] {
+  const conditions = expression
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const match = /^([A-Za-z0-9_]+)\.ilike\.(.*)$/.exec(part);
+      if (!match) {
+        throw new Error(
+          `FakeSupabase: expressão .or() não suportada ("${part}"). Use "coluna.ilike.padrão" separado por vírgulas.`,
+        );
+      }
+      return { column: match[1] ?? "", pattern: match[2] ?? "" };
+    });
+
+  if (conditions.length === 0) {
+    throw new Error(
+      "FakeSupabase: expressão .or() vazia; informe ao menos uma condição.",
+    );
+  }
+
+  return conditions;
+}
 
 type Operation = FakeQueryLog["operation"];
 
@@ -158,6 +226,8 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
   private filters: FakeFilter[] = [];
   private orderBy: { column: string; ascending: boolean } | null = null;
   private limitCount: number | null = null;
+  private rangeBounds: { from: number; to: number } | null = null;
+  private countMode: "exact" | null = null;
   private returnsRows = false;
   private response: FakeResponse | null = null;
 
@@ -166,11 +236,12 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     private readonly table: string,
   ) {}
 
-  select(columns?: string): this {
+  select(columns?: string, options?: { count?: "exact" }): this {
     if (this.operation !== "select") {
       this.returnsRows = true;
     }
     this.columns = columns;
+    this.countMode = options?.count ?? null;
     return this;
   }
 
@@ -201,6 +272,20 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
+  ilike(column: string, pattern: string): this {
+    this.filters.push({ column, operator: "ilike", value: pattern });
+    return this;
+  }
+
+  or(expression: string): this {
+    this.filters.push({
+      column: "",
+      operator: "or",
+      value: parseOrExpression(expression),
+    });
+    return this;
+  }
+
   order(column: string, options?: { ascending?: boolean }): this {
     this.orderBy = { column, ascending: options?.ascending ?? true };
     return this;
@@ -208,6 +293,11 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
 
   limit(count: number): this {
     this.limitCount = count;
+    return this;
+  }
+
+  range(from: number, to: number): this {
+    this.rangeBounds = { from, to };
     return this;
   }
 
@@ -261,7 +351,8 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
 
     const rows = this.db.rows(this.table);
     const matched = rows.filter((row) => this.matches(row));
-    const ordered = this.applyLimit(this.applyOrder(matched));
+    const total = matched.length;
+    const ordered = this.applyLimit(this.applyRange(this.applyOrder(matched)));
 
     let data: unknown = null;
 
@@ -313,17 +404,28 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
       operation: this.operation,
       filters: [...this.filters],
     });
-    this.response = { data, error: null };
+    this.response =
+      this.operation === "select" && this.countMode === "exact"
+        ? { data, error: null, count: total }
+        : { data, error: null };
     return this.response;
   }
 
   private matches(row: FakeRow): boolean {
     return this.filters.every((filter) => {
       const value = row[filter.column];
-      if (filter.operator === "eq") {
-        return value === filter.value;
+      switch (filter.operator) {
+        case "eq":
+          return value === filter.value;
+        case "in":
+          return (filter.value as readonly unknown[]).includes(value);
+        case "ilike":
+          return matchesLike(value, filter.value as string);
+        case "or":
+          return (filter.value as FakeOrCondition[]).some((condition) =>
+            matchesLike(row[condition.column], condition.pattern),
+          );
       }
-      return (filter.value as readonly unknown[]).includes(value);
     });
   }
 
@@ -344,6 +446,12 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
   private applyLimit(rows: FakeRow[]): FakeRow[] {
     if (this.limitCount == null) return rows;
     return rows.slice(0, this.limitCount);
+  }
+
+  private applyRange(rows: FakeRow[]): FakeRow[] {
+    if (!this.rangeBounds) return rows;
+    const { from, to } = this.rangeBounds;
+    return rows.slice(from, to + 1);
   }
 
   private project(row: FakeRow): FakeRow {

@@ -298,10 +298,11 @@ afterEach(() => {
 
 describe("leituras públicas de documents", () => {
   it("lista somente as importações do tenant com o client de leitura", async () => {
-    const imports = await listTenantImports(TENANT_A);
+    const page = await listTenantImports(TENANT_A);
 
-    expect(imports.map((row) => row.id)).toEqual(["import-a"]);
-    expect(imports[0]).toMatchObject({
+    expect(page.rows.map((row) => row.id)).toEqual(["import-a"]);
+    expect(page.total).toBe(1);
+    expect(page.rows[0]).toMatchObject({
       reference_number: "REF-A",
       status: "awaiting_review",
       supplier_name: "Fornecedor A",
@@ -341,10 +342,11 @@ describe("leituras públicas de documents", () => {
   });
 
   it("lista somente as empresas do tenant", async () => {
-    const parties = await listTenantParties(TENANT_A);
+    const page = await listTenantParties(TENANT_A);
 
-    expect(parties.map((party) => party.id)).toEqual(["party-a"]);
-    expect(parties[0]).toMatchObject({
+    expect(page.rows.map((party) => party.id)).toEqual(["party-a"]);
+    expect(page.total).toBe(1);
+    expect(page.rows[0]).toMatchObject({
       name: "Empresa A",
       cnpj: "11.222.333/0001-81",
       address: {
@@ -374,10 +376,11 @@ describe("leituras públicas de documents", () => {
   });
 
   it("lista somente as NCMs do tenant", async () => {
-    const ncms = await listTenantNcms(TENANT_A);
+    const page = await listTenantNcms(TENANT_A);
 
-    expect(ncms.map((ncm) => ncm.id)).toEqual(["ncm-a"]);
-    expect(ncms[0]).toMatchObject({
+    expect(page.rows.map((ncm) => ncm.id)).toEqual(["ncm-a"]);
+    expect(page.total).toBe(1);
+    expect(page.rows[0]).toMatchObject({
       code: "12345678",
       description: "Produto A",
     });
