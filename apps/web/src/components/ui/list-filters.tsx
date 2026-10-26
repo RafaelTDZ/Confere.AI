@@ -3,7 +3,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export type FilterOption = { value: string; label: string };
+type FilterOption = { value: string; label: string };
 
 export type ListFiltersProps = {
   action: string;
