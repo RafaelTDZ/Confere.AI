@@ -38,8 +38,8 @@ supabase/
 | `/login` | Público | Login em 2 etapas (email → senha) |
 | `/signup` | Público | Cadastro com nome, email e senha |
 | `/analise` | Protegido | Nova análise de importação (dropzone + orientações) |
-| `/empresas` | Protegido | Empresas do tenant; define o consignee padrão (owner/admin) |
-| `/configuracoes` | Super-admin (`ADMIN_EMAILS`) | Provedor e modelo de IA para todos os usuários + teste de conexão |
+| `/empresas` | Protegido | Empresas do tenant (consignee/notify cadastrados pelas análises) |
+| `/configuracoes` | Owner/admin / super-admin | Consignee padrão do tenant; provedor/modelo de IA global só para super-admin (`ADMIN_EMAILS`) |
 | `/api/auth/check-email` | Público | Verifica se email já está cadastrado |
 | `/api/ai/health` | Autenticado | Smoke da integração de IA (`generateText` no provider ativo) |
 | `/api/ai/analyze` | Autenticado | Enfileira o upload e responde `202` com `jobId` (classificação/extração em background) |

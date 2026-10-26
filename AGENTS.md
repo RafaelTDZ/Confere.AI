@@ -121,12 +121,12 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Provisionamento automático de tenant | Funcional (trigger no signup) |
 | Página `/analise` | Dropzone → `/api/ai/analyze` (202 + job), status via `/api/ai/jobs/[jobId]` e extrações persistidas |
 | Página `/importacoes` | Lista `imports` do tenant (RLS com o client autenticado) |
-| Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]`; define o **consignee padrão** (owner/admin) em `/empresas` |
+| Página `/empresas` | Lista as parties do tenant (RLS); edição em `/empresas/[id]` |
 | Página `/ncm` | Lista (RLS) / cria / edita NCMs do tenant (`/ncm/nova`, `/ncm/[id]`) |
-| Página `/configuracoes` | Super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global e teste de conexão |
+| Página `/configuracoes` | Owner/admin: consignee padrão do tenant; super-admin (`ADMIN_EMAILS`): provedor/modelo de IA global + teste de conexão |
 | Página `/admin` | Super-admin (`ADMIN_EMAILS`): painel global somente leitura (tenants, contadores, uso de IA, detalhe por tenant auditado) |
 | Página `/produtos` | Placeholder (CRUD pendente) |
-| Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para admin) |
+| Shell autenticado | Sidebar: Nova análise, Importações, Empresas, NCM, Produtos (+ Configurações para owner/admin) |
 | IA (Fireworks + OpenRouter) | Fireworks padrão (`deepseek-flash-latest`, GLM alternativa; PDF→imagens) + OpenRouter opcional; `/api/ai/health` |
 | Observabilidade | OTel (`@vercel/otel` no `instrumentation.ts`); spans `ai.analyze`/`ai.job`/`ai.classify`/`ai.extract_*`/`ai.persist_extraction` e métricas por capability |
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
@@ -202,7 +202,7 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
 - **Consignee padrão**: `tenant_settings.default_consignee_party_id` (uma party do tenant) é
   vinculado a todas as importações pelo pipeline; o documento é comparado campo a campo e as
   divergências ficam em `imports.consignee_divergences` (o detalhe recalcula ao vivo). Configuração
-  em `/empresas` (owner/admin); o notify continua por documento.
+  em `/configuracoes` (owner/admin); o notify continua por documento.
 - **Painel `/admin` (super-admin)**: somente leitura, gate por `ADMIN_EMAILS` (`isSuperAdmin`),
   leitura cross-tenant via `createSupabaseAdminClient()` e auditoria em `audit_logs`
   (`action = admin.view_tenant`) no tenant do admin. **RLS intocada**; os módulos `lib/admin/*`
