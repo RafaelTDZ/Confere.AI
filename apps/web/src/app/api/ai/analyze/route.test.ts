@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/ai/analyze/route";
-import { AiConfigError } from "@/lib/ai";
 import { UnauthorizedError } from "@/lib/auth";
-import { ImportNotFoundError } from "@/lib/documents";
 
 const mocks = vi.hoisted(() => ({
   getAuthContext: vi.fn(),
-  runAnalyzePipeline: vi.fn(),
+  createAiJob: vi.fn(),
+  processAiJobById: vi.fn(),
   persistAiLog: vi.fn(),
   getMonthlyTokenUsage: vi.fn(),
   consumeRateLimit: vi.fn(),
   getAnalyzeRateLimit: vi.fn(),
   getAnalyzeRateWindowSeconds: vi.fn(),
   getMonthlyTokenQuota: vi.fn(),
+  afterCallbacks: [] as Array<() => unknown>,
 }));
 
 vi.mock("next/server", () => ({
@@ -27,6 +27,9 @@ vi.mock("next/server", () => ({
       headers: new Headers(init?.headers),
       json: async () => body,
     }),
+  },
+  after: (callback: () => unknown) => {
+    mocks.afterCallbacks.push(callback);
   },
 }));
 
@@ -64,9 +67,16 @@ vi.mock("@/lib/documents", () => {
     ImportValidationError,
     getMonthlyTokenUsage: mocks.getMonthlyTokenUsage,
     persistAiLog: mocks.persistAiLog,
-    runAnalyzePipeline: mocks.runAnalyzePipeline,
   };
 });
+
+vi.mock("@/lib/documents/ai-jobs", () => ({
+  createAiJob: mocks.createAiJob,
+}));
+
+vi.mock("@/lib/documents/ai-worker", () => ({
+  processAiJobById: mocks.processAiJobById,
+}));
 
 vi.mock("@/lib/ai", () => {
   class AiConfigError extends Error {
@@ -89,26 +99,24 @@ vi.mock("@/lib/security/rate-limit", () => ({
 const TENANT_ID = "tenant-1";
 const USER_ID = "user-1";
 const IMPORT_ID = "3f2b8c1a-9d4e-4f7a-8b2c-1d5e6f7a8b9c";
+const JOB_ID = "8a1e2c3d-4b5f-4a6b-8c7d-9e0f1a2b3c4d";
 const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
 
-const PIPELINE_RESULT = {
-  importId: IMPORT_ID,
-  types: ["invoice"],
-  documents: [{ id: "doc-1", docType: "invoice" }],
-  invoice: null,
-  extractionResultId: "extraction-1",
-  pendingParties: [],
-  model: "model-x",
-  latencyMs: 42,
-  deduped: false,
-};
-
-function makeRequest(options: { file?: boolean; importId?: string } = {}) {
+function makeRequest(
+  options: {
+    file?: boolean;
+    importId?: string;
+    type?: string;
+    filename?: string;
+  } = {},
+) {
   const form = new FormData();
   if (options.file !== false) {
     form.append(
       "file",
-      new File([PDF_BYTES], "doc.pdf", { type: "application/pdf" }),
+      new File([PDF_BYTES], options.filename ?? "doc.pdf", {
+        type: options.type ?? "application/pdf",
+      }),
     );
   }
   if (options.importId !== undefined) {
@@ -124,33 +132,47 @@ async function readJson(response: {
   status: number;
   headers: Headers;
   json: () => Promise<unknown>;
-}): Promise<{ status: number; body: unknown; headers: Headers }> {
+}) {
   return {
     status: response.status,
-    body: await response.json(),
+    body: (await response.json()) as Record<string, unknown>,
     headers: response.headers,
   };
 }
 
-function pipelineParams() {
-  return mocks.runAnalyzePipeline.mock.calls[0]?.[0] as {
-    tenantId: string;
-    userId: string;
-    file: File;
-    startedAt: number;
-    importId?: string;
+function jobRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: JOB_ID,
+    tenant_id: TENANT_ID,
+    import_id: null,
+    user_id: USER_ID,
+    status: "queued",
+    storage_path: `${TENANT_ID}/_jobs/${JOB_ID}/doc.pdf`,
+    file_name: "doc.pdf",
+    media_type: "application/pdf",
+    size_bytes: PDF_BYTES.byteLength,
+    sha256: "digest",
+    attempts: 0,
+    error_message: null,
+    result: null,
+    created_at: "2026-10-26T12:00:00.000Z",
+    started_at: null,
+    finished_at: null,
+    ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.afterCallbacks.length = 0;
   mocks.getAuthContext.mockResolvedValue({
     userId: USER_ID,
     email: "user@example.com",
     tenantId: TENANT_ID,
     role: "member",
   });
-  mocks.runAnalyzePipeline.mockResolvedValue(PIPELINE_RESULT);
+  mocks.createAiJob.mockResolvedValue(jobRow());
+  mocks.processAiJobById.mockResolvedValue(undefined);
   mocks.persistAiLog.mockResolvedValue(undefined);
   mocks.consumeRateLimit.mockResolvedValue({
     allowed: true,
@@ -177,10 +199,10 @@ describe("POST /api/ai/analyze", () => {
 
     expect(status).toBe(401);
     expect(body).toEqual({ error: "Usuário não autenticado" });
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
   });
 
-  it("retorna 403 para perfil viewer sem chamar o pipeline", async () => {
+  it("retorna 403 para perfil viewer sem criar job", async () => {
     mocks.getAuthContext.mockResolvedValue({
       userId: USER_ID,
       email: "user@example.com",
@@ -192,7 +214,7 @@ describe("POST /api/ai/analyze", () => {
 
     expect(status).toBe(403);
     expect(body).toEqual({ error: "Perfil viewer não pode enviar documentos" });
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
   });
 
   it("retorna 429 com Retry-After quando o rate limit bloqueia", async () => {
@@ -211,7 +233,7 @@ describe("POST /api/ai/analyze", () => {
       error: "Muitas análises em pouco tempo. Tente novamente mais tarde.",
     });
     expect(headers.get("Retry-After")).toBe("120");
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
     expect(mocks.consumeRateLimit).toHaveBeenCalledWith({
       bucket: `analyze:tenant:${TENANT_ID}`,
       limit: 30,
@@ -226,15 +248,14 @@ describe("POST /api/ai/analyze", () => {
     const failure = new Error("banco indisponível");
     mocks.consumeRateLimit.mockRejectedValue(failure);
 
-    const { status, body } = await readJson(await POST(makeRequest()));
+    const { status } = await readJson(await POST(makeRequest()));
 
-    expect(status).toBe(200);
-    expect(body).toEqual(PIPELINE_RESULT);
+    expect(status).toBe(202);
     expect(consoleError).toHaveBeenCalledWith(
       "[api/ai/analyze] rate limit indisponível",
       failure,
     );
-    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+    expect(mocks.createAiJob).toHaveBeenCalledTimes(1);
   });
 
   it("retorna 429 com Retry-After quando a quota mensal é atingida", async () => {
@@ -252,7 +273,7 @@ describe("POST /api/ai/analyze", () => {
     });
     expect(headers.get("Retry-After")).toBe("734400");
     expect(mocks.getMonthlyTokenUsage).toHaveBeenCalledWith(TENANT_ID);
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
     expect(mocks.consumeRateLimit).toHaveBeenCalledTimes(1);
   });
 
@@ -263,26 +284,14 @@ describe("POST /api/ai/analyze", () => {
     const failure = new Error("ai_logs indisponível");
     mocks.getMonthlyTokenUsage.mockRejectedValue(failure);
 
-    const { status, body } = await readJson(await POST(makeRequest()));
+    const { status } = await readJson(await POST(makeRequest()));
 
-    expect(status).toBe(200);
-    expect(body).toEqual(PIPELINE_RESULT);
-    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+    expect(status).toBe(202);
     expect(consoleError).toHaveBeenCalledWith(
       "[api/ai/analyze] quota indisponível",
       failure,
     );
-  });
-
-  it("retorna 200 quando o uso está abaixo da quota", async () => {
-    mocks.getMonthlyTokenUsage.mockResolvedValue(999);
-    mocks.getMonthlyTokenQuota.mockReturnValue(1000);
-
-    const { status, body } = await readJson(await POST(makeRequest()));
-
-    expect(status).toBe(200);
-    expect(body).toEqual(PIPELINE_RESULT);
-    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+    expect(mocks.createAiJob).toHaveBeenCalledTimes(1);
   });
 
   it("retorna 400 quando o campo file está ausente", async () => {
@@ -292,7 +301,7 @@ describe("POST /api/ai/analyze", () => {
 
     expect(status).toBe(400);
     expect(body).toEqual({ error: "Campo file é obrigatório" });
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
   });
 
   it("retorna 400 quando o importId é inválido", async () => {
@@ -302,119 +311,127 @@ describe("POST /api/ai/analyze", () => {
 
     expect(status).toBe(400);
     expect(body).toEqual({ error: "Importação inválida" });
-    expect(mocks.runAnalyzePipeline).not.toHaveBeenCalled();
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
   });
 
-  it("retorna 200 e repassa os dados da requisição sem importId", async () => {
-    const { status, body } = await readJson(await POST(makeRequest()));
+  it("retorna 400 quando o tipo do arquivo não é suportado", async () => {
+    const { status, body } = await readJson(
+      await POST(makeRequest({ type: "text/plain", filename: "doc.txt" })),
+    );
 
-    expect(status).toBe(200);
-    expect(body).toEqual(PIPELINE_RESULT);
-    expect(mocks.runAnalyzePipeline).toHaveBeenCalledTimes(1);
+    expect(status).toBe(400);
+    expect(body).toEqual({
+      error: "Tipo de arquivo não suportado. Envie PDF, PNG, JPG ou WEBP.",
+    });
+    expect(mocks.createAiJob).not.toHaveBeenCalled();
+  });
 
-    const params = pipelineParams();
+  it("cria o job e responde 202 sem esperar o pipeline", async () => {
+    const response = await POST(makeRequest());
+    const { status, body } = await readJson(response);
+
+    expect(status).toBe(202);
+    expect(body).toEqual({
+      jobId: JOB_ID,
+      importId: null,
+      status: "queued",
+    });
+
+    const params = mocks.createAiJob.mock.calls[0]?.[0] as {
+      tenantId: string;
+      userId: string;
+      importId?: string;
+      file: {
+        bytes: Uint8Array;
+        filename: string;
+        mediaType: string;
+        digest: string;
+      };
+    };
     expect(params.tenantId).toBe(TENANT_ID);
     expect(params.userId).toBe(USER_ID);
-    expect(params.file).toBeInstanceOf(File);
-    expect(params.file.name).toBe("doc.pdf");
-    expect(params.file.type).toBe("application/pdf");
-    expect(params.startedAt).toEqual(expect.any(Number));
     expect(params.importId).toBeUndefined();
+    expect(params.file.bytes).toEqual(PDF_BYTES);
+    expect(params.file.filename).toBe("doc.pdf");
+    expect(params.file.mediaType).toBe("application/pdf");
+    expect(params.file.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(mocks.processAiJobById).not.toHaveBeenCalled();
+    expect(mocks.afterCallbacks).toHaveLength(1);
   });
 
-  it("retorna 200 e repassa o importId UUID ao pipeline", async () => {
+  it("processa o job no callback do after()", async () => {
+    await POST(makeRequest());
+
+    const callback = mocks.afterCallbacks[0];
+    expect(callback).toBeDefined();
+    await callback?.();
+
+    expect(mocks.processAiJobById).toHaveBeenCalledWith(JOB_ID);
+  });
+
+  it("não deixa o callback do after() rejeitar quando o worker falha", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.processAiJobById.mockRejectedValue(new Error("worker quebrou"));
+
+    await POST(makeRequest());
+
+    const callback = mocks.afterCallbacks[0];
+    await expect(callback?.()).resolves.toBeUndefined();
+    expect(consoleError).toHaveBeenCalledWith(
+      "[api/ai/analyze] worker falhou",
+      expect.any(Error),
+    );
+  });
+
+  it("repassa o importId UUID ao job", async () => {
+    mocks.createAiJob.mockResolvedValue(jobRow({ import_id: IMPORT_ID }));
+
     const { status, body } = await readJson(
       await POST(makeRequest({ importId: IMPORT_ID })),
     );
 
-    expect(status).toBe(200);
-    expect(body).toEqual(PIPELINE_RESULT);
-    expect(mocks.runAnalyzePipeline).toHaveBeenCalledWith(
+    expect(status).toBe(202);
+    expect(body).toMatchObject({ importId: IMPORT_ID });
+    expect(mocks.createAiJob).toHaveBeenCalledWith(
       expect.objectContaining({ importId: IMPORT_ID }),
     );
   });
 
-  it("retorna 404 quando o pipeline lança ImportNotFoundError", async () => {
-    mocks.runAnalyzePipeline.mockRejectedValue(new ImportNotFoundError());
-
-    const { status, body } = await readJson(
-      await POST(makeRequest({ importId: IMPORT_ID })),
-    );
-
-    expect(status).toBe(404);
-    expect(body).toEqual({ error: "Importação não encontrada" });
-    expect(mocks.persistAiLog).not.toHaveBeenCalled();
-  });
-
-  it("retorna 503 quando o pipeline lança AiConfigError", async () => {
-    mocks.runAnalyzePipeline.mockRejectedValue(
-      new AiConfigError("OPENROUTER_API_KEY ausente"),
-    );
-
-    const { status, body } = await readJson(await POST(makeRequest()));
-
-    expect(status).toBe(503);
-    expect(body).toEqual({ error: "OPENROUTER_API_KEY ausente" });
-    expect(mocks.persistAiLog).not.toHaveBeenCalled();
-  });
-
-  it("retorna 422 com mensagem amigável quando o PDF não pode ser lido", async () => {
+  it("retorna 502 e registra o log de erro quando a criação do job falha", async () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    mocks.runAnalyzePipeline.mockRejectedValue(
-      new Error("Failed to parse PDF"),
-    );
-
-    const { status, body } = await readJson(await POST(makeRequest()));
-
-    expect(status).toBe(422);
-    expect(body).toEqual({
-      error:
-        "Não foi possível ler o PDF. Tente reenviar, ou use PNG/JPG do documento.",
-    });
-    expect(consoleError).not.toHaveBeenCalled();
-    expect(mocks.persistAiLog).not.toHaveBeenCalled();
-  });
-
-  it("retorna 502 e registra o log de erro quando o pipeline falha", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    mocks.runAnalyzePipeline.mockRejectedValue(new Error("boom"));
+    mocks.createAiJob.mockRejectedValue(new Error("storage offline"));
 
     const { status, body } = await readJson(
       await POST(makeRequest({ importId: IMPORT_ID })),
     );
 
     expect(status).toBe(502);
-    expect(body).toEqual({ error: "boom" });
+    expect(body).toEqual({ error: "storage offline" });
     expect(consoleError).toHaveBeenCalled();
-    expect(mocks.persistAiLog).toHaveBeenCalledTimes(1);
+    expect(mocks.afterCallbacks).toHaveLength(0);
     expect(mocks.persistAiLog).toHaveBeenCalledWith(
       expect.objectContaining({
         tenantId: TENANT_ID,
         capability: "analyze",
         model: "unknown",
         status: "error",
-        errorMessage: "boom",
+        errorMessage: "storage offline",
         importId: IMPORT_ID,
       }),
     );
   });
 
-  it("retorna 502 sem importId e registra o log sem vínculo", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-    mocks.runAnalyzePipeline.mockRejectedValue(new Error("boom"));
+  it("registra o log de erro sem vínculo quando não há importId", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createAiJob.mockRejectedValue(new Error("boom"));
 
-    const { status, body } = await readJson(await POST(makeRequest()));
+    const { status } = await readJson(await POST(makeRequest()));
 
     expect(status).toBe(502);
-    expect(body).toEqual({ error: "boom" });
-    expect(consoleError).toHaveBeenCalled();
-    expect(mocks.persistAiLog).toHaveBeenCalledTimes(1);
 
     const logParams = mocks.persistAiLog.mock.calls[0]?.[0] as
       | { importId?: string }

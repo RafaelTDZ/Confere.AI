@@ -1,13 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { AiConfigError } from "@/lib/ai";
+import {
+  assertAllowedFile,
+  normalizeMediaType,
+  sha256Hex,
+} from "@/lib/ai/file-utils";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   getMonthlyTokenUsage,
   ImportNotFoundError,
   ImportValidationError,
   persistAiLog,
-  runAnalyzePipeline,
 } from "@/lib/documents";
+import { createAiJob } from "@/lib/documents/ai-jobs";
+import { processAiJobById } from "@/lib/documents/ai-worker";
 import {
   consumeRateLimit,
   getAnalyzeRateLimit,
@@ -47,7 +53,7 @@ export async function POST(request: Request) {
   const started = Date.now();
   let tenantIdForLog: string | null = null;
   let importIdForLog: string | undefined;
-  let modelId = "unknown";
+  const modelId = "unknown";
 
   try {
     const auth = await getAuthContext();
@@ -118,16 +124,32 @@ export async function POST(request: Request) {
     const importId = parseOptionalImportId(form.get("importId"));
     importIdForLog = importId;
 
-    const result = await runAnalyzePipeline({
+    const filename = file.name || "documento";
+    const mediaType = normalizeMediaType(file.type, filename);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    assertAllowedFile(bytes.byteLength, mediaType);
+    const digest = sha256Hex(bytes);
+
+    const job = await createAiJob({
       tenantId: auth.tenantId,
       userId: auth.userId,
-      file,
-      startedAt: started,
       importId,
+      file: { bytes, filename, mediaType, digest },
     });
-    modelId = result.model;
 
-    return NextResponse.json(result);
+    // Responde 202 imediatamente; o pipeline continua após a resposta.
+    after(async () => {
+      try {
+        await processAiJobById(job.id);
+      } catch (error) {
+        console.error("[api/ai/analyze] worker falhou", error);
+      }
+    });
+
+    return NextResponse.json(
+      { jobId: job.id, importId: job.import_id, status: job.status },
+      { status: 202 },
+    );
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return NextResponse.json(

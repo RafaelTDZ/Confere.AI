@@ -107,6 +107,18 @@ export type FakeStorageRemoval = {
   paths: string[];
 };
 
+export type FakeStorageUpload = {
+  bucket: string;
+  path: string;
+  bytes: Uint8Array;
+  options?: { contentType?: string; upsert?: boolean };
+};
+
+export type FakeStorageDownload = {
+  bucket: string;
+  path: string;
+};
+
 export type FakeStorageOptions = {
   removeError?: FakeError | string | null;
 };
@@ -125,7 +137,15 @@ function toFakeError(error: FakeError | string): FakeError {
 
 export class FakeStorageClient {
   readonly removals: FakeStorageRemoval[] = [];
+  readonly uploads: FakeStorageUpload[] = [];
+  readonly downloads: FakeStorageDownload[] = [];
+  readonly files = new Map<
+    string,
+    { bytes: Uint8Array; mediaType: string }
+  >();
   removeError: FakeError | null;
+  uploadError: FakeError | null = null;
+  downloadError: FakeError | null = null;
 
   constructor(options: FakeStorageOptions = {}) {
     this.removeError = options.removeError
@@ -140,6 +160,18 @@ export class FakeStorageClient {
       data: Array<{ name: string }> | null;
       error: FakeError | null;
     }>;
+    upload: (
+      path: string,
+      bytes: Uint8Array,
+      options?: { contentType?: string; upsert?: boolean },
+    ) => Promise<{
+      data: { path: string } | null;
+      error: FakeError | null;
+    }>;
+    download: (path: string) => Promise<{
+      data: Blob | null;
+      error: FakeError | null;
+    }>;
   } {
     return {
       remove: (paths) => {
@@ -147,8 +179,41 @@ export class FakeStorageClient {
         if (this.removeError) {
           return Promise.resolve({ data: null, error: this.removeError });
         }
+        for (const path of paths) this.files.delete(path);
         return Promise.resolve({
           data: paths.map((path) => ({ name: path })),
+          error: null,
+        });
+      },
+      upload: (path, bytes, options) => {
+        this.uploads.push({ bucket, path, bytes, options });
+        if (this.uploadError) {
+          return Promise.resolve({ data: null, error: this.uploadError });
+        }
+        this.files.set(path, {
+          bytes,
+          mediaType: options?.contentType ?? "application/octet-stream",
+        });
+        return Promise.resolve({ data: { path }, error: null });
+      },
+      download: (path) => {
+        this.downloads.push({ bucket, path });
+        if (this.downloadError) {
+          return Promise.resolve({ data: null, error: this.downloadError });
+        }
+        const file = this.files.get(path);
+        if (!file) {
+          return Promise.resolve({
+            data: null,
+            error: { message: `arquivo ${path} não encontrado` },
+          });
+        }
+        const buffer = file.bytes.buffer.slice(
+          file.bytes.byteOffset,
+          file.bytes.byteOffset + file.bytes.byteLength,
+        ) as ArrayBuffer;
+        return Promise.resolve({
+          data: new Blob([buffer], { type: file.mediaType }),
           error: null,
         });
       },

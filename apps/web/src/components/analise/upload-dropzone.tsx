@@ -17,25 +17,56 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { DocumentType, InvoiceExtraction } from "@/lib/ai/schemas";
+import type { DocumentType } from "@/lib/ai/schemas";
 import {
   DOCUMENT_TYPE_LABELS,
   IMPORT_DOCUMENT_TYPES,
 } from "@/lib/documents/imports-shared";
-import { type PendingParty } from "@/lib/documents/parties-shared";
 
-type AnalyzeResponse = {
-  importId: string;
-  types: DocumentType[];
-  documents: Array<{ id: string; docType: DocumentType }>;
-  invoice: InvoiceExtraction | null;
-  extractionResultId: string | null;
-  pendingParties?: PendingParty[];
-  model: string;
-  latencyMs: number;
-  deduped?: boolean;
+type AnalyzeAccepted = {
+  jobId: string;
+  importId: string | null;
+  status: "queued";
   error?: string;
 };
+
+type JobStatusResponse = {
+  jobId: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  types: DocumentType[];
+  deduped: boolean;
+  errorMessage: string | null;
+  error?: string;
+};
+
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 150;
+
+/** Acompanha o job até concluir/falhar (a análise roda em background). */
+async function waitForJob(
+  jobId: string,
+  onStatus: (status: JobStatusResponse["status"]) => void,
+): Promise<JobStatusResponse> {
+  for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
+    const res = await fetch(`/api/ai/jobs/${jobId}`, { cache: "no-store" });
+    const data = (await res.json()) as JobStatusResponse;
+    if (!res.ok) {
+      throw new Error(data.error || "Falha ao consultar a análise");
+    }
+
+    onStatus(data.status);
+    if (data.status === "succeeded" || data.status === "failed") {
+      return data;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+
+  throw new Error(
+    "A análise demorou mais que o esperado. Verifique a importação em instantes.",
+  );
+}
 
 export function UploadDropzone({
   importId,
@@ -52,11 +83,13 @@ export function UploadDropzone({
   const [lastFileName, setLastFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     setError(null);
     setLoading(true);
+    setStage(null);
     setLastFileName(file.name);
 
     try {
@@ -71,30 +104,41 @@ export function UploadDropzone({
         body: form,
       });
 
-      const data = (await res.json()) as AnalyzeResponse;
+      const accepted = (await res.json()) as AnalyzeAccepted;
       if (!res.ok) {
-        throw new Error(data.error || "Falha ao analisar documento");
+        throw new Error(accepted.error || "Falha ao enviar documento");
+      }
+
+      setStage("Na fila...");
+      const job = await waitForJob(accepted.jobId, (status) => {
+        setStage(status === "queued" ? "Na fila..." : "Analisando com IA...");
+      });
+
+      if (job.status !== "succeeded") {
+        throw new Error(job.errorMessage || "Falha ao analisar documento");
       }
 
       setPresentTypes((current) => [
-        ...new Set([...current, ...data.types]),
+        ...new Set([...current, ...job.types]),
       ]);
-
-      if (data.pendingParties && data.pendingParties.length > 0) {
-        router.push(`/analise/${data.importId}/partes`);
-        return;
-      }
 
       if (importId) {
         router.refresh();
         return;
       }
 
-      router.push(`/importacoes/${data.importId}`);
+      const finalImportId = job.importId ?? accepted.importId;
+      if (!finalImportId) {
+        throw new Error("A análise não devolveu uma importação");
+      }
+
+      // A página de partes redireciona para a importação quando nada está pendente.
+      router.push(`/analise/${finalImportId}/partes`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro inesperado");
     } finally {
       setLoading(false);
+      setStage(null);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
@@ -142,7 +186,9 @@ export function UploadDropzone({
               <LoaderCircle className="h-7 w-7 animate-spin text-primary" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-medium">Analisando com IA...</p>
+              <p className="text-sm font-medium">
+                {stage ?? "Analisando com IA..."}
+              </p>
               <p className="text-xs text-muted-foreground">
                 {lastFileName ?? "Classificando e extraindo dados"}
               </p>

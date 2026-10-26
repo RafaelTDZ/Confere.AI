@@ -35,7 +35,6 @@ export {
   type PartyAddress,
   type PartyRole,
 } from "@/lib/documents/parties-shared";
-export { runAnalyzePipeline } from "@/lib/documents/analyze-pipeline";
 export {
   listTenantNcms,
   getNcmById,
