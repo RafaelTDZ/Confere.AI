@@ -29,7 +29,7 @@ export default async function ConfiguracoesPage() {
   const superAdmin = isSuperAdmin(auth.email);
   const canManageConsignee = auth.role === "owner" || auth.role === "admin";
 
-  if (!superAdmin && !canManageConsignee) redirect("/analise");
+  if (!superAdmin) redirect("/analise");
 
   let defaultConsignee: ConsigneeDefault | null = null;
   let partyOptions: TenantPartyOption[] = [];
@@ -55,9 +55,8 @@ export default async function ConfiguracoesPage() {
         </p>
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {superAdmin
-            ? "Consignee padrão do tenant e provedor/modelo de IA para todos os usuários."
-            : "Consignee padrão usado em todas as importações deste tenant."}
+          Consignee padrão do tenant e provedor/modelo de IA para todos os
+          usuários. Visível apenas para super-admin.
         </p>
       </div>
 

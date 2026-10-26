@@ -33,16 +33,15 @@ const ADMIN_NAV_ITEMS = [
 
 type AppSidebarProps = {
   email: string;
-  canManageSettings: boolean;
+  /** Só super-admin (`ADMIN_EMAILS`) vê Admin e Configurações. */
+  isSuperAdmin: boolean;
 };
 
-export function AppSidebar({ email, canManageSettings }: AppSidebarProps) {
+export function AppSidebar({ email, isSuperAdmin }: AppSidebarProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = canManageSettings
-    ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS]
-    : NAV_ITEMS;
+  const items = isSuperAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
 
   useEffect(() => {
     if (!open) return;
