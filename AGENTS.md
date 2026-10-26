@@ -169,6 +169,9 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   são únicos (índices parciais). Corrida no insert vira `23505` → releitura e reuso da
   importação vencedora; BL tem precedência sobre Invoice e uma chave já usada por outra
   importação não é copiada (`fillImportKeysIfEmpty` só descarta a coluna conflitante).
+- **Merge/delete transacionais**: `public.merge_imports` e `public.delete_import` (RPCs
+  `security invoker`, EXECUTE só para `service_role`) rodam em uma transação; o app chama via
+  `admin.rpc`. `imports.status` inclui `failed`, marcado pelo pipeline quando a análise quebra.
 - **Grants RLS** (recomendado): rode
   [`20250731190000_grant_private_rls_functions.sql`](supabase/migrations/20250731190000_grant_private_rls_functions.sql)
   no SQL Editor para selects autenticados com policies RLS funcionarem.

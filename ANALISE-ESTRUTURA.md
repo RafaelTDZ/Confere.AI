@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 16 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02), 2 parciais (OBS-03, OPS-03) e 3 em aberto (AI-01, DATA-01, DATA-03). Migrations: 20/20 aplicadas no cloud (última `20261026114439`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (575 testes; `documents` 94,04% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 17 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01), 2 parciais (OBS-03, OPS-03) e 2 em aberto (AI-01, DATA-03). Migrations: 21/21 aplicadas no cloud (última `20261026122627`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (571 testes; `documents` 94,38% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,7 +167,7 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 24 rotas |
-| Testes | `pnpm test` | ✅ 575 testes em 31 arquivos (Vitest 5.0.5) |
+| Testes | `pnpm test` | ✅ 571 testes em 31 arquivos (Vitest 5.0.5) |
 | Cobertura | `pnpm test:coverage` | Global 95,10% lines; `documents` 93,73% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 575 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,04% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 571 testes em 31 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,38% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -392,12 +392,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Criar RPC transacional para merge de importações.
-- [ ] Criar RPC transacional para delete de importação + documentos.
-- [ ] Tornar o pipeline idempotente e registrar estado (`processing`, `failed`, `awaiting_review`).
-- [ ] Adicionar compensação/rollback onde RPC não for viável.
+- [x] Criar RPC transacional para merge de importações — `public.merge_imports` (documentos versionados por tipo, `analysis_results`, `product_matches`, `ai_logs`, chaves e partes em uma transação; valida tenant e faz lock das duas importações).
+- [x] Criar RPC transacional para delete de importação + documentos — `public.delete_import` remove a importação (documentos/extrações em cascata) e devolve os `storage_path` para a limpeza do Storage.
+- [x] Tornar o pipeline idempotente e registrar estado (`processing`, `failed`, `awaiting_review`) — status `failed` adicionado ao check constraint; `runAnalyzePipeline` marca a importação como `failed` e propaga o erro original, mantendo o dedupe por sha256 para reprocessar sem duplicar documentos.
+- [x] Adicionar compensação/rollback onde RPC não for viável — o Storage é limpo depois da transação (arquivo órfão fica registrado no log) e o merge libera as chaves da origem antes de preencher o destino.
 
 **Critério de aceite:** simular falha em cada etapa e confirmar que nenhum estado parcial permanece.
+
+**Status (out/2026):** concluído — migration `20261026122627_merge_delete_imports.sql` aplicada no cloud (21/21), com smoke transacional cobrindo merge (documentos, versões, resultados, `ai_logs`, chaves, partes), delete (paths + cascata), `failed` aceito e erros `P0002` para importação inexistente. As funções são `security invoker` e só o `service_role` recebe EXECUTE; o código chama via `admin.rpc(...)`. `moveDocumentsToImport` foi removido (o merge acontece no banco). Testes: RPC de delete/merge, mapeamento `P0002` e importação marcada como `failed`.
 
 ---
 
@@ -784,10 +786,10 @@ Legenda de severidade:
 
 **Objetivo:** eliminar estados parciais e duplicidades.
 
-- [ ] DATA-01 — RPC transacional para merge/delete.
-- [ ] DATA-01 — Pipeline idempotente.
+- [x] DATA-01 — RPC transacional para merge/delete.
+- [x] DATA-01 — Pipeline idempotente.
 - [x] DATA-02 — Definir regra de unicidade de Invoice/BL.
-- [ ] Criar índices únicos parciais ou upsert atômico.
+- [x] Criar índices únicos parciais ou upsert atômico.
 - [ ] Testes de concorrência.
 
 **Saída esperada:** operações atômicas e sem duplicidade em cenários de corrida.
