@@ -173,7 +173,10 @@ Schema multi-tenant com RLS em todas as tabelas. O app usa:
 - **Auth/tenant**: `tenants`, `tenant_members`, `tenant_settings`
 - **Domínio**: `imports`, `documents`, `extraction_results`, `parties`, `ncms` (leitura via RLS; escritas administrativas via service role)
 - **Produto (futuro)**: `products`, `analysis_results`, `product_matches`
+- **Fila de IA**: `ai_jobs` (upload enfileirado, status e erro; RLS de leitura por tenant)
 - **Auditoria**: `audit_logs`, `ai_logs` (tokens, `cost_usd`, `reasoning_tokens` e `import_id` quando a chamada está ligada a uma importação)
+
+Os tipos do schema ficam em `apps/web/src/lib/supabase/database.types.ts` (gerado do cloud e usado em `SupabaseClient<Database>`); regenere após aplicar migrations.
 
 Ver `PLAN.md` para o roadmap completo.
 

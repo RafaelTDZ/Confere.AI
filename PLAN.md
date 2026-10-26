@@ -59,7 +59,7 @@ divergências entre documentos.
 | Tabela | Propósito |
 |--------|-----------|
 | `tenants` | Empresas (multi-tenant) |
-| `tenant_members` | Membros com role (owner/admin/member/viewer) |
+| `tenant_members` | Membros com role (owner/admin/operator/viewer) |
 | `tenant_settings` | Configurações por tenant |
 | `products` | Catálogo de produtos do tenant |
 | `imports` | Importações (agrupamento de documentos) |

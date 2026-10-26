@@ -10,7 +10,7 @@
 >
 > **Atualização 23/10/2026:** ENV-01 e ENV-02 corrigidos — `README.md`, `AGENTS.md`, `PLAN.md`, `.env.example`, `package.json` e o MCP do OpenCode agora apontam para `pavxbcsolcvekwslhzmf`. O `.cursor/mcp.json` foi removido (Cursor não é mais usado). As referências ao ref antigo abaixo permanecem como registro histórico.
 >
-> **Atualização 26/10/2026 (status dos achados):** 18 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01), 2 parciais (OBS-03, OPS-03) e 1 em aberto (DATA-03). Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (610 testes; `documents` 94,58% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
+> **Atualização 26/10/2026 (status dos achados):** 19 concluídos (ENV-02, OPS-01, OPS-02, DOC-01, DX-01, DEP-01, SEC-02, QUA-01, AI-02, SEC-01, OBS-01, ENV-01, OBS-02, SEC-03, PERF-01, DATA-02, DATA-01, AI-01, DATA-03), 2 parciais (OBS-03, OPS-03) e nenhum em aberto. Migrations: 22/22 aplicadas no cloud (última `20261026124023`); `app_settings` com `provider=openrouter` e `model=~openai/gpt-luna-latest`. Decisões: `next`/`typescript` ficam na raiz por causa do preview do v0; a suíte foi reiniciada com Vitest (618 testes; `documents` 94,19% e `ai` 100% de lines) e o pipeline vazio foi removido. Cada achado abaixo traz o status atualizado.
 
 ---
 
@@ -167,8 +167,8 @@ Upload (multipart)
 | Typecheck | `pnpm --filter @confere/web typecheck` | ✅ passou |
 | Lint | `pnpm --filter @confere/web lint` | ✅ passou |
 | Build | `pnpm build` | ✅ passou em ~1m04, 26 rotas |
-| Testes | `pnpm test` | ✅ 610 testes em 35 arquivos (Vitest 5.0.5) |
-| Cobertura | `pnpm test:coverage` | Global 95,67% lines; `documents` 94,58% (gate 88%); `ai` 100% (gate 98%) |
+| Testes | `pnpm test` | ✅ 618 testes em 36 arquivos (Vitest 5.0.5) |
+| Cobertura | `pnpm test:coverage` | Global 95,35% lines; `documents` 94,19% (gate 88%); `ai` 100% (gate 98%) |
 
 ### 6.1 Versões instaladas relevantes
 
@@ -281,7 +281,7 @@ Legenda de severidade:
 
 **Critério de aceite:** `pnpm test` executa uma suíte real; CI vermelho se os testes falharem ou se a suíte estiver vazia.
 
-**Status (out/2026):** concluído — Vitest 5.0.5, 610 testes em 35 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, fila de jobs, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,58% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
+**Status (out/2026):** concluído — Vitest 5.0.5, 618 testes em 36 arquivos (funções puras, isolamento por tenant, pipeline com IA mockada, route handlers, parties, NCM, storage, ai_logs, imports, paginação, unicidade de chaves, merge/delete transacionais, fila de jobs, auth/roles, base de `lib/ai`, tasks, dedupe, leituras RLS, vínculo de `ai_logs`, rate limit, quota e guard `server-only`). O CI roda `test:coverage` e falha se a suíte sumir. Cobertura: `documents` em 94,19% de lines (gate 88%) e `ai` em 100% (gate 98%); a meta de 60% foi superada nos dois diretórios.
 
 ---
 
@@ -440,14 +440,14 @@ Legenda de severidade:
 
 **Correção proposta:**
 
-- [ ] Gerar `apps/web/src/lib/supabase/database.types.ts` com `supabase gen types typescript`.
-- [ ] Usar `SupabaseClient<Database>` em todos os clients.
-- [ ] Remover casts manuais.
-- [ ] Alinhar `MemberRole` ao check do banco (`operator` vs `member`).
+- [x] Gerar `apps/web/src/lib/supabase/database.types.ts` com `supabase gen types typescript` — gerado pelo MCP (`generate_typescript_types`) a partir do cloud, com `Json`/`Database` e as RPCs (`claim_ai_job`, `merge_imports`, `delete_import`, etc.).
+- [x] Usar `SupabaseClient<Database>` em todos os clients — browser, server, read, public e admin criam com `createClient<Database>`/`createServerClient<Database>`/`createBrowserClient<Database>`.
+- [x] Remover casts manuais — linhas de `imports`, `documents`, `parties`, `ncms` e `ai_logs` usam o tipo inferido; `ai_jobs` normaliza `status`/`result` em um mapper e `doc_type` vacina o union do domínio. Restam apenas casts de payload JSON (fronteira dos schemas zod).
+- [x] Alinhar `MemberRole` ao check do banco (`operator` vs `member`) — `owner | admin | operator | viewer`, com validação do claim e fallback `viewer` para valor desconhecido.
 
 **Critério de aceite:** `tsc` valida colunas/tabelas; não há `as` para linhas do banco nos módulos principais.
 
-**Status (out/2026):** `database.types.ts` continua inexistente e a divergência persiste (banco aceita `operator`; TS declara `member`).
+**Status (out/2026):** concluído — `database.types.ts` versionado e os cinco clients tipados; `tsc` agora acusa coluna/tabela inválida em `select`/`insert`/`update`/`rpc`. `resolveAuthState` valida o papel contra o check do banco (claim desconhecido vira `viewer`, coberto por teste). `knip.json` ignora o arquivo gerado. Regenerar após migrations: MCP `generate_typescript_types` ou `supabase gen types typescript --linked`.
 
 ---
 
@@ -802,7 +802,7 @@ Legenda de severidade:
 
 **Objetivo:** reduzir drift e melhorar onboarding.
 
-- [ ] DATA-03 — Gerar `database.types.ts` e usar `SupabaseClient<Database>`.
+- [x] DATA-03 — Gerar `database.types.ts` e usar `SupabaseClient<Database>`.
 - [ ] Alinhar roles (`operator` vs `member`).
 - [x] DOC-01 — Atualizar README, AGENTS e PLAN.
 - [x] DEP-01 — Alinhar Node >= 22.

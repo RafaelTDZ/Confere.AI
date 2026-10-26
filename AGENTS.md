@@ -115,7 +115,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Infra OpenRouter | Client + `/api/ai/health`; modelo default `~openai/gpt-luna-latest` |
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 610 testes em 35 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
+| Testes automatizados | Vitest 5.0.5 — 618 testes em 36 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
@@ -165,6 +165,10 @@ curl -s -X POST http://localhost:3000/api/auth/check-email \
   `<tenant>/_jobs/<jobId>/`, cria o job e responde `202`; o processamento continua no
   `after()` da request. `/api/ai/jobs/run` (Bearer `CRON_SECRET`) drena jobs `queued` ou
   `running` travados há 15 min (até 3 tentativas) — aponte o Vercel Cron para ele.
+- **Tipos do banco**: `lib/supabase/database.types.ts` é gerado do cloud (MCP
+  `generate_typescript_types` ou `supabase gen types typescript --linked`) e tipa os cinco
+  clients; regenere após cada migration. `knip.json` ignora o arquivo gerado. `MemberRole`
+  segue o check do banco (`owner|admin|operator|viewer`) e claim desconhecido vira `viewer`.
 - **Service role**: `SUPABASE_SERVICE_ROLE_KEY` obrigatória para `/api/ai/analyze`
   (grava Storage/`imports`/`documents`/`extraction_results`/`ai_logs` via admin;
   tenant_id sempre do JWT). Evita `permission denied for function current_tenant_id`
