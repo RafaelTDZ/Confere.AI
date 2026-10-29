@@ -23,6 +23,8 @@ import {
   mergePartyAddress,
   normalizeCnpjDigits,
   parsePartyAddress,
+  uppercasePartyAddress,
+  uppercasePartyText,
   type PartyAddress,
   type PartyRole,
   type PendingParty,
@@ -36,6 +38,7 @@ import {
   type ListOptions,
   type Page,
 } from "@/lib/pagination";
+import { normalizeUf } from "@/lib/documents/uf-shared";
 
 export type { PendingParty } from "@/lib/documents/parties-shared";
 
@@ -114,9 +117,9 @@ function validatePartyPayload(params: {
   cnpj: string;
   address: PartyAddress;
 }): { name: string; digits: string; address: PartyAddress } {
-  const name = params.name.trim();
+  const name = uppercasePartyText(params.name);
   const digits = normalizeCnpjDigits(params.cnpj);
-  const address = parsePartyAddress(params.address);
+  const address = uppercasePartyAddress(parsePartyAddress(params.address));
 
   if (!name) {
     throw new PartyValidationError("Nome é obrigatório");
@@ -133,11 +136,15 @@ function validatePartyPayload(params: {
   if (!address.state) {
     throw new PartyValidationError("Estado é obrigatório");
   }
+  const state = normalizeUf(address.state);
+  if (!state) {
+    throw new PartyValidationError("Estado deve ser a sigla da UF (ex.: SC)");
+  }
   if (!address.country) {
     throw new PartyValidationError("País é obrigatório");
   }
 
-  return { name, digits, address };
+  return { name, digits, address: { ...address, state } };
 }
 
 function partyWriteColumns(params: {
@@ -255,12 +262,7 @@ export async function listTenantParties(
     throw new Error(error.message || "Falha ao listar empresas");
   }
 
-  return buildPage(
-    (data ?? []).map(mapPartyRow),
-    count ?? 0,
-    page,
-    pageSize,
-  );
+  return buildPage((data ?? []).map(mapPartyRow), count ?? 0, page, pageSize);
 }
 
 export async function getPartyById(

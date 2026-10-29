@@ -96,3 +96,56 @@ export async function attachAiLogsToImport(params: {
     throw new Error(error.message || "Falha ao vincular logs à importação");
   }
 }
+
+export type ImportAiFailure = {
+  capability: string;
+  message: string;
+  createdAt: string;
+};
+
+/**
+ * Falhas de IA vinculadas à importação (leitura via RLS). A extração de um
+ * documento pode falhar sem derrubar a análise; isso alimenta o aviso na tela.
+ * Só considera a tentativa mais recente de cada capability — um reprocessamento
+ * bem-sucedido esconde o erro antigo.
+ */
+export async function getImportAiFailures(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<ImportAiFailure[]> {
+  try {
+    const supabase = await getReadClient();
+    const { data, error } = await supabase
+      .from("ai_logs")
+      .select("capability, status, error_message, created_at")
+      .eq("tenant_id", params.tenantId)
+      .eq("import_id", params.importId)
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    if (error) {
+      console.error("[ai-logs] falha ao ler erros da importação:", error);
+      return [];
+    }
+
+    const seen = new Set<string>();
+    const failures: ImportAiFailure[] = [];
+
+    for (const row of data ?? []) {
+      if (seen.has(row.capability)) continue;
+      seen.add(row.capability);
+      if (row.status !== "error") continue;
+
+      failures.push({
+        capability: row.capability,
+        message: row.error_message ?? "Falha ao analisar o documento",
+        createdAt: row.created_at,
+      });
+    }
+
+    return failures;
+  } catch (error) {
+    console.error("[ai-logs] falha inesperada ao ler erros:", error);
+    return [];
+  }
+}

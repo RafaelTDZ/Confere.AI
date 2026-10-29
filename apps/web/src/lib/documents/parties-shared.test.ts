@@ -10,6 +10,8 @@ import {
   mergePartyAddress,
   normalizeCnpjDigits,
   parsePartyAddress,
+  uppercasePartyAddress,
+  uppercasePartyText,
   type PartyAddress,
 } from "./parties-shared";
 
@@ -108,13 +110,21 @@ describe("parsePartyAddress", () => {
     });
   });
 
-  it("remove rótulos encadeados e preserva valores sem rótulo", () => {
+  it("converte o estado por extenso para a sigla da UF", () => {
+    expect(parsePartyAddress({ state: "Santa Catarina" }).state).toBe("SC");
+    expect(parsePartyAddress({ state: "são paulo" }).state).toBe("SP");
+    expect(parsePartyAddress({ state: "  sc  " }).state).toBe("SC");
+    expect(parsePartyAddress({ state: "Catarina" }).state).toBe("Catarina");
+  });
+
+  it("remove o prefixo Bairro mesmo sem separador", () => {
     expect(
       parsePartyAddress({ other: "Bairro - Distrito: ZONA INDUSTRIAL" }).other,
     ).toBe("ZONA INDUSTRIAL");
     expect(parsePartyAddress("Bairro: ZONA INDUSTRIAL").other).toBe(
       "ZONA INDUSTRIAL",
     );
+    expect(parsePartyAddress({ other: "Bairro Glória" }).other).toBe("Glória");
     expect(
       parsePartyAddress({
         street: "RUA DOS BORORÓS, 665",
@@ -122,8 +132,11 @@ describe("parsePartyAddress", () => {
       }),
     ).toMatchObject({
       street: "RUA DOS BORORÓS, 665",
-      other: "Bairro Novo",
+      other: "Novo",
     });
+    expect(parsePartyAddress({ other: "Distrito Industrial" }).other).toBe(
+      "Distrito Industrial",
+    );
   });
 
   it("retorna endereço vazio para objeto inválido, array ou null", () => {
@@ -237,5 +250,43 @@ describe("formatCepInput", () => {
 
   it("não adiciona hífen até 5 dígitos", () => {
     expect(formatCepInput("12345")).toBe("12345");
+  });
+});
+
+describe("uppercasePartyText", () => {
+  it("normaliza espaços e aplica maiúsculas", () => {
+    expect(uppercasePartyText("  R. Evaristo   da Veiga  ")).toBe(
+      "R. EVARISTO DA VEIGA",
+    );
+    expect(uppercasePartyText("   ")).toBeNull();
+    expect(uppercasePartyText(null)).toBeNull();
+  });
+});
+
+describe("uppercasePartyAddress", () => {
+  it("aplica maiúsculas e remove separador sobrando no bairro", () => {
+    expect(
+      uppercasePartyAddress({
+        ...EMPTY_PARTY_ADDRESS,
+        street: "Rua Evaristo da Veiga",
+        city: "Joinville",
+        state: "sc",
+        country: "Brasil",
+        other: "Bairro Glória,",
+      }),
+    ).toEqual({
+      ...EMPTY_PARTY_ADDRESS,
+      street: "RUA EVARISTO DA VEIGA",
+      city: "JOINVILLE",
+      state: "SC",
+      country: "BRASIL",
+      other: "BAIRRO GLÓRIA",
+    });
+  });
+
+  it("remove a vírgula final do bairro", () => {
+    expect(
+      uppercasePartyAddress({ ...EMPTY_PARTY_ADDRESS, other: "Gloria," }).other,
+    ).toBe("GLORIA");
   });
 });

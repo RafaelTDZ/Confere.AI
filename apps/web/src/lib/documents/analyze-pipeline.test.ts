@@ -29,8 +29,10 @@ const mocks = vi.hoisted(() => ({
   updateDocumentStatus: vi.fn(),
   findOrCreateImport: vi.fn(),
   fillImportKeysIfEmpty: vi.fn(),
+  fillImportReferenceIfEmpty: vi.fn(),
   clearAutoReferenceIfNeeded: vi.fn(),
   getImportDetail: vi.fn(),
+  syncImportEta: vi.fn(),
   updateImportConsignee: vi.fn(),
   updateImportConsigneeDivergences: vi.fn(),
   updateImportStatus: vi.fn(),
@@ -44,6 +46,8 @@ const mocks = vi.hoisted(() => ({
   pendingPartiesFromInvoice: vi.fn(),
   pendingPartiesFromBl: vi.fn(),
   combinePendingParties: vi.fn(),
+  enqueueTrackingForImport: vi.fn(),
+  processQueuedTrackingJobs: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/tasks/classify", () => ({
@@ -60,6 +64,11 @@ vi.mock("@/lib/ai/tasks/extract-packing-list", () => ({
 
 vi.mock("@/lib/ai/tasks/extract-bl", () => ({
   extractBl: mocks.extractBl,
+}));
+
+vi.mock("@/lib/tracking/service", () => ({
+  enqueueTrackingForImport: mocks.enqueueTrackingForImport,
+  processQueuedTrackingJobs: mocks.processQueuedTrackingJobs,
 }));
 
 vi.mock("@/lib/ai/document-content", () => ({
@@ -89,8 +98,10 @@ vi.mock("@/lib/documents/documents", () => ({
 vi.mock("@/lib/documents/imports", () => ({
   findOrCreateImport: mocks.findOrCreateImport,
   fillImportKeysIfEmpty: mocks.fillImportKeysIfEmpty,
+  fillImportReferenceIfEmpty: mocks.fillImportReferenceIfEmpty,
   clearAutoReferenceIfNeeded: mocks.clearAutoReferenceIfNeeded,
   getImportDetail: mocks.getImportDetail,
+  syncImportEta: mocks.syncImportEta,
   updateImportConsignee: mocks.updateImportConsignee,
   updateImportConsigneeDivergences: mocks.updateImportConsigneeDivergences,
   updateImportStatus: mocks.updateImportStatus,
@@ -403,6 +414,7 @@ function setDefaultMocks() {
   mocks.uploadImportFile.mockResolvedValue(undefined);
   mocks.updateDocumentStatus.mockResolvedValue(undefined);
   mocks.fillImportKeysIfEmpty.mockResolvedValue(undefined);
+  mocks.fillImportReferenceIfEmpty.mockResolvedValue(true);
   mocks.clearAutoReferenceIfNeeded.mockResolvedValue(undefined);
   mocks.updateImportStatus.mockResolvedValue(undefined);
   mocks.getImportDetail.mockResolvedValue({});
@@ -418,6 +430,14 @@ function setDefaultMocks() {
   mocks.combinePendingParties.mockImplementation(
     (items: PendingParty[]) => items,
   );
+  mocks.enqueueTrackingForImport.mockResolvedValue({
+    shipments: 1,
+    queued: 1,
+  });
+  mocks.processQueuedTrackingJobs.mockResolvedValue({
+    processed: 1,
+    failed: 0,
+  });
 }
 
 beforeEach(() => {
@@ -560,6 +580,7 @@ describe("runAnalyzePipeline", () => {
         filename: "invoice.pdf",
       },
       { provider: "openrouter", model: "model-from-settings" },
+      { tenantId: TENANT_ID, sha256: FILE_DIGEST },
     );
     expect(mocks.classifyDocument).toHaveBeenCalledWith(PREPARED);
     expect(mocks.extractInvoice).toHaveBeenCalledWith(PREPARED);
@@ -683,6 +704,10 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractInvoice).toHaveBeenCalledTimes(1);
     expect(mocks.extractPackingList).toHaveBeenCalledTimes(1);
     expect(mocks.extractBl).toHaveBeenCalledTimes(1);
+    expect(mocks.syncImportEta).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+    });
 
     expect(mocks.persistExtractionResult).toHaveBeenCalledTimes(3);
     expect(mocks.persistExtractionResult).toHaveBeenNthCalledWith(1, {
@@ -812,6 +837,140 @@ describe("runAnalyzePipeline", () => {
       status: "extracted",
     });
     expect(mocks.fillImportKeysIfEmpty).not.toHaveBeenCalled();
+  });
+
+  it("classifica pelo markdown sem chamar o modelo quando o cabeçalho é claro", async () => {
+    mocks.prepareDocument.mockResolvedValue({
+      ...PREPARED,
+      isPdf: false,
+      content: [
+        {
+          type: "text",
+          text: "## COMMERCIAL INVOICE\nINVOICE NO.: CN022608190005",
+        },
+      ],
+    });
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.classifyDocument).not.toHaveBeenCalled();
+    expect(result.types).toEqual(["invoice"]);
+    expect(result.model).toBe("heuristic");
+    expect(logEntries()[0]).toMatchObject({
+      capability: "classify",
+      model: "heuristic",
+      tokensIn: 0,
+      tokensOut: 0,
+      status: "success",
+    });
+  });
+
+  it("usa o modelo quando o markdown não tem marcador de tipo", async () => {
+    mocks.prepareDocument.mockResolvedValue({
+      ...PREPARED,
+      isPdf: false,
+      content: [{ type: "text", text: "documento sem cabeçalho legível" }],
+    });
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.classifyDocument).toHaveBeenCalledTimes(1);
+    expect(result.types).toEqual(["invoice"]);
+    expect(result.model).toBe("classify-model");
+  });
+
+  it("grava a referência tirada do nome do arquivo quando a importação não tem uma", async () => {
+    mocks.prepareDocument.mockResolvedValue({
+      ...PREPARED,
+      isPdf: false,
+      filename: "OYH128 draft bl - 15-10-2026.pdf",
+      content: [
+        {
+          type: "text",
+          text: "BL NO. PLISZ4H16237\nBILL OF LADING",
+        },
+      ],
+    });
+    mocks.classifyDocument.mockResolvedValue({
+      classification: makeClassification(["bill_of_lading"]),
+      model: "classify-model",
+      tokensIn: 30,
+      tokensOut: 12,
+      latencyMs: 50,
+      usage: { costUsd: 0.01, reasoningTokens: 0 },
+    });
+    mocks.insertDocuments.mockResolvedValue([
+      { id: "doc-bl", docType: "bill_of_lading" },
+    ]);
+
+    await runAnalyzePipeline({
+      ...baseParams(),
+      file: new File([new Uint8Array(FILE_BYTES)], "OYH128 draft bl - 15-10-2026.pdf", {
+        type: "application/pdf",
+      }),
+    });
+
+    expect(mocks.fillImportReferenceIfEmpty).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      referenceNumber: "OYH128",
+    });
+  });
+
+  it("marca o BL como failed quando a extração falha, sem derrubar a importação", async () => {
+    mocks.classifyDocument.mockResolvedValue({
+      classification: makeClassification(["invoice", "bill_of_lading"]),
+      model: "classify-model",
+      tokensIn: 30,
+      tokensOut: 12,
+      latencyMs: 50,
+      usage: { costUsd: 0.01, reasoningTokens: 0 },
+    });
+    mocks.insertDocuments.mockResolvedValue([
+      { id: "doc-invoice", docType: "invoice" },
+      { id: "doc-bl", docType: "bill_of_lading" },
+    ]);
+    mocks.extractBl.mockRejectedValue(
+      new Error("A IA não respondeu em 90s (extract_bl, 2 tentativa(s))."),
+    );
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(result.invoice).not.toBeNull();
+    expect(result.types).toEqual(["invoice", "bill_of_lading"]);
+    expect(result.extractionResultId).toBe("extraction-1");
+
+    // A invoice foi persistida; o BL falhou e não gerou extração.
+    expect(mocks.persistExtractionResult).toHaveBeenCalledTimes(1);
+    expect(mocks.persistExtractionResult).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: "doc-invoice" }),
+    );
+
+    expect(documentStatusUpdates()).toEqual(
+      expect.arrayContaining([
+        {
+          tenantId: TENANT_ID,
+          documentId: "doc-invoice",
+          status: "extracted",
+        },
+        {
+          tenantId: TENANT_ID,
+          documentId: "doc-bl",
+          status: "failed",
+        },
+      ]),
+    );
+
+    expect(logSummary()).toEqual([
+      "classify:success",
+      "extract_invoice:success",
+      "extract_bl:error",
+    ]);
+    expect(mocks.updateImportStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      status: "awaiting_review",
+    });
   });
 
   it("reaproveita upload completo de outra importação sem chamar IA", async () => {
@@ -1010,6 +1169,10 @@ describe("runAnalyzePipeline", () => {
     });
 
     expect(mocks.getImportDetail).toHaveBeenCalledWith(TENANT_ID, "import-new");
+    expect(mocks.syncImportEta).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-new",
+    });
     expect(mocks.buildUniqueStoragePath).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
       importId: "import-new",
@@ -1340,6 +1503,11 @@ describe("runAnalyzePipeline", () => {
     });
     expect(documentStatusUpdates()).toEqual([
       { tenantId: TENANT_ID, documentId: "doc-invoice", status: "extracted" },
+      {
+        tenantId: TENANT_ID,
+        documentId: "doc-packing-list",
+        status: "failed",
+      },
     ]);
     expect(mocks.updateImportStatus).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
@@ -1631,5 +1799,86 @@ describe("falha no pipeline", () => {
     await expect(runAnalyzePipeline(baseParams())).rejects.toThrow(
       "falha ao registrar documentos",
     );
+  });
+});
+
+describe("primeira consulta de rastreio", () => {
+  const calls: string[] = [];
+
+  function classifyAsBl() {
+    mocks.classifyDocument.mockResolvedValue({
+      classification: makeClassification(["bill_of_lading"]),
+      model: "classify-model",
+      tokensIn: 30,
+      tokensOut: 12,
+      latencyMs: 50,
+      usage: { costUsd: 0.01, reasoningTokens: 0 },
+    });
+    mocks.insertDocuments.mockResolvedValue([
+      { id: "doc-bl", docType: "bill_of_lading" },
+    ]);
+  }
+
+  function trackCalls() {
+    calls.length = 0;
+    mocks.enqueueTrackingForImport.mockImplementation(async () => {
+      calls.push("enqueue");
+      return { shipments: 1, queued: 1 };
+    });
+    mocks.processQueuedTrackingJobs.mockImplementation(async () => {
+      calls.push("process");
+      return { processed: 1, failed: 0 };
+    });
+  }
+
+  it("enfileira e processa 1 alvo na hora quando há BL", async () => {
+    classifyAsBl();
+    trackCalls();
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+    });
+    expect(mocks.processQueuedTrackingJobs).toHaveBeenCalledWith({
+      limit: 1,
+      worker: "analyze",
+      importId: "import-1",
+    });
+    expect(calls).toEqual(["enqueue", "process"]);
+    expect(result.types).toEqual(["bill_of_lading"]);
+    expect(mocks.updateImportStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      status: "awaiting_review",
+    });
+  });
+
+  it("não consulta rastreio quando o documento não tem BL", async () => {
+    trackCalls();
+
+    await runAnalyzePipeline(baseParams());
+
+    expect(mocks.enqueueTrackingForImport).not.toHaveBeenCalled();
+    expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
+  });
+
+  it("erro na consulta imediata não impede a análise", async () => {
+    classifyAsBl();
+    mocks.processQueuedTrackingJobs.mockRejectedValue(
+      new Error("orçamento de rastreio esgotado"),
+    );
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(1);
+    expect(result.types).toEqual(["bill_of_lading"]);
+    expect(result.deduped).toBe(false);
+    expect(mocks.updateImportStatus).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      importId: "import-1",
+      status: "awaiting_review",
+    });
   });
 });

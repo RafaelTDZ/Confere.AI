@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { processNextAiJob } from "@/lib/documents/ai-worker";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const MAX_JOBS_PER_RUN = 3;
+/** Deixa margem para fechar a response antes do teto de 300s da função. */
+const MAX_RUN_MS = 240_000;
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim();
@@ -28,8 +30,13 @@ async function drainQueue(request: Request) {
   }
 
   let processed = 0;
+  const startedAt = Date.now();
   try {
-    while (processed < MAX_JOBS_PER_RUN && (await processNextAiJob())) {
+    while (
+      processed < MAX_JOBS_PER_RUN &&
+      Date.now() - startedAt < MAX_RUN_MS &&
+      (await processNextAiJob())
+    ) {
       processed += 1;
     }
   } catch (error) {

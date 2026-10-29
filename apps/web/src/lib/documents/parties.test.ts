@@ -340,9 +340,7 @@ function configureDefaultConsignee(partyId = "party-default"): void {
 }
 
 function partiesWithCnpj(digits: string): FakeRow[] {
-  return admin
-    .rows("parties")
-    .filter((row) => row.cnpj_digits === digits);
+  return admin.rows("parties").filter((row) => row.cnpj_digits === digits);
 }
 
 describe("combinePendingParties", () => {
@@ -730,22 +728,26 @@ describe("updateParty", () => {
   }
 
   it("atualiza somente a empresa do tenant informado", async () => {
-    const updated = await updateParty("tenant-a", "party-a-late", validParams());
+    const updated = await updateParty(
+      "tenant-a",
+      "party-a-late",
+      validParams(),
+    );
 
     expect(updated).toMatchObject({
       id: "party-a-late",
-      name: "Zeta Atualizada",
+      name: "ZETA ATUALIZADA",
       cnpj: "44.555.666/0001-74",
       address: {
-        street: "Rua Nova",
+        street: "RUA NOVA",
         number: "200",
-        city: "Campinas",
+        city: "CAMPINAS",
       },
     });
     expect(findRow("parties", "party-a-late")).toMatchObject({
       tenant_id: "tenant-a",
       cnpj_digits: CNPJ_NOVO_CONSIGNEE,
-      street: "Rua Nova",
+      street: "RUA NOVA",
     });
     expect(findRow("parties", "party-b")).toMatchObject({
       name: "Beta Exterior",
@@ -753,12 +755,46 @@ describe("updateParty", () => {
     });
   });
 
+  it("grava a UF em minúsculas como sigla maiúscula", async () => {
+    const updated = await updateParty("tenant-a", "party-a-late", {
+      ...validParams(),
+      address: address({
+        street: "Rua Nova",
+        city: "Joinville",
+        state: "sc",
+        country: "Brasil",
+      }),
+    });
+
+    expect(updated.address.state).toBe("SC");
+    expect(findRow("parties", "party-a-late")).toMatchObject({ state: "SC" });
+  });
+
+  it("grava o estado por extenso como sigla da UF", async () => {
+    const updated = await updateParty("tenant-a", "party-a-late", {
+      ...validParams(),
+      address: address({
+        street: "Rua Nova",
+        city: "Florianópolis",
+        state: "Santa Catarina",
+        country: "Brasil",
+      }),
+    });
+
+    expect(updated.address.state).toBe("SC");
+    expect(findRow("parties", "party-a-late")).toMatchObject({ state: "SC" });
+  });
+
   type PartyPayload = ReturnType<typeof validParams>;
 
   const invalidPayloads: Array<
     [string, (payload: PartyPayload) => PartyPayload, string]
   > = [
-    ["nome vazio", (payload) => ({ ...payload, name: "   " }), "Nome é obrigatório"],
+    [
+      "nome vazio",
+      (payload) => ({ ...payload, name: "   " }),
+      "Nome é obrigatório",
+    ],
     [
       "CNPJ com menos de 14 dígitos",
       (payload) => ({ ...payload, cnpj: "1234" }),
@@ -795,6 +831,32 @@ describe("updateParty", () => {
         }),
       }),
       "Estado é obrigatório",
+    ],
+    [
+      "UF inexistente",
+      (payload) => ({
+        ...payload,
+        address: address({
+          street: "Rua Nova",
+          city: "Campinas",
+          state: "XX",
+          country: "Brasil",
+        }),
+      }),
+      "Estado deve ser a sigla da UF (ex.: SC)",
+    ],
+    [
+      "nome de estado incompleto",
+      (payload) => ({
+        ...payload,
+        address: address({
+          street: "Rua Nova",
+          city: "Campinas",
+          state: "Catarina",
+          country: "Brasil",
+        }),
+      }),
+      "Estado deve ser a sigla da UF (ex.: SC)",
     ],
     [
       "país vazio",
@@ -951,14 +1013,14 @@ describe("registerImportParties", () => {
     const created = partiesWithCnpj(CNPJ_NOVO)[0];
     expect(created).toMatchObject({
       tenant_id: "tenant-a",
-      name: "Novo Notify",
+      name: "NOVO NOTIFY",
       cnpj: "55.666.777/0001-85",
       cnpj_digits: CNPJ_NOVO,
-      street: "Rua E",
+      street: "RUA E",
       street_number: "500",
-      city: "Recife",
+      city: "RECIFE",
       state: "PE",
-      country: "Brasil",
+      country: "BRASIL",
     });
     expect(findImport("import-a").notify_id).toBe(created?.id);
     expect(findImport("import-b")).toMatchObject({
@@ -992,6 +1054,52 @@ describe("registerImportParties", () => {
       consignee_id: created?.id,
       notify_id: created?.id,
     });
+  });
+
+  it("normaliza a UF da parte vinda de documento antes de gravar", async () => {
+    await registerImportParties({
+      tenantId: "tenant-a",
+      importId: "import-a",
+      parties: [
+        pendingParty({
+          roles: ["consignee"],
+          name: "Empresa de Santa Catarina",
+          cnpj: CNPJ_NOVO,
+          address: address({
+            street: "Rua A",
+            city: "Joinville",
+            state: "Santa Catarina",
+            country: "Brasil",
+          }),
+        }),
+      ],
+    });
+
+    expect(partiesWithCnpj(CNPJ_NOVO)[0]).toMatchObject({ state: "SC" });
+  });
+
+  it("rejeita UF inválida da parte vinda de documento", async () => {
+    await expect(
+      registerImportParties({
+        tenantId: "tenant-a",
+        importId: "import-a",
+        parties: [
+          pendingParty({
+            roles: ["consignee"],
+            name: "Empresa Inválida",
+            cnpj: CNPJ_NOVO,
+            address: address({
+              street: "Rua A",
+              city: "Joinville",
+              state: "Catarina",
+              country: "Brasil",
+            }),
+          }),
+        ],
+      }),
+    ).rejects.toThrow("Estado deve ser a sigla da UF (ex.: SC)");
+
+    expect(partiesWithCnpj(CNPJ_NOVO)).toHaveLength(0);
   });
 
   it("descarta o papel consignee quando há consignee padrão", async () => {
@@ -1265,7 +1373,9 @@ describe("resolveBlParties", () => {
     });
 
     expect(pending).toHaveLength(2);
-    expect(pending.map((party) => [party.roles, party.name, party.cnpj])).toEqual([
+    expect(
+      pending.map((party) => [party.roles, party.name, party.cnpj]),
+    ).toEqual([
       [["consignee"], "Consignee Texto", null],
       [["notify"], "Notify Texto", null],
     ]);

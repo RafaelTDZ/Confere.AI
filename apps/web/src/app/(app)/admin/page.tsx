@@ -76,7 +76,7 @@ export default async function AdminPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
         <Badge variant="warning">Somente leitura</Badge>
         <Badge variant="outline">Acesso auditado</Badge>
         <span className="text-muted-foreground">

@@ -18,6 +18,7 @@ import {
   type PartyFieldsValue,
 } from "@/components/parties/party-fields";
 import type { PartyAddress } from "@/lib/documents/parties-shared";
+import { setFlash } from "@/lib/flash";
 import { cn } from "@/lib/utils";
 
 export function EmpresaEditForm({
@@ -60,7 +61,8 @@ export function EmpresaEditForm({
       if (!res.ok) {
         throw new Error(data.error || "Falha ao atualizar empresa");
       }
-      router.push("/empresas?saved=ok");
+      setFlash("Empresa atualizada com sucesso.");
+      router.push("/empresas");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro inesperado");
@@ -91,7 +93,7 @@ export function EmpresaEditForm({
       </Card>
 
       {error && (
-        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive-text">
           <CircleAlert className="h-4 w-4 shrink-0" />
           {error}
         </p>

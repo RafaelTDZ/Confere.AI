@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
-import { CircleCheck, Package } from "lucide-react";
-import { ConsigneeCheckCard } from "@/components/importacoes/consignee-check-card";
 import { ImportacaoForm } from "@/components/importacoes/importacao-form";
+import { Notice } from "@/components/ui/notice";
 import { BackButton } from "@/components/layout/back-button";
 import { getAuthContext } from "@/lib/auth";
 import {
@@ -9,6 +8,15 @@ import {
   getImportDetail,
   ImportNotFoundError,
 } from "@/lib/documents";
+import { getImportAiFailures } from "@/lib/documents/ai-logs";
+import { getPrimaryTrackingShipmentId } from "@/lib/tracking/service";
+
+const FAILURE_LABELS: Record<string, string> = {
+  classify: "Classificação",
+  extract_invoice: "Invoice",
+  extract_packing_list: "Packing List",
+  extract_bl: "Bill of Lading",
+};
 
 export default async function ImportacaoDetailPage({
   params,
@@ -29,40 +37,63 @@ export default async function ImportacaoDetailPage({
     throw error;
   }
 
+  const primaryShipmentId = await getPrimaryTrackingShipmentId({
+    tenantId: auth.tenantId,
+    importId: id,
+  });
+  // O botão (dentro do card "Dados do BL") abre direto o detalhe do
+  // shipment principal; sem rastreio na importação, cai para a lista escopada.
+  const trackingHref = primaryShipmentId
+    ? `/rastreio/${primaryShipmentId}`
+    : `/rastreio?import=${detail.id}`;
+  const failures = await getImportAiFailures({
+    tenantId: auth.tenantId,
+    importId: id,
+  });
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
-      <BackButton fallbackHref="/importacoes" />
-      {query.merged === "ok" && (
-        <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
-          Documentos reunidos nesta importação.
-        </p>
-      )}
-      <header className="space-y-1">
-        <div className="flex items-center gap-2 text-primary">
-          <Package className="h-4 w-4" />
-          <span className="text-xs font-medium uppercase tracking-wide">
-            Importações
-          </span>
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight">
+    <div className="mx-auto w-full max-w-6xl space-y-6">
+      <header className="flex min-w-0 items-center gap-2">
+        <BackButton
+          fallbackHref="/importacoes"
+          className="size-11 sm:size-9"
+        />
+        <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-balance">
           {displayImportReference(detail) || "Identificar importação"}
         </h1>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Dados consolidados após a análise dos documentos desta operação.
-        </p>
       </header>
 
-      <ConsigneeCheckCard
-        defaultConsignee={detail.defaultConsignee}
-        documentConsignee={detail.documentConsignee}
-        divergences={detail.consigneeDivergences}
-      />
+      {query.merged === "ok" && (
+        <Notice tone="success">Documentos reunidos nesta importação.</Notice>
+      )}
+
+      {failures.length > 0 && (
+        <Notice
+          tone="warning"
+          title="A IA não conseguiu extrair todos os documentos"
+        >
+          <ul className="list-disc space-y-1 pl-5">
+            {failures.map((failure) => (
+              <li key={`${failure.capability}-${failure.createdAt}`}>
+                <span className="font-medium">
+                  {FAILURE_LABELS[failure.capability] ?? failure.capability}:
+                </span>{" "}
+                {failure.message}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            Os demais documentos desta importação foram extraídos normalmente.
+            Reenvie o arquivo para tentar de novo.
+          </p>
+        </Notice>
+      )}
 
       <ImportacaoForm
         key={detail.id}
         detail={detail}
         canEdit={auth.role !== "viewer"}
+        trackingHref={trackingHref}
       />
     </div>
   );

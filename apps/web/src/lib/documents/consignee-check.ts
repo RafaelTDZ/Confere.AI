@@ -3,6 +3,7 @@ import {
   parsePartyAddress,
   type PartyAddress,
 } from "@/lib/documents/parties-shared";
+import { normalizeUf } from "@/lib/documents/uf-shared";
 
 export type ConsigneeSnapshot = {
   name: string | null;
@@ -110,7 +111,8 @@ const COMPARE_FIELDS: CompareField[] = [
   {
     field: "state",
     label: "UF/Estado",
-    normalize: normalizeText,
+    // "Santa Catarina" e "SC" são o mesmo estado, não uma divergência.
+    normalize: (value) => normalizeUf(value) ?? normalizeText(value),
     read: (snapshot) => snapshot.address.state,
   },
   {

@@ -7,6 +7,7 @@ import { ensureUserTenant, toUserFacingError } from "@/lib/auth/tenant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { ChevronRight, ArrowLeft } from "lucide-react";
 
 type Step = "email" | "password";
@@ -98,23 +99,23 @@ export function LoginForm() {
               autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="voce@empresa.com.br"
+              placeholder="você@empresa.com.br"
               disabled={loading}
+              aria-invalid={error ? true : undefined}
               className="text-base"
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <Notice tone="danger">{error}</Notice>}
 
           <Button
             type="submit"
             className="w-full group"
-            disabled={loading || !email}
+            disabled={!email}
+            loading={loading}
             size="lg"
           >
-            {loading ? "Verificando..." : "Continuar"}
+            Continuar
             {!loading && (
               <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
             )}
@@ -152,21 +153,21 @@ export function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              aria-invalid={error ? true : undefined}
               className="text-base"
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <Notice tone="danger">{error}</Notice>}
 
           <Button
             type="submit"
             className="w-full group"
-            disabled={loading || !password}
+            disabled={!password}
+            loading={loading}
             size="lg"
           >
-            {loading ? "Entrando..." : "Entrar"}
+            Entrar
             {!loading && (
               <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
             )}

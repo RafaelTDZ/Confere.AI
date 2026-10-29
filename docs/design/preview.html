@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confere.ia — style tile (proposta)</title>
+<style>
+/* Tokens — espelham docs/design/identidade-visual.md (seção 3).
+   Fonte-alvo: Inter via next/font. Aqui: fallback do sistema (sem dependências). */
+:root {
+  --font: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", "Geist Mono", ui-monospace, Consolas, "Courier New", monospace;
+  --canvas: #F5F6F8; --surface: #FFFFFF; --muted: #F1F3F6; --border: #E3E7ED; --border-strong: #757F90;
+  --text: #0F172A; --text-2: #3F4A5C; --text-muted: #5B6678;
+  --accent: #1D4ED8; --accent-hover: #1E40AF; --accent-active: #1E3A8A; --accent-soft: #EAF0FD; --accent-text: #1D4ED8; --on-accent: #FFFFFF;
+  --focus: #1D4ED8;
+  --success: #15803D; --success-text: #166534; --success-soft: #E7F6EC;
+  --warning: #B45309; --warning-text: #92400E; --warning-soft: #FEF3C7;
+  --danger: #B91C1C; --danger-text: #B91C1C; --danger-soft: #FDECEC;
+  --neutral-soft: #EEF1F5;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-overlay: 0 12px 32px -12px rgb(15 23 42 / 0.25);
+  --dur-fast: 120ms; --dur-base: 180ms; --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+.theme-dark {
+  color: var(--text);
+  --canvas: #0A0E14; --surface: #11161F; --muted: #171E2A; --border: #232C3B; --border-strong: #5A6478;
+  --text: #E8ECF2; --text-2: #B4BDCB; --text-muted: #8E99AB;
+  --accent: #7AA2FF; --accent-hover: #93B4FF; --accent-active: #5F86E8; --accent-soft: #1A2748; --accent-text: #8AB0FF; --on-accent: #0A0E14;
+  --focus: #8AB0FF;
+  --success: #7DD3A0; --success-text: #7DD3A0; --success-soft: #12291E;
+  --warning: #F5C863; --warning-text: #F5C863; --warning-soft: #2A2110;
+  --danger: #F5A3A3; --danger-text: #F5A3A3; --danger-soft: #2B1517;
+  --neutral-soft: #1C2431;
+  --shadow-xs: none; --shadow-overlay: none;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--canvas); color: var(--text); font: 400 14px/20px var(--font); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; }
+section { margin-top: 48px; }
+section > h2 { font: 600 20px/28px var(--font); letter-spacing: -0.01em; margin: 0 0 4px; }
+section > p.lead { margin: 0 0 16px; color: var(--text-muted); max-width: 60ch; }
+.panel { background: var(--canvas); color: var(--text); border-radius: var(--radius-lg); padding: 24px; border: 1px solid var(--border); }
+.row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 800px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+.caption { font: 500 12px/16px var(--font); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.mono { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+.tn { font-variant-numeric: tabular-nums; }
+
+/* Swatches */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+.swatch { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.swatch-chip { height: 56px; }
+.swatch-meta { padding: 8px 12px 10px; }
+.swatch-meta b { display: block; font: 500 13px/18px var(--font); }
+.swatch-meta span { display: block; font: 400 12px/16px var(--font); color: var(--text-muted); }
+.swatch-meta .mono { font-size: 12px; color: var(--text-2); }
+
+/* Type scale */
+.type-row { display: grid; grid-template-columns: 160px 1fr; gap: 16px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.type-row:last-child { border-bottom: 0; }
+.t-display { font: 600 32px/40px var(--font); letter-spacing: -0.02em; margin: 0; }
+.t-h2 { font: 600 24px/32px var(--font); letter-spacing: -0.02em; margin: 0; }
+.t-h3 { font: 600 20px/28px var(--font); letter-spacing: -0.01em; margin: 0; }
+.t-h4 { font: 600 16px/24px var(--font); margin: 0; }
+.t-body { font: 400 16px/24px var(--font); margin: 0; max-width: 65ch; }
+.t-ui { font: 400 14px/20px var(--font); margin: 0; }
+.t-ui-500 { font: 500 14px/20px var(--font); margin: 0; }
+.t-caption { font: 500 12px/16px var(--font); letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin: 0; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px; padding: 0 16px; border-radius: var(--radius-md); border: 1px solid transparent;
+  font: 500 14px/20px var(--font); white-space: nowrap; cursor: pointer; text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.btn:focus-visible, .btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-xs); }
+.btn-primary:not(:disabled):hover, .btn-primary.is-hover { background: var(--accent-hover); }
+.btn-primary:not(:disabled):active, .btn-primary.is-active { background: var(--accent-active); transform: scale(0.98); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:not(:disabled):hover, .btn-secondary.is-hover { background: var(--muted); }
+.btn-secondary:not(:disabled):active, .btn-secondary.is-active { transform: scale(0.98); }
+.btn-ghost { background: transparent; color: var(--text-2); }
+.btn-ghost:not(:disabled):hover, .btn-ghost.is-hover { background: var(--muted); color: var(--text); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { height: 32px; padding: 0 12px; font-size: 14px; }
+.btn[aria-busy="true"] { cursor: progress; }
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse-opacity { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+  .spinner { animation: pulse-opacity 1.6s ease-in-out infinite; border: 0; background: currentColor; border-radius: 50%; }
+}
+@media (hover: none) { .btn-primary:hover { background: var(--accent); } }
+
+/* Card */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.card-header { padding: 20px 24px 16px; }
+.card-title { font: 600 16px/24px var(--font); margin: 0; }
+.card-desc { font: 400 14px/20px var(--font); color: var(--text-muted); margin: 4px 0 0; }
+.card-body { padding: 0 24px 20px; }
+
+/* Badges: ponto + texto sobre tint. Nunca texto branco sobre cor sólida. */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px;
+  border-radius: var(--radius-sm); font: 500 12px/16px var(--font); white-space: nowrap;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.badge-neutral { background: var(--neutral-soft); color: var(--text-2); }
+.badge-accent { background: var(--accent-soft); color: var(--accent-text); }
+.badge-success { background: var(--success-soft); color: var(--success-text); }
+.badge-warning { background: var(--warning-soft); color: var(--warning-text); }
+.badge-danger { background: var(--danger-soft); color: var(--danger-text); }
+.badge-outline { background: transparent; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+/* Input */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font: 500 14px/20px var(--font); }
+.field-input {
+  width: 100%; height: 36px; padding: 0 12px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+  font: 400 14px/20px var(--font);
+}
+.field-input::placeholder { color: var(--text-muted); opacity: 1; }
+.field-input:focus-visible, .field-input.is-focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--accent); }
+.field-input[aria-invalid="true"] { border-color: var(--danger); }
+.field-input:disabled { background: var(--muted); color: var(--text-muted); cursor: not-allowed; }
+.field-help { font: 400 12px/16px var(--font); color: var(--text-muted); }
+.field-error { display: flex; align-items: center; gap: 6px; font: 400 12px/16px var(--font); color: var(--danger-text); }
+
+/* Tabela densa */
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font: 400 14px/20px var(--font); }
+thead th {
+  height: 32px; padding: 0 12px; text-align: left; background: var(--muted); color: var(--text-muted);
+  font: 500 12px/16px var(--font); letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--border);
+}
+tbody td { height: 40px; padding: 0 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { padding-left: 16px; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--muted); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-muted); }
+.icon-btn { width: 32px; height: 32px; display: inline-grid; place-items: center; border-radius: var(--radius-md); border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.icon-btn:hover { background: var(--surface); color: var(--text); }
+
+/* Page header + sidebar (mini) */
+.app { display: grid; grid-template-columns: 232px 1fr; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--canvas); }
+.side { background: var(--surface); border-right: 1px solid var(--border); padding: 0 0 12px; }
+.brand { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 16px; font: 600 16px/24px var(--font); }
+.mark { width: 20px; height: 20px; border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.nav-group { padding: 12px 12px 4px; }
+.nav-item {
+  height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-md);
+  color: var(--text-2); font: 500 14px/20px var(--font); text-decoration: none; position: relative;
+}
+.nav-item:hover { background: var(--muted); color: var(--text); }
+.nav-item.is-active { background: var(--accent-soft); color: var(--accent-text); }
+.nav-item.is-active::before { content: ""; position: absolute; left: -12px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--accent); }
+.nav-item svg { color: var(--text-muted); flex: none; }
+.nav-item.is-active svg { color: var(--accent-text); }
+.main { padding: 24px; min-width: 0; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.eyebrow { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+.page-header h3 { font: 600 24px/32px var(--font); letter-spacing: -0.02em; margin: 4px 0 0; }
+.page-header p { margin: 4px 0 0; color: var(--text-muted); max-width: 60ch; }
+
+/* Notas e estados */
+.notice { display: flex; gap: 8px; align-items: flex-start; padding: 12px 16px; border-radius: var(--radius-md); font: 400 14px/20px var(--font); }
+.notice-success { background: var(--success-soft); color: var(--success-text); }
+.notice-warning { background: var(--warning-soft); color: var(--warning-text); }
+.notice-danger { background: var(--danger-soft); color: var(--danger-text); }
+.notice svg { flex: none; margin-top: 2px; }
+.empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 32px 24px; }
+.empty-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--muted); color: var(--text-muted); display: grid; place-items: center; }
+.empty p { margin: 0; max-width: 48ch; color: var(--text-muted); font: 400 16px/24px var(--font); }
+.empty h4 { margin: 0; font: 600 16px/24px var(--font); }
+.error-box { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; background: var(--surface); }
+.error-box h4 { margin: 0; font: 600 16px/24px var(--font); display: flex; gap: 8px; align-items: center; color: var(--danger-text); }
+.error-box p { margin: 4px 0 12px; color: var(--text-2); }
+.error-box details { color: var(--text-muted); font: 400 12px/16px var(--font); }
+
+/* Timeline */
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline li { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 12px; padding-bottom: 16px; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li::before { content: ""; position: absolute; left: 6px; top: 16px; bottom: 0; width: 2px; background: var(--border); }
+.timeline li:last-child::before { display: none; }
+.tl-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; box-sizing: border-box; }
+.tl-done { background: var(--success); }
+.tl-current { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tl-future { background: var(--surface); box-shadow: inset 0 0 0 2px var(--border-strong); }
+.tl-title { font: 500 14px/20px var(--font); margin: 0; }
+.tl-meta { font: 400 12px/16px var(--font); color: var(--text-muted); margin: 2px 0 0; }
+
+/* Mapa (rota) */
+.route { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); background: var(--muted); }
+.route .line { flex: 1; border-top: 2px dashed var(--accent); }
+.route .pt { font: 500 14px/20px var(--font); display: flex; align-items: center; gap: 6px; }
+.route .o { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--text); background: var(--surface); }
+.route .d { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <header>
+    <p class="caption">Style tile · proposta · não implementada</p>
+    <h1 class="t-h2" style="margin:4px 0 8px">Confere.ia — direção visual</h1>
+    <p class="t-ui" style="color:var(--text-muted);max-width:70ch;margin:0">
+      Conferência precisa, sem ruído. Azul Porto para ação, neutros frios para estrutura, sinais semânticos com texto (não só cor).
+      Fonte-alvo: Inter (via <code>next/font</code>). Esta página usa a fonte do sistema para ser autocontida.
+      Detalhes e contrastes: <code>identidade-visual.md</code>.
+    </p>
+  </header>
+
+  <section>
+    <h2>1. Paleta — tema claro</h2>
+    <p class="lead">Hex, uso e contraste calculado (WCAG 2.x). Texto normal ≥ 4,5:1; componente e foco ≥ 3:1.</p>
+    <div class="swatches">
+      <div class="swatch"><div class="swatch-chip" style="background:#F5F6F8"></div><div class="swatch-meta"><b>canvas</b><span class="mono">#F5F6F8</span><span>Fundo da app · texto 16,5:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#FFFFFF"></div><div class="swatch-meta"><b>surface</b><span class="mono">#FFFFFF</span><span>Cards, tabela, inputs · texto 17,9:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#F1F3F6"></div><div class="swatch-meta"><b>muted</b><span class="mono">#F1F3F6</span><span>Cabeçalho, chip · text-muted 5,2:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#E3E7ED"></div><div class="swatch-meta"><b>border</b><span class="mono">#E3E7ED</span><span>Divisória decorativa · 1,24:1 (não é controle)</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#757F90"></div><div class="swatch-meta"><b>border-strong</b><span class="mono">#757F90</span><span>Contorno de controle · 4,0:1 sobre branco</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#0F172A"></div><div class="swatch-meta"><b>text</b><span class="mono">#0F172A</span><span>Texto principal · 17,9:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#3F4A5C"></div><div class="swatch-meta"><b>text-2</b><span class="mono">#3F4A5C</span><span>Texto secundário · 9,0:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#5B6678"></div><div class="swatch-meta"><b>text-muted</b><span class="mono">#5B6678</span><span>Metadados, rótulos · 5,8:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#1D4ED8"></div><div class="swatch-meta"><b>accent · Azul Porto</b><span class="mono">#1D4ED8</span><span>Ação primária, link, foco · branco 6,7:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#1E40AF"></div><div class="swatch-meta"><b>accent-hover</b><span class="mono">#1E40AF</span><span>Hover do primário · branco 8,7:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#1E3A8A"></div><div class="swatch-meta"><b>accent-active</b><span class="mono">#1E3A8A</span><span>Pressed do primário</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#EAF0FD"></div><div class="swatch-meta"><b>accent-soft</b><span class="mono">#EAF0FD</span><span>Nav ativa, chip · accent 5,9:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#15803D"></div><div class="swatch-meta"><b>success</b><span class="mono">#15803D</span><span>Sólido · branco 5,0:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#E7F6EC"></div><div class="swatch-meta"><b>success-text / soft</b><span class="mono">#166534 / #E7F6EC</span><span>6,4:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#B45309"></div><div class="swatch-meta"><b>warning</b><span class="mono">#B45309</span><span>Sólido · branco 5,0:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#FEF3C7"></div><div class="swatch-meta"><b>warning-text / soft</b><span class="mono">#92400E / #FEF3C7</span><span>6,4:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#B91C1C"></div><div class="swatch-meta"><b>danger</b><span class="mono">#B91C1C</span><span>Erro, destrutivo · branco 6,5:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#FDECEC"></div><div class="swatch-meta"><b>danger-text / soft</b><span class="mono">#B91C1C / #FDECEC</span><span>5,7:1 · hoje o erro dá 3,3–3,8:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#EEF1F5"></div><div class="swatch-meta"><b>neutral-soft</b><span class="mono">#EEF1F5</span><span>Badge neutro · text-2 7,9:1</span></div></div>
+    </div>
+  </section>
+
+  <section class="theme-dark" style="background:var(--canvas);border-radius:var(--radius-lg);padding:24px;border:1px solid var(--border)">
+    <h2>2. Paleta — tema escuro</h2>
+    <p class="lead">Fundo cinza-azulado, não preto puro. Elevação por superfície mais clara. Cores semânticas em tom claro.</p>
+    <div class="swatches">
+      <div class="swatch"><div class="swatch-chip" style="background:#0A0E14"></div><div class="swatch-meta"><b>canvas</b><span class="mono">#0A0E14</span><span>Fundo · texto 16,3:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#11161F"></div><div class="swatch-meta"><b>surface</b><span class="mono">#11161F</span><span>Cards, inputs · texto 15,3:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#171E2A"></div><div class="swatch-meta"><b>muted</b><span class="mono">#171E2A</span><span>Cabeçalho, menu · text-muted 5,8:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#232C3B"></div><div class="swatch-meta"><b>border</b><span class="mono">#232C3B</span><span>Divisória decorativa</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#5A6478"></div><div class="swatch-meta"><b>border-strong</b><span class="mono">#5A6478</span><span>Controle · 3,05:1 sobre surface</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#E8ECF2"></div><div class="swatch-meta"><b>text</b><span class="mono">#E8ECF2</span><span>15,3:1 sobre surface</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#B4BDCB"></div><div class="swatch-meta"><b>text-2</b><span class="mono">#B4BDCB</span><span>9,6:1 sobre surface</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#8E99AB"></div><div class="swatch-meta"><b>text-muted</b><span class="mono">#8E99AB</span><span>6,3:1 sobre surface</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#7AA2FF"></div><div class="swatch-meta"><b>accent (botão)</b><span class="mono">#7AA2FF</span><span>Com texto #0A0E14 · 7,8:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#8AB0FF"></div><div class="swatch-meta"><b>accent-text</b><span class="mono">#8AB0FF</span><span>Link, nav · 8,4:1 sobre surface</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#1A2748"></div><div class="swatch-meta"><b>accent-soft</b><span class="mono">#1A2748</span><span>accent-text 6,8:1</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#7DD3A0"></div><div class="swatch-meta"><b>success-text</b><span class="mono">#7DD3A0 / #12291E</span><span>8,6:1 sobre o tint</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#F5C863"></div><div class="swatch-meta"><b>warning-text</b><span class="mono">#F5C863 / #2A2110</span><span>10,1:1 sobre o tint</span></div></div>
+      <div class="swatch"><div class="swatch-chip" style="background:#F5A3A3"></div><div class="swatch-meta"><b>danger-text</b><span class="mono">#F5A3A3 / #2B1517</span><span>8,7:1 sobre o tint</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Escala tipográfica</h2>
+    <p class="lead">Inter (alvo). Pesos 400 corpo, 500 UI e rótulos, 600 títulos. Sem 700. Números em tabular-nums.</p>
+    <div class="panel">
+      <div class="type-row"><span class="caption">caption 12/16/500</span><p class="t-caption">Rótulos de coluna · Próxima consulta</p></div>
+      <div class="type-row"><span class="caption">ui 14/20</span><p class="t-ui">Tabela, botão, input e nav. Lote 2024-0871 · BL MAEU123456789</p></div>
+      <div class="type-row"><span class="caption">ui 500 14/20</span><p class="t-ui-500">Rótulo de campo e item de navegação</p></div>
+      <div class="type-row"><span class="caption">body 16/24</span><p class="t-body">Texto de ajuda longo e estados vazios. Confira os documentos antes de aprovar a análise.</p></div>
+      <div class="type-row"><span class="caption">h4 16/24/600</span><p class="t-h4">Título de card · Documentos recebidos</p></div>
+      <div class="type-row"><span class="caption">h3 20/28/600</span><p class="t-h3">Seção · Containers do embarque</p></div>
+      <div class="type-row"><span class="caption">h2 24/32/600</span><p class="t-h2">Título de página · Importações</p></div>
+      <div class="type-row"><span class="caption">display 32/40/600</span><p class="t-display">Confere.ia</p></div>
+      <div class="type-row"><span class="caption">mono 14</span><p class="mono" style="margin:0">MSKU 1234567 · NCM 8471.30.19 · 12/10/2026</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Botões — estados</h2>
+    <p class="lead">Default, hover, focus-visible (anel 2px, offset 2px), active (scale 0,98), disabled e loading (texto mantido, largura fixa).</p>
+    <div class="panel">
+      <div class="grid-2">
+        <div class="row">
+          <button class="btn btn-primary">Enviar documentos</button>
+          <button class="btn btn-primary is-hover">Hover</button>
+          <button class="btn btn-primary is-focus">Focus</button>
+          <button class="btn btn-primary is-active">Active</button>
+          <button class="btn btn-primary" disabled>Disabled</button>
+          <button class="btn btn-primary" aria-busy="true" disabled style="min-width:168px"><span class="spinner" aria-hidden="true"></span>Salvando…</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-secondary">Cancelar</button>
+          <button class="btn btn-secondary is-hover">Hover</button>
+          <button class="btn btn-secondary is-focus">Focus</button>
+          <button class="btn btn-ghost">Limpar</button>
+          <button class="btn btn-ghost is-hover">Hover</button>
+          <button class="btn btn-primary btn-sm">Filtrar · sm 32</button>
+        </div>
+      </div>
+      <p class="t-caption" style="margin:16px 0 0">Alturas: sm 32 · md 36 (padrão) · lg 40 (só ação isolada) · mobile primário 44</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. Card, badges e notas</h2>
+    <p class="lead">Elevação só por borda. Badge = ponto + texto sobre tint, sem texto branco sobre cor sólida.</p>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Importação INV-2026-0412</h3>
+          <p class="card-desc">Invoice, BL e packing list conferidos automaticamente.</p>
+        </div>
+        <div class="card-body">
+          <div class="row" style="gap:8px">
+            <span class="badge badge-accent">Em processamento</span>
+            <span class="badge badge-warning">Aguardando revisão</span>
+            <span class="badge badge-success">Concluída</span>
+            <span class="badge badge-danger">Falhou</span>
+            <span class="badge badge-neutral">Enviada</span>
+            <span class="badge badge-outline">Sem dado</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <div class="notice notice-success">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          <span>Consignee e notify cadastrados com sucesso.</span>
+        </div>
+        <div class="notice notice-warning">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+          <span>Navio no portal diferente do BL — possível transbordo/rollover.</span>
+        </div>
+        <div class="notice notice-danger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          <span>Não foi possível enviar o arquivo. Verifique o formato e tente de novo.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>6. Input — default, foco e erro</h2>
+    <p class="lead">Borda <code>border-strong</code> (passa em 3:1). Erro com borda, ícone, texto e <code>aria-describedby</code> no código real.</p>
+    <div class="panel">
+      <div class="grid-3">
+        <div class="field">
+          <label for="ex-a">Número do BL</label>
+          <input id="ex-a" class="field-input" placeholder="Ex.: MAEU123456789">
+          <span class="field-help">Use o número do conhecimento de embarque.</span>
+        </div>
+        <div class="field">
+          <label for="ex-b">Foco</label>
+          <input id="ex-b" class="field-input is-focus" value="MAEU12345">
+          <span class="field-help">Anel de 2px com a cor de foco.</span>
+        </div>
+        <div class="field">
+          <label for="ex-c">Container</label>
+          <input id="ex-c" class="field-input" aria-invalid="true" aria-describedby="ex-c-err" value="MSKU12345">
+          <span id="ex-c-err" class="field-error">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            Formato inválido: use 4 letras e 7 dígitos (ISO 6346).
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>7. Tabela densa</h2>
+    <p class="lead">Linha 40px, cabeçalho 32px, célula 12px horizontal. Números à direita, tabular-nums. Hover em fundo, não em texto.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Referência</th>
+            <th>Invoice</th>
+            <th>BL</th>
+            <th>Status</th>
+            <th>ETA</th>
+            <th class="num">Itens</th>
+            <th><span class="caption" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Ações</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="#" style="color:var(--text);font-weight:500;text-decoration:none">OYH128</a></td>
+            <td class="mono muted">INV-0412</td>
+            <td class="mono muted">MAEU123456789</td>
+            <td><span class="badge badge-warning">Aguardando revisão</span></td>
+            <td class="tn">12/11/2026</td>
+            <td class="num">48</td>
+            <td><button class="icon-btn" aria-label="Mais ações">&#8943;</button></td>
+          </tr>
+          <tr>
+            <td><a href="#" style="color:var(--text);font-weight:500;text-decoration:none">OYH127</a></td>
+            <td class="mono muted">INV-0411</td>
+            <td class="mono muted">HLCU907123</td>
+            <td><span class="badge badge-accent">Em trânsito</span></td>
+            <td class="tn">03/11/2026</td>
+            <td class="num">12</td>
+            <td><button class="icon-btn" aria-label="Mais ações">&#8943;</button></td>
+          </tr>
+          <tr>
+            <td><a href="#" style="color:var(--text);font-weight:500;text-decoration:none">OYH125</a></td>
+            <td class="mono muted">INV-0407</td>
+            <td class="mono muted">—</td>
+            <td><span class="badge badge-success">Concluída</span></td>
+            <td class="muted">—</td>
+            <td class="num">7</td>
+            <td><button class="icon-btn" aria-label="Mais ações">&#8943;</button></td>
+          </tr>
+          <tr>
+            <td><a href="#" style="color:var(--text);font-weight:500;text-decoration:none">OYH121</a></td>
+            <td class="mono muted">INV-0399</td>
+            <td class="mono muted">EGLV446015</td>
+            <td><span class="badge badge-danger">Falhou</span></td>
+            <td class="tn">28/10/2026</td>
+            <td class="num">3</td>
+            <td><button class="icon-btn" aria-label="Mais ações">&#8943;</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>8. Cabeçalho de página e navegação</h2>
+    <p class="lead">Um <code>PageHeader</code> só. Item ativo em <code>accent-soft</code> com barra de 2px (nunca bloco azul sólido). Rastreio entra no grupo Operação.</p>
+    <div class="app">
+      <aside class="side">
+        <div class="brand"><span class="mark" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10"/></svg></span>Confere.ia</div>
+        <nav class="nav-group" aria-label="Principal">
+          <p class="caption" style="margin:0 8px 6px">Operação</p>
+          <a class="nav-item is-active" href="#" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M5 9h14"/></svg>Importações</a>
+          <a class="nav-item" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 3"/></svg>Rastreio</a>
+          <a class="nav-item" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/></svg>Empresas</a>
+          <a class="nav-item" href="#"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/></svg>NCM</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <div class="page-header">
+          <div>
+            <p class="eyebrow caption"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18"/><path d="M5 9h14"/></svg>Operação · Importações</p>
+            <h3>Suas importações</h3>
+            <p>Operações consolidadas por referência, número de BL ou invoice.</p>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-secondary btn-sm">Exportar</button>
+            <button class="btn btn-primary">Nova análise</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>9. Timeline e rota</h2>
+    <p class="lead">Substitui a tabela de marcos no detalhe do rastreio. Ponto concluído com check; atual com halo; futuro vazio.</p>
+    <div class="grid-2">
+      <div class="panel">
+        <ol class="timeline" style="margin:0">
+          <li><span class="tl-dot tl-done" aria-hidden="true"></span><div><p class="tl-title">Embarcado</p><p class="tl-meta tn">03/11/2026 · Santos (BRSSZ)</p></div></li>
+          <li><span class="tl-dot tl-done" aria-hidden="true"></span><div><p class="tl-title">Transbordo em Cingapura</p><p class="tl-meta tn">10/11/2026 · Singapura (SGSIN)</p></div></li>
+          <li><span class="tl-dot tl-current" aria-hidden="true"></span><div><p class="tl-title">Em trânsito</p><p class="tl-meta tn">Atualizado há 3 h · ETA 12/11/2026</p></div></li>
+          <li><span class="tl-dot tl-future" aria-hidden="true"></span><div><p class="tl-title" style="color:var(--text-muted)">Chegada ao porto de destino</p><p class="tl-meta">Pendente</p></div></li>
+        </ol>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <div class="route" role="img" aria-label="Rota de Santos até Roterdã">
+          <span class="pt"><span class="o" aria-hidden="true"></span>Santos (BRSSZ)</span>
+          <span class="line" aria-hidden="true"></span>
+          <span class="pt">Roterdã (NLRTM)<span class="d" aria-hidden="true"></span></span>
+        </div>
+        <p class="caption" style="margin:0">Mapa: origem em anel vazio, destino em sólido, linha tracejada em accent</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>10. Estados — vazio e erro</h2>
+    <p class="lead">Vazio com ícone, frase e uma ação. Erro com o que aconteceu, o que fazer e detalhe técnico recolhido.</p>
+    <div class="grid-2">
+      <div class="card">
+        <div class="empty">
+          <span class="empty-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H4z"/><path d="M4 16l4 4h8l4-4"/></svg></span>
+          <h4>Nenhuma importação ainda</h4>
+          <p>Envie Invoice, Packing List ou BL para começar a análise.</p>
+          <div style="margin-top:8px"><button class="btn btn-primary">Nova análise</button></div>
+        </div>
+      </div>
+      <div class="error-box" role="alert">
+        <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Não foi possível carregar as importações</h4>
+        <p>A conexão caiu durante a consulta. Os dados não foram alterados.</p>
+        <div class="row" style="gap:8px">
+          <button class="btn btn-secondary btn-sm">Tentar de novo</button>
+        </div>
+        <details style="margin-top:12px"><summary>Detalhes técnicos</summary><p class="mono" style="margin:6px 0 0">fetch failed (timeout 10s)</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="theme-dark" style="background:var(--canvas);border-radius:var(--radius-lg);padding:24px;border:1px solid var(--border)">
+    <h2>11. Tema escuro — amostra</h2>
+    <p class="lead">Mesmos componentes com os tokens escuros. Sem sombra; elevação por superfície e borda.</p>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Rastreio · MSKU1234567</h3>
+          <p class="card-desc">Em trânsito · ETA 12/11/2026</p>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px;align-items:flex-start">
+          <div class="row" style="gap:8px">
+            <span class="badge badge-accent">Em trânsito</span>
+            <span class="badge badge-warning">Transbordo</span>
+            <span class="badge badge-danger">Falha no rastreio</span>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary">Atualizar</button>
+            <button class="btn btn-secondary">Abrir importação</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <div class="field">
+          <label for="dk-a">E-mail</label>
+          <input id="dk-a" class="field-input" aria-invalid="true" aria-describedby="dk-a-err" value="voce@empresa">
+          <span id="dk-a-err" class="field-error">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            Informe um e-mail válido.
+          </span>
+        </div>
+        <div class="notice notice-danger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          <span>Erro no envio. Texto em danger-text sobre o tint escuro: 8,7:1.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="margin-top:48px;color:var(--text-muted);font:400 12px/16px var(--font)">
+    Style tile de proposta. Não é o app. Validar contraste no browser (axe/Lighthouse) antes de aprovar.
+  </footer>
+</main>
+</body>
+</html>

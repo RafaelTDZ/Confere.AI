@@ -15,14 +15,21 @@ import {
   type ConsigneeDivergence,
 } from "@/lib/documents/consignee-check";
 import { getDefaultConsignee } from "@/lib/documents/consignee-settings";
+import { overwriteLatestExtractionPayload } from "@/lib/documents/extractions";
+import type { ImportExtractionPatch } from "@/lib/documents/import-edit-shared";
 import {
   displayImportReference,
+  etaBrToIsoDate,
   fallbackSavedReference,
+  formatIsoDateBr,
   IMPORT_STATUS_LABELS,
   normalizeImportKey,
+  normalizeImportSort,
+  trackingStatusPriority,
   type ImportDetail,
   type ImportPartySummary,
   type ImportRow,
+  type ImportSort,
   type ImportStatus,
 } from "@/lib/documents/imports-shared";
 import {
@@ -81,7 +88,19 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 const IMPORT_LIST_SELECT =
-  "id, reference_number, status, supplier_name, invoice_number, bl_number, created_at, consignee_divergences";
+  "id, reference_number, status, supplier_name, invoice_number, bl_number, created_at, eta, consignee_divergences";
+
+const IMPORT_SORT_ORDER: Record<
+  ImportSort,
+  { column: "created_at" | "reference_number" | "eta"; ascending: boolean }
+> = {
+  created_desc: { column: "created_at", ascending: false },
+  created_asc: { column: "created_at", ascending: true },
+  reference_asc: { column: "reference_number", ascending: true },
+  reference_desc: { column: "reference_number", ascending: false },
+  eta_asc: { column: "eta", ascending: true },
+  eta_desc: { column: "eta", ascending: false },
+};
 
 const IMPORT_DETAIL_SELECT = `${IMPORT_LIST_SELECT}, updated_at, consignee_id, notify_id`;
 
@@ -114,9 +133,7 @@ async function findImportByColumn(
   const supabase = await getReadClient();
   const { data, error } = await supabase
     .from("imports")
-    .select(
-      "id, reference_number, supplier_name, invoice_number, bl_number",
-    )
+    .select("id, reference_number, supplier_name, invoice_number, bl_number")
     .eq("tenant_id", tenantId)
     .eq(column, value)
     .order("created_at", { ascending: false })
@@ -154,13 +171,122 @@ async function findImportByKeys(params: {
   return null;
 }
 
-export type ImportListOptions = ListOptions & { status?: string | null };
+export type ImportListOptions = ListOptions & {
+  status?: string | null;
+  sort?: ImportSort | null;
+};
 
 function normalizeImportStatus(value: unknown): string | null {
   if (typeof value !== "string") return null;
   return Object.prototype.hasOwnProperty.call(IMPORT_STATUS_LABELS, value)
     ? value
     : null;
+}
+
+/**
+ * Data de embarque (DD/MM/AAAA) da extração de BL mais recente de cada
+ * importação. Falha aqui não derruba a listagem: registra o erro e devolve o
+ * mapa vazio.
+ */
+async function loadBlOnboardDates(
+  supabase: Awaited<ReturnType<typeof getReadClient>>,
+  tenantId: string,
+  importIds: string[],
+): Promise<Map<string, string>> {
+  const onboardDates = new Map<string, string>();
+  if (importIds.length === 0) return onboardDates;
+
+  try {
+    const { data: documents, error: documentsError } = await supabase
+      .from("documents")
+      .select("id, import_id")
+      .eq("tenant_id", tenantId)
+      .eq("doc_type", "bill_of_lading")
+      .in("import_id", importIds);
+
+    if (documentsError) {
+      throw new Error(documentsError.message || "Falha ao listar BLs");
+    }
+
+    const importByDocument = new Map(
+      (documents ?? []).map((document) => [document.id, document.import_id]),
+    );
+    if (importByDocument.size === 0) return onboardDates;
+
+    const { data: extractions, error: extractionsError } = await supabase
+      .from("extraction_results")
+      .select("document_id, payload")
+      .in("document_id", [...importByDocument.keys()])
+      .order("created_at", { ascending: false });
+
+    if (extractionsError) {
+      throw new Error(
+        extractionsError.message || "Falha ao buscar extrações de BL",
+      );
+    }
+
+    // Ordenado por created_at desc: o primeiro valor não vazio por import é o mais recente.
+    for (const extraction of extractions ?? []) {
+      const importId = importByDocument.get(extraction.document_id);
+      if (!importId || onboardDates.has(importId)) continue;
+      const payload = extraction.payload as { onboardDate?: unknown } | null;
+      const onboardDate =
+        typeof payload?.onboardDate === "string"
+          ? payload.onboardDate.trim()
+          : "";
+      if (onboardDate) onboardDates.set(importId, onboardDate);
+    }
+  } catch (error) {
+    console.error("[importacoes] falha ao carregar data de embarque:", error);
+  }
+
+  return onboardDates;
+}
+
+/**
+ * Status de rastreio mais relevante por importação (chegada > em trânsito >
+ * demais; empate favorece o alvo de BL). Falha aqui não derruba a listagem:
+ * registra o erro e devolve o mapa vazio.
+ */
+async function loadTrackingStatuses(
+  supabase: Awaited<ReturnType<typeof getReadClient>>,
+  tenantId: string,
+  importIds: string[],
+): Promise<Map<string, string>> {
+  const statuses = new Map<string, string>();
+  if (importIds.length === 0) return statuses;
+
+  try {
+    const { data, error } = await supabase
+      .from("tracking_shipments")
+      .select("import_id, query_type, status")
+      .eq("tenant_id", tenantId)
+      .in("import_id", importIds);
+
+    if (error) {
+      throw new Error(error.message || "Falha ao buscar status do rastreio");
+    }
+
+    const rows = (data ?? [])
+      .map((row) => ({
+        importId: row.import_id,
+        isBl: row.query_type === "bl",
+        status: typeof row.status === "string" ? row.status.trim() : "",
+      }))
+      .filter((row) => row.status !== "")
+      .sort(
+        (a, b) =>
+          trackingStatusPriority(b.status) - trackingStatusPriority(a.status) ||
+          Number(b.isBl) - Number(a.isBl),
+      );
+    for (const row of rows) {
+      if (!statuses.has(row.importId)) statuses.set(row.importId, row.status);
+    }
+  } catch (error) {
+    console.error("[importacoes] falha ao carregar status do rastreio:", error);
+  }
+
+  return statuses;
 }
 
 /**
@@ -175,6 +301,7 @@ export async function listTenantImports(
   const pageSize = normalizePageSize(options.pageSize);
   const search = normalizeSearch(options.search);
   const status = normalizeImportStatus(options.status);
+  const order = IMPORT_SORT_ORDER[normalizeImportSort(options.sort)];
   const from = (page - 1) * pageSize;
 
   const supabase = await getReadClient();
@@ -191,19 +318,31 @@ export async function listTenantImports(
   }
 
   const { data, error, count } = await query
-    .order("created_at", { ascending: false })
+    .order(order.column, { ascending: order.ascending, nullsFirst: false })
     .range(from, from + pageSize - 1);
 
   if (error) {
     throw new Error(error.message);
   }
 
+  const rows = (data ?? []).map((row) => ({
+    ...row,
+    consignee_divergences: parseConsigneeDivergences(
+      row.consignee_divergences,
+    ),
+  }));
+  const importIds = rows.map((row) => row.id);
+  const [onboardDates, trackingStatuses] = await Promise.all([
+    loadBlOnboardDates(supabase, tenantId, importIds),
+    loadTrackingStatuses(supabase, tenantId, importIds),
+  ]);
+
   return buildPage(
-    (data ?? []).map((row) => ({
+    rows.map((row) => ({
       ...row,
-      consignee_divergences: parseConsigneeDivergences(
-        row.consignee_divergences,
-      ),
+      eta: formatIsoDateBr(row.eta),
+      onboardDate: onboardDates.get(row.id) ?? null,
+      trackingStatus: trackingStatuses.get(row.id) ?? null,
     })),
     count ?? 0,
     page,
@@ -410,6 +549,36 @@ export async function fillImportKeysIfEmpty(params: {
   });
 }
 
+/**
+ * Grava a referência extraída do arquivo apenas quando ainda não existe uma
+ * (nunca sobrescreve o que o usuário digitou). Violação de unicidade
+ * (`tenant_id, reference_number`) é ignorada: outra importação já usa o código.
+ */
+export async function fillImportReferenceIfEmpty(params: {
+  tenantId: string;
+  importId: string;
+  referenceNumber: string | null | undefined;
+}): Promise<boolean> {
+  const referenceNumber = (params.referenceNumber ?? "").trim();
+  if (!referenceNumber) return false;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("imports")
+    .update({ reference_number: referenceNumber.slice(0, 120) })
+    .eq("id", params.importId)
+    .eq("tenant_id", params.tenantId)
+    .is("reference_number", null);
+
+  if (error) {
+    if (error.code === "23505") return false;
+    throw new Error(
+      error.message || "Falha ao salvar a referência da importação",
+    );
+  }
+  return true;
+}
+
 export async function clearAutoReferenceIfNeeded(params: {
   tenantId: string;
   importId: string;
@@ -423,7 +592,9 @@ export async function clearAutoReferenceIfNeeded(params: {
     .maybeSingle();
 
   if (error) {
-    throw new Error(error.message || "Falha ao buscar referência da importação");
+    throw new Error(
+      error.message || "Falha ao buscar referência da importação",
+    );
   }
   if (!data?.reference_number) return;
   if (displayImportReference(data) !== "") return;
@@ -436,7 +607,9 @@ export async function clearAutoReferenceIfNeeded(params: {
     .eq("tenant_id", params.tenantId);
 
   if (updateError) {
-    throw new Error(updateError.message || "Falha ao limpar referência automática");
+    throw new Error(
+      updateError.message || "Falha ao limpar referência automática",
+    );
   }
 }
 
@@ -660,7 +833,9 @@ export async function updateImportConsignee(params: {
     .eq("tenant_id", params.tenantId);
 
   if (error) {
-    throw new Error(error.message || "Falha ao atualizar consignee da importação");
+    throw new Error(
+      error.message || "Falha ao atualizar consignee da importação",
+    );
   }
 }
 
@@ -712,9 +887,7 @@ export async function updateImportRecord(
     .from("imports")
     .update({
       reference_number: referenceNumber,
-      ...(supplierName !== undefined
-        ? { supplier_name: supplierName }
-        : {}),
+      ...(supplierName !== undefined ? { supplier_name: supplierName } : {}),
     })
     .eq("tenant_id", tenantId)
     .eq("id", id);
@@ -736,6 +909,170 @@ export async function updateImportRecord(
   }
   if (error) {
     throw new Error(error.message || "Falha ao atualizar importação");
+  }
+
+  return getImportDetail(tenantId, id);
+}
+
+/**
+ * Espelha o ETA da extração de BL mais recente em `imports.eta` (usado na
+ * ordenação da listagem). Vazio ou inválido grava `null`. Roda sem sessão
+ * (pipeline/worker/rastreio), então usa o client admin; falha é logada e não
+ * interrompe o fluxo que chamou.
+ */
+export async function syncImportEta(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<void> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data: documents, error: documentsError } = await admin
+      .from("documents")
+      .select("id")
+      .eq("tenant_id", params.tenantId)
+      .eq("import_id", params.importId)
+      .eq("doc_type", "bill_of_lading");
+
+    if (documentsError) {
+      throw new Error(
+        documentsError.message || "Falha ao listar BLs da importação",
+      );
+    }
+
+    const documentIds = (documents ?? []).map((row) => row.id);
+    let eta: string | null = null;
+    if (documentIds.length > 0) {
+      const { data: extraction, error: extractionError } = await admin
+        .from("extraction_results")
+        .select("payload")
+        .eq("tenant_id", params.tenantId)
+        .in("document_id", documentIds)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (extractionError) {
+        throw new Error(
+          extractionError.message || "Falha ao buscar extração do BL",
+        );
+      }
+      const payload = extraction?.payload as { eta?: unknown } | null;
+      eta = etaBrToIsoDate(
+        typeof payload?.eta === "string" ? payload.eta : null,
+      );
+    }
+
+    const { error } = await admin
+      .from("imports")
+      .update({ eta })
+      .eq("id", params.importId)
+      .eq("tenant_id", params.tenantId);
+
+    if (error) {
+      throw new Error(error.message || "Falha ao salvar ETA da importação");
+    }
+  } catch (error) {
+    console.error("[importacoes] falha ao sincronizar ETA:", error);
+  }
+}
+
+/**
+ * Aplica correções manuais do usuário sobre o que a IA extraiu: números da
+ * Invoice/BL (colunas de `imports`) e campos do BL/produtos (payload da
+ * extração mais recente de cada documento).
+ */
+export async function updateImportExtractionData(
+  tenantId: string,
+  id: string,
+  patch: ImportExtractionPatch,
+): Promise<ImportDetail> {
+  const current = await getImportDetail(tenantId, id);
+
+  const invoiceDocIds = current.documents
+    .filter((document) => document.doc_type === "invoice")
+    .map((document) => document.id);
+  const blDocIds = current.documents
+    .filter((document) => document.doc_type === "bill_of_lading")
+    .map((document) => document.id);
+
+  const blPatchKeys = patch.bl ? Object.keys(patch.bl) : [];
+  const hasBlPatch = blPatchKeys.length > 0;
+  const hasProducts = patch.products !== undefined;
+
+  if (hasBlPatch && (!current.bl || blDocIds.length === 0)) {
+    throw new ImportValidationError("Nenhum dado de BL extraído para corrigir");
+  }
+  if (hasProducts && (!current.invoice || invoiceDocIds.length === 0)) {
+    throw new ImportValidationError(
+      "Nenhum dado de Invoice extraído para corrigir",
+    );
+  }
+
+  const invoiceNumber =
+    patch.invoiceNumber === undefined
+      ? undefined
+      : normalizeImportKey(patch.invoiceNumber);
+  const blNumber =
+    patch.blNumber === undefined
+      ? undefined
+      : normalizeImportKey(patch.blNumber);
+
+  if (hasBlPatch) {
+    const payload = {
+      ...current.bl,
+      ...patch.bl,
+      ...(blNumber !== undefined ? { number: blNumber } : {}),
+    };
+    const saved = await overwriteLatestExtractionPayload({
+      tenantId,
+      documentIds: blDocIds,
+      payload,
+    });
+    if (!saved) {
+      throw new ImportValidationError(
+        "Nenhum dado de BL extraído para corrigir",
+      );
+    }
+    await syncImportEta({ tenantId, importId: id });
+  }
+
+  if (hasProducts || invoiceNumber !== undefined || blNumber !== undefined) {
+    if (current.invoice && invoiceDocIds.length > 0) {
+      const payload = {
+        ...current.invoice,
+        ...(hasProducts ? { products: patch.products } : {}),
+        ...(invoiceNumber !== undefined ? { number: invoiceNumber } : {}),
+        ...(blNumber !== undefined ? { blNumber } : {}),
+      };
+      await overwriteLatestExtractionPayload({
+        tenantId,
+        documentIds: invoiceDocIds,
+        payload,
+      });
+    }
+  }
+
+  if (invoiceNumber !== undefined || blNumber !== undefined) {
+    const admin = createSupabaseAdminClient();
+    const { error } = await admin
+      .from("imports")
+      .update({
+        ...(invoiceNumber !== undefined
+          ? { invoice_number: invoiceNumber }
+          : {}),
+        ...(blNumber !== undefined ? { bl_number: blNumber } : {}),
+      })
+      .eq("tenant_id", tenantId)
+      .eq("id", id);
+
+    if (error?.code === "23505") {
+      throw new ImportConflictError(
+        "Já existe outra importação com este número de Invoice ou BL",
+      );
+    }
+    if (error) {
+      throw new Error(error.message || "Falha ao atualizar importação");
+    }
   }
 
   return getImportDetail(tenantId, id);

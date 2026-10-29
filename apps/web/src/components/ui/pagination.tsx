@@ -16,7 +16,7 @@ function buildHref(
 ): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(searchParams ?? {})) {
-    if (key === "page" || key === "saved" || value === undefined) continue;
+    if (key === "page" || value === undefined) continue;
     if (Array.isArray(value)) {
       for (const item of value) params.append(key, item);
     } else {

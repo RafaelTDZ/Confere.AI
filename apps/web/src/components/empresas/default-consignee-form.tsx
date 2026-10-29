@@ -98,7 +98,7 @@ export function DefaultConsigneeForm({
       </div>
 
       {error && (
-        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive-text">
           <CircleAlert className="h-4 w-4 shrink-0" />
           {error}
         </p>

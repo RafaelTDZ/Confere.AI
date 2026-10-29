@@ -11,13 +11,16 @@ import {
   packingListExtractionSchema,
   type PackingListExtraction,
 } from "@/lib/ai/schemas";
+import { runAiTask } from "@/lib/ai/task-timeout";
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 async function extractOnce(
   prepared: PreparedDocument,
   pdfEngine: PdfEngine,
+  abortSignal: AbortSignal,
 ) {
   return generateText({
+    abortSignal,
     model: getDocumentLanguageModel({
       provider: prepared.provider,
       modelId: prepared.modelId,
@@ -63,14 +66,18 @@ export async function extractPackingList(
 
   let result;
   try {
-    result = await extractOnce(prepared, "native");
+    result = await runAiTask("extract_packing_list", (signal) =>
+      extractOnce(prepared, "native", signal),
+    );
   } catch (error) {
     if (
       prepared.isPdf &&
       prepared.provider === "openrouter" &&
       shouldFallbackPdfEngine(error)
     ) {
-      result = await extractOnce(prepared, "mistral-ocr");
+      result = await runAiTask("extract_packing_list:mistral-ocr", (signal) =>
+        extractOnce(prepared, "mistral-ocr", signal),
+      );
     } else {
       throw error;
     }

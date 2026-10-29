@@ -8,6 +8,11 @@ import {
   type PdfEngine,
 } from "@/lib/ai/tasks/document-model";
 import { blExtractionSchema, type BlExtraction } from "@/lib/ai/schemas";
+import {
+  applyMarkdownFallbacks,
+  normalizeBlExtraction,
+} from "@/lib/ai/bl-normalize";
+import { runAiTask } from "@/lib/ai/task-timeout";
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 const PACKAGE_TRANSLATIONS: Record<string, string> = {
@@ -90,6 +95,7 @@ function cleanBlExtraction(bl: BlExtraction): BlExtraction {
 
   return {
     number: uppercaseText(bl.number),
+    masterBlNumber: trimOrNull(bl.masterBlNumber)?.replace(/\s+/g, "") ?? null,
     carrier: uppercaseText(bl.carrier),
     shipper: uppercaseText(bl.shipper),
     consignee: uppercaseText(bl.consignee),
@@ -132,8 +138,10 @@ function cleanBlExtraction(bl: BlExtraction): BlExtraction {
 async function extractOnce(
   prepared: PreparedDocument,
   pdfEngine: PdfEngine,
+  abortSignal: AbortSignal,
 ) {
   return generateText({
+    abortSignal,
     model: getDocumentLanguageModel({
       provider: prepared.provider,
       modelId: prepared.modelId,
@@ -153,28 +161,29 @@ async function extractOnce(
             type: "text",
             text: [
               "Extraia os dados do Bill of Lading (BL/AWB / conhecimento de embarque) anexado.",
-              "Leia todas as páginas do PDF, não só a primeira.",
+              "Leia todas as páginas do PDF, não só a primeira. O rider/anexo costuma trazer volumes, NCM, OFT/THD e free time.",
               "Não extraia nem infira número de Invoice a partir do BL.",
               "Campos obrigatórios no schema (use null quando não encontrar; arrays vazios se não houver itens):",
               "1) number — número do BL / Bill of Lading / AWB / conhecimento de embarque",
-              "2) carrier — armador / transportadora",
-              "3) shipper — shipper / exportador (texto; não estruture CNPJ nem endereço)",
-              "4) consignee — consignatário (texto completo como aparece no BL)",
-              "5) consigneeDetails — estruture o bloco Consignee em name, cnpj e address { street, number, complement, postalCode, city, state, country, other }; use null nos campos ausentes",
-              "6) notifyParty — notify party (texto completo como aparece no BL)",
-              "7) notifyPartyDetails — estruture o bloco Notify Party em name, cnpj e address { street, number, complement, postalCode, city, state, country, other }; use null nos campos ausentes",
-              "8) polCity, polCountry — porto de origem (cidade e país)",
-              "9) podCity, podCountry — porto de destino (cidade e país)",
-              "10) vessel, voyage — navio e viagem",
-              "11) descriptionOfGoods — descrição da mercadoria",
-              "12) grossWeight — peso bruto (números; preserve o decimal do documento, vírgula ou ponto)",
-              "13) volumes — quantidade de volumes",
-              "14) packages — tipo de embalagem; se o documento estiver em inglês, traduza para português (CAIXAS, PALETES, SACOS, TAMBORES, BOBINAS, etc.)",
-              "15) measurement — cubagem (números; preserve o decimal do documento)",
-              "16) freightValue, freightCurrency, freightTerms, freeTime",
-              "17) ncm[] — códigos HS/NCM completos como aparecem (dígitos e pontuação do código; não truncar; não inventar)",
-              "18) containerNumbers[], containerQuantity, containerType, sealNumbers[]",
-              "19) onboardDate, eta — datas como no documento",
+              "2) masterBlNumber — procure MASTER B/L, MBL NO., OCEAN B/L e B/L MASTER (BL da consolidação emitido pelo armador). Quando o BL do documento for do agente de carga (forwarder/NVOCC) e o documento trouxer o BL master, devolva apenas esse número (maiúsculas, sem espaços); se não houver, use null. Nunca repita o número do BL do documento.",
+              "3) carrier — armador oceânico (vessel operator), NÃO o forwarder que emitiu o BL. Se o emitente for LX Pantos/YQN/DHL etc., use o armador identificável pelo navio (CMA CGM, MSC, MAERSK, EVERGREEN, COSCO, OOCL, HAPAG, HMM, ONE).",
+              "4) shipper — shipper / exportador (texto; não estruture CNPJ nem endereço)",
+              "5) consignee — consignatário (texto completo como aparece no BL)",
+              "6) consigneeDetails — estruture o bloco Consignee em name, cnpj e address { street, number, complement, postalCode, city, state, country, other }; use null nos campos ausentes",
+              "7) notifyParty — notify party (texto completo como aparece no BL)",
+              "8) notifyPartyDetails — estruture o bloco Notify Party em name, cnpj e address { street, number, complement, postalCode, city, state, country, other }; use null nos campos ausentes",
+              "9) polCity, polCountry — porto de origem (cidade e país)",
+              "10) podCity, podCountry — porto de destino (cidade e país)",
+              "11) vessel, voyage — navio e viagem",
+              "12) descriptionOfGoods — descrição da mercadoria, sem o boilerplate SHIPPER'S LOAD AND COUNT / SAID TO CONTAIN",
+              "13) grossWeight — peso bruto total em KGS; extraia o número COMO APARECE no documento (vírgula/ponto); a normalização converte",
+              "14) volumes — quantidade TOTAL de volumes/cartons, como aparece (ex.: 2,664); a normalização remove o separador",
+              "15) packages — tipo de embalagem, sem o número; se o documento estiver em inglês, traduza para português (CARTONS → CAIXAS, PALLETS → PALETES, DRUMS → TAMBORES, etc.)",
+              "16) measurement — cubagem em CBM, como aparece (ex.: 136.000)",
+              "17) freightValue, freightCurrency, freightTerms, freeTime — procure OFT/ocean freight e free time inclusive no rider; ex.: \"OFT:USD 8400\" → 8400 / USD; \"FREE TIME: 21 DAYS\" → 21 DIAS; \"FREIGHT PREPAID\" → FREIGHT PREPAID",
+              "18) ncm[] — códigos HS/NCM completos como aparecem (dígitos e pontuação do código; não truncar; não inventar)",
+              "19) containerNumbers[], containerQuantity (ex.: 2), containerType (ex.: 40 HC), sealNumbers[] — em \"2X40 HC\", separe a quantidade (2) do tipo (40 HC)",
+              "20) onboardDate, eta — SEMPRE no padrão DD/MM/AAAA (converta OCT/01/2026 → 01/10/2026; 2026-10-01 → 01/10/2026)",
               "Texto em maiúsculas quando fizer sentido (nomes, portos, carrier, navio).",
               "Não invente valores; prefira null a chutes.",
             ].join("\n"),
@@ -198,14 +207,18 @@ export async function extractBl(prepared: PreparedDocument): Promise<{
 
   let result;
   try {
-    result = await extractOnce(prepared, "native");
+    result = await runAiTask("extract_bl", (signal) =>
+      extractOnce(prepared, "native", signal),
+    );
   } catch (error) {
     if (
       prepared.isPdf &&
       prepared.provider === "openrouter" &&
       shouldFallbackPdfEngine(error)
     ) {
-      result = await extractOnce(prepared, "mistral-ocr");
+      result = await runAiTask("extract_bl:mistral-ocr", (signal) =>
+        extractOnce(prepared, "mistral-ocr", signal),
+      );
     } else {
       throw error;
     }
@@ -216,7 +229,16 @@ export async function extractBl(prepared: PreparedDocument): Promise<{
     throw new Error("A IA não retornou dados do BL");
   }
 
-  const bl = cleanBlExtraction(raw);
+  const normalized = normalizeBlExtraction(cleanBlExtraction(raw));
+  const markdown = prepared.content
+    .filter(
+      (part): part is { type: "text"; text: string } => part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("\n");
+  const bl = markdown
+    ? applyMarkdownFallbacks(normalized, markdown)
+    : normalized;
   const usage = extractAiTaskUsage(result, Date.now() - started);
 
   return {

@@ -22,7 +22,9 @@ import {
 } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Hobby com Fluid compute permite até 300s; o worker roda no `after()` da
+// própria request e já medimos análises de ~290s (invoice + packing list).
+export const maxDuration = 300;
 
 const IMPORT_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

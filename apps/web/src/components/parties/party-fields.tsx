@@ -6,8 +6,11 @@ import {
   formatCepInput,
   formatCnpjInput,
   parsePartyAddress,
+  uppercasePartyAddress,
+  uppercasePartyText,
   type PartyAddress,
 } from "@/lib/documents/parties-shared";
+import { formatUfInput, normalizeUf } from "@/lib/documents/uf-shared";
 
 export type PartyAddressFields = {
   street: string;
@@ -31,9 +34,9 @@ export function toPartyFieldsValue(party: {
   cnpj: string;
   address: PartyAddress;
 }): PartyFieldsValue {
-  const address = parsePartyAddress(party.address);
+  const address = uppercasePartyAddress(parsePartyAddress(party.address));
   return {
-    name: party.name,
+    name: uppercasePartyText(party.name) ?? "",
     cnpj: formatCnpjInput(party.cnpj),
     address: {
       street: [address.street, address.number].filter(Boolean).join(", "),
@@ -148,8 +151,21 @@ export function PartyFields({
           id={`${idPrefix}-state`}
           value={value.address.state}
           required
+          maxLength={2}
+          autoCapitalize="characters"
+          placeholder="UF"
           disabled={disabled}
-          onChange={(event) => updateAddress({ state: event.target.value })}
+          onChange={(event) =>
+            updateAddress({ state: formatUfInput(event.target.value) })
+          }
+          onPaste={(event) => {
+            // O maxLength truncaria o texto antes do onChange; ao colar o nome
+            // por extenso ("Santa Catarina") convertemos direto para a sigla.
+            const uf = normalizeUf(event.clipboardData.getData("text"));
+            if (!uf) return;
+            event.preventDefault();
+            updateAddress({ state: uf });
+          }}
         />
       </div>
       <div className="space-y-2">

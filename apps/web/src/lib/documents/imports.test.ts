@@ -9,10 +9,12 @@ import {
   ImportConflictError,
   ImportValidationError,
   listTenantImports,
+  syncImportEta,
   updateImportConsignee,
   updateImportConsigneeDivergences,
   updateImportRecord,
 } from "@/lib/documents/imports";
+import type { ImportSort } from "@/lib/documents/imports-shared";
 import { ImportNotFoundError } from "@/lib/documents/parties";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 
@@ -54,6 +56,7 @@ function importSeed(params: {
   consigneeId?: string | null;
   notifyId?: string | null;
   consigneeDivergences?: unknown;
+  eta?: string | null;
 }): FakeRow {
   const createdAt = params.createdAt ?? CREATED_EARLY;
   return {
@@ -70,6 +73,7 @@ function importSeed(params: {
     consignee_id: params.consigneeId ?? null,
     notify_id: params.notifyId ?? null,
     consignee_divergences: params.consigneeDivergences ?? null,
+    eta: params.eta ?? null,
   };
 }
 
@@ -591,6 +595,513 @@ describe("listTenantImports", () => {
 
     expect(page.rows.map((row) => row.id)).toContain("import-detail");
     expect(page.rows.map((row) => row.id)).not.toContain("import-b-by-bl");
+  });
+
+  it("devolve o ETA de imports.eta formatado em DD/MM/AAAA", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-eta",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-ETA",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        eta: "2026-03-20",
+      }),
+    );
+
+    const page = await listTenantImports(TENANT_A, { search: "PO-ETA" });
+
+    expect(page.rows[0]).toMatchObject({ id: "import-eta", eta: "20/03/2026" });
+  });
+
+  it("não usa o ETA do payload do BL na listagem: só a coluna imports.eta", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-eta-column-only",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-ETA-COLUNA",
+        createdAt: "2026-04-02T00:00:00.000Z",
+      }),
+    );
+    admin.rows("documents").push(
+      documentSeed({
+        id: "doc-eta-column-bl",
+        tenantId: TENANT_A,
+        importId: "import-eta-column-only",
+        docType: "bill_of_lading",
+      }),
+    );
+    admin.rows("extraction_results").push(
+      extractionSeed({
+        id: "extraction-eta-column-bl",
+        documentId: "doc-eta-column-bl",
+        payload: { eta: "01/01/2027" },
+        createdAt: "2026-02-01T00:00:00.000Z",
+      }),
+    );
+
+    const page = await listTenantImports(TENANT_A, {
+      search: "PO-ETA-COLUNA",
+    });
+
+    expect(page.rows[0]?.eta).toBeNull();
+  });
+
+  it("mantém a listagem e o ETA da coluna quando a leitura de embarque falha", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-eta-kept",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-ETA-KEPT",
+        createdAt: "2026-04-02T00:00:00.000Z",
+        eta: "2026-05-01",
+      }),
+    );
+    readClient.failNext(
+      { message: "BLs indisponíveis" },
+      { table: "documents", operation: "select" },
+    );
+
+    const page = await listTenantImports(TENANT_A, { search: "PO-ETA-KEPT" });
+
+    expect(page.rows[0]).toMatchObject({
+      id: "import-eta-kept",
+      eta: "01/05/2026",
+      onboardDate: null,
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao carregar data de embarque:",
+      expect.any(Error),
+    );
+  });
+
+  describe("ordenação", () => {
+    const SORT_IDS_PREFIX = "sort-";
+
+    beforeEach(() => {
+      admin.rows("imports").push(
+        importSeed({
+          id: "sort-b",
+          tenantId: TENANT_A,
+          referenceNumber: "PO-SORT-B",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          eta: "2026-05-10",
+        }),
+        importSeed({
+          id: "sort-a",
+          tenantId: TENANT_A,
+          referenceNumber: "PO-SORT-A",
+          createdAt: "2026-01-03T00:00:00.000Z",
+          eta: "2026-09-30",
+        }),
+        importSeed({
+          id: "sort-none",
+          tenantId: TENANT_A,
+          referenceNumber: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          eta: null,
+        }),
+        importSeed({
+          id: "sort-c",
+          tenantId: TENANT_A,
+          referenceNumber: "PO-SORT-C",
+          createdAt: "2026-01-04T00:00:00.000Z",
+          eta: "2026-02-01",
+        }),
+      );
+    });
+
+    async function sortedIds(sort?: ImportSort | null): Promise<string[]> {
+      const page = await listTenantImports(TENANT_A, {
+        pageSize: 100,
+        sort,
+      });
+      return page.rows
+        .map((row) => row.id)
+        .filter((id) => id.startsWith(SORT_IDS_PREFIX));
+    }
+
+    it.each([
+      [undefined, ["sort-c", "sort-a", "sort-b", "sort-none"]],
+      ["created_desc" as const, ["sort-c", "sort-a", "sort-b", "sort-none"]],
+      ["created_asc" as const, ["sort-none", "sort-b", "sort-a", "sort-c"]],
+      ["reference_asc" as const, ["sort-a", "sort-b", "sort-c", "sort-none"]],
+      ["reference_desc" as const, ["sort-c", "sort-b", "sort-a", "sort-none"]],
+      ["eta_asc" as const, ["sort-c", "sort-b", "sort-a", "sort-none"]],
+      ["eta_desc" as const, ["sort-a", "sort-b", "sort-c", "sort-none"]],
+    ])(
+      "ordena por %s com valores nulos no fim",
+      async (sort, expected) => {
+        expect(await sortedIds(sort)).toEqual(expected);
+      },
+    );
+
+    it("usa created_desc quando o valor de ordenação é desconhecido", async () => {
+      expect(await sortedIds("invalido" as ImportSort)).toEqual([
+        "sort-c",
+        "sort-a",
+        "sort-b",
+        "sort-none",
+      ]);
+    });
+
+    it("mantém a ordenação junto com a busca", async () => {
+      const page = await listTenantImports(TENANT_A, {
+        search: "PO-SORT",
+        sort: "reference_desc",
+      });
+
+      expect(page.rows.map((row) => row.id)).toEqual([
+        "sort-c",
+        "sort-b",
+        "sort-a",
+      ]);
+    });
+  });
+
+  it("traz a data de embarque (onboardDate) do mesmo payload do BL mais recente", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-onboard",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-ONBOARD",
+        createdAt: "2026-04-06T00:00:00.000Z",
+        eta: "2026-11-12",
+      }),
+    );
+    admin.rows("documents").push(
+      documentSeed({
+        id: "doc-onboard-bl",
+        tenantId: TENANT_A,
+        importId: "import-onboard",
+        docType: "bill_of_lading",
+      }),
+    );
+    admin.rows("extraction_results").push(
+      extractionSeed({
+        id: "extraction-onboard-old",
+        documentId: "doc-onboard-bl",
+        payload: { eta: "10/11/2026", onboardDate: "01/10/2026" },
+        createdAt: "2026-02-01T00:00:00.000Z",
+      }),
+      extractionSeed({
+        id: "extraction-onboard-new",
+        documentId: "doc-onboard-bl",
+        payload: { eta: "12/11/2026", onboardDate: "   " },
+        createdAt: "2026-02-10T00:00:00.000Z",
+      }),
+    );
+
+    const page = await listTenantImports(TENANT_A, { search: "PO-ONBOARD" });
+
+    expect(page.rows[0]).toMatchObject({
+      eta: "12/11/2026",
+      onboardDate: "01/10/2026",
+      trackingStatus: null,
+    });
+  });
+
+  it("devolve data de embarque nula sem BL extraído", async () => {
+    const page = await listTenantImports(TENANT_A, { search: "PO-DETAIL" });
+
+    expect(page.rows[0]?.onboardDate).toBeNull();
+  });
+
+  it("traz o status de rastreio mais relevante por importação, ignorando status vazio", async () => {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-status",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-STATUS",
+        createdAt: "2026-04-07T00:00:00.000Z",
+      }),
+      importSeed({
+        id: "import-status-container",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-STATUS-CONTAINER",
+        createdAt: "2026-04-08T00:00:00.000Z",
+      }),
+      importSeed({
+        id: "import-status-tie",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-STATUS-TIE",
+        createdAt: "2026-04-09T00:00:00.000Z",
+      }),
+      importSeed({
+        id: "import-status-blank",
+        tenantId: TENANT_A,
+        referenceNumber: "PO-STATUS-BLANK",
+        createdAt: "2026-04-10T00:00:00.000Z",
+      }),
+    );
+    admin.rows("tracking_shipments").push(
+      {
+        id: "shipment-status-bl",
+        tenant_id: TENANT_A,
+        import_id: "import-status",
+        query_type: "bl",
+        status: "in_transit",
+        ata: null,
+      },
+      {
+        id: "shipment-status-container",
+        tenant_id: TENANT_A,
+        import_id: "import-status",
+        query_type: "container",
+        status: "arrived",
+        ata: null,
+      },
+      {
+        id: "shipment-status-container-2",
+        tenant_id: TENANT_A,
+        import_id: "import-status-container",
+        query_type: "container",
+        status: "in_transit",
+        ata: "21/10/2026",
+      },
+      {
+        id: "shipment-status-tie-bl",
+        tenant_id: TENANT_A,
+        import_id: "import-status-tie",
+        query_type: "bl",
+        status: "pending",
+        ata: null,
+      },
+      {
+        id: "shipment-status-tie-container",
+        tenant_id: TENANT_A,
+        import_id: "import-status-tie",
+        query_type: "container",
+        status: "blocked",
+        ata: null,
+      },
+      {
+        id: "shipment-status-blank",
+        tenant_id: TENANT_A,
+        import_id: "import-status-blank",
+        query_type: "bl",
+        status: "  ",
+        ata: null,
+      },
+      {
+        id: "shipment-status-other-tenant",
+        tenant_id: TENANT_B,
+        import_id: "import-status-blank",
+        query_type: "bl",
+        status: "arrived",
+        ata: null,
+      },
+    );
+
+    const page = await listTenantImports(TENANT_A, { search: "PO-STATUS" });
+
+    const byId = new Map(page.rows.map((row) => [row.id, row]));
+    expect(byId.get("import-status")?.trackingStatus).toBe("arrived");
+    expect(byId.get("import-status-container")?.trackingStatus).toBe(
+      "in_transit",
+    );
+    expect(byId.get("import-status-tie")?.trackingStatus).toBe("pending");
+    expect(byId.get("import-status-blank")?.trackingStatus).toBeNull();
+  });
+
+  it("mantém a listagem com status nulo quando a consulta ao rastreio falha", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    readClient.failNext(
+      { message: "rastreio indisponível" },
+      { table: "tracking_shipments", operation: "select" },
+    );
+
+    const page = await listTenantImports(TENANT_A);
+
+    expect(page.total).toBe(11);
+    expect(page.rows.map((row) => row.id)).toContain("import-detail");
+    expect(page.rows.every((row) => row.trackingStatus === null)).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao carregar status do rastreio:",
+      expect.any(Error),
+    );
+  });
+
+  it("mantém a listagem com data de embarque nula quando a leitura do BL falha", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    readClient.failNext(
+      { message: "extrações indisponíveis" },
+      { table: "extraction_results", operation: "select" },
+    );
+
+    const page = await listTenantImports(TENANT_A);
+
+    expect(page.total).toBe(11);
+    expect(page.rows.every((row) => row.onboardDate === null)).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao carregar data de embarque:",
+      expect.any(Error),
+    );
+  });
+});
+
+describe("syncImportEta", () => {
+  function seedSyncImport(eta: string | null): void {
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-sync",
+        tenantId: TENANT_A,
+        createdAt: CREATED_LATE,
+        eta,
+      }),
+    );
+  }
+
+  function seedSyncBl(payload: unknown): void {
+    admin.rows("documents").push(
+      documentSeed({
+        id: "doc-sync-bl",
+        tenantId: TENANT_A,
+        importId: "import-sync",
+        docType: "bill_of_lading",
+      }),
+    );
+    admin.rows("extraction_results").push(
+      extractionSeed({
+        id: "extraction-sync-bl",
+        documentId: "doc-sync-bl",
+        payload,
+        createdAt: "2026-02-10T00:00:00.000Z",
+      }),
+    );
+  }
+
+  it("grava a data do ETA do BL mais recente em imports.eta", async () => {
+    seedSyncImport(null);
+    admin.rows("documents").push(
+      documentSeed({
+        id: "doc-sync-bl-old",
+        tenantId: TENANT_A,
+        importId: "import-sync",
+        docType: "bill_of_lading",
+      }),
+      documentSeed({
+        id: "doc-sync-bl-new",
+        tenantId: TENANT_A,
+        importId: "import-sync",
+        docType: "bill_of_lading",
+      }),
+    );
+    admin.rows("extraction_results").push(
+      extractionSeed({
+        id: "extraction-sync-old-1",
+        documentId: "doc-sync-bl-old",
+        payload: { eta: "01/03/2026" },
+        createdAt: "2026-02-01T00:00:00.000Z",
+      }),
+      extractionSeed({
+        id: "extraction-sync-old-2",
+        documentId: "doc-sync-bl-old",
+        payload: { eta: "20/03/2026" },
+        createdAt: "2026-02-20T00:00:00.000Z",
+      }),
+      extractionSeed({
+        id: "extraction-sync-new",
+        documentId: "doc-sync-bl-new",
+        payload: { eta: "15/03/2026" },
+        createdAt: "2026-02-10T00:00:00.000Z",
+      }),
+    );
+
+    await syncImportEta({ tenantId: TENANT_A, importId: "import-sync" });
+
+    expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-03-20");
+  });
+
+  it.each([["   "], ["31/02/2026"], ["2026-03-20"], [null]])(
+    "limpa imports.eta quando o ETA do BL mais recente é inválido (%s)",
+    async (eta) => {
+      seedSyncImport("2026-01-01");
+      seedSyncBl({ eta });
+
+      await syncImportEta({ tenantId: TENANT_A, importId: "import-sync" });
+
+      expect(findImport("import-sync", TENANT_A)?.eta).toBeNull();
+    },
+  );
+
+  it("limpa imports.eta quando a importação não tem BL", async () => {
+    seedSyncImport("2026-01-01");
+
+    await syncImportEta({ tenantId: TENANT_A, importId: "import-sync" });
+
+    expect(findImport("import-sync", TENANT_A)?.eta).toBeNull();
+  });
+
+  it("não altera outras importações do tenant", async () => {
+    seedSyncImport("2026-01-01");
+    admin.rows("imports").push(
+      importSeed({
+        id: "import-sync-other",
+        tenantId: TENANT_A,
+        eta: "2026-07-07",
+      }),
+    );
+    seedSyncBl({ eta: "10/11/2026" });
+
+    await syncImportEta({ tenantId: TENANT_A, importId: "import-sync" });
+
+    expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-11-10");
+    expect(findImport("import-sync-other", TENANT_A)?.eta).toBe("2026-07-07");
+  });
+
+  it("tolera falha ao ler a extração do BL e mantém o ETA atual", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    seedSyncImport("2026-01-01");
+    seedSyncBl({ eta: "10/11/2026" });
+    adminClient.failNext(
+      { message: "extrações indisponíveis" },
+      { table: "extraction_results", operation: "select" },
+    );
+
+    await expect(
+      syncImportEta({ tenantId: TENANT_A, importId: "import-sync" }),
+    ).resolves.toBeUndefined();
+
+    expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-01-01");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao sincronizar ETA:",
+      expect.any(Error),
+    );
+  });
+
+  it("tolera falha ao gravar imports.eta", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    seedSyncImport("2026-01-01");
+    seedSyncBl({ eta: "10/11/2026" });
+    adminClient.failNext(
+      { message: "escrita indisponível" },
+      { table: "imports", operation: "update" },
+    );
+
+    await expect(
+      syncImportEta({ tenantId: TENANT_A, importId: "import-sync" }),
+    ).resolves.toBeUndefined();
+
+    expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-01-01");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao sincronizar ETA:",
+      expect.any(Error),
+    );
+  });
+
+  it("tolera falha ao criar o client admin", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.failAdminClient = true;
+
+    await expect(
+      syncImportEta({ tenantId: TENANT_A, importId: "import-sync" }),
+    ).resolves.toBeUndefined();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[importacoes] falha ao sincronizar ETA:",
+      expect.any(Error),
+    );
   });
 });
 

@@ -18,6 +18,7 @@ import {
   formatNcmInput,
   normalizeNcmCode,
 } from "@/lib/documents/ncms-shared";
+import { setFlash } from "@/lib/flash";
 import { cn } from "@/lib/utils";
 
 export function NcmForm({
@@ -57,7 +58,8 @@ export function NcmForm({
       if (!res.ok) {
         throw new Error(data.error || "Falha ao salvar NCM");
       }
-      router.push("/ncm?saved=ok");
+      setFlash("NCM salva com sucesso.");
+      router.push("/ncm");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro inesperado");
@@ -107,7 +109,7 @@ export function NcmForm({
       </Card>
 
       {error && (
-        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive-text">
           <CircleAlert className="h-4 w-4 shrink-0" />
           {error}
         </p>

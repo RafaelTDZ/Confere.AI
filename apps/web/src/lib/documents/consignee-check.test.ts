@@ -189,6 +189,7 @@ describe("compareConsignee", () => {
       address: {
         postalCode: "01310-100",
         city: "são  paulo",
+        state: "Santa Catarina",
         country: "Brazil",
       },
     });
@@ -198,6 +199,7 @@ describe("compareConsignee", () => {
       address: {
         postalCode: "01310100",
         city: "SÃO PAULO",
+        state: "SC",
         country: "Brasil",
       },
     });

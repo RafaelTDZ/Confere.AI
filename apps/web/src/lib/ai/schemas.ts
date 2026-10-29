@@ -23,7 +23,9 @@ export const documentClassificationSchema = z.object({
     .describe("Observação breve sobre a classificação, ou null"),
 });
 
-export type DocumentClassification = z.infer<typeof documentClassificationSchema>;
+export type DocumentClassification = z.infer<
+  typeof documentClassificationSchema
+>;
 
 const partyAddressSchema = z.object({
   street: z
@@ -64,18 +66,21 @@ const partyAddressSchema = z.object({
 
 const partySchema = z.object({
   name: z.string().nullable().describe("Razão social ou nome"),
-  cnpj: z
-    .string()
-    .nullable()
-    .describe("CNPJ ou equivalente fiscal, se houver"),
+  cnpj: z.string().nullable().describe("CNPJ ou equivalente fiscal, se houver"),
   address: partyAddressSchema.describe("Endereço estruturado"),
 });
 
 export type InvoiceParty = z.infer<typeof partySchema>;
 
 const blPartyDetailsSchema = z.object({
-  name: z.string().nullable().describe("Razão social ou nome como aparece no BL"),
-  cnpj: z.string().nullable().describe("CNPJ ou equivalente fiscal, se aparecer"),
+  name: z
+    .string()
+    .nullable()
+    .describe("Razão social ou nome como aparece no BL"),
+  cnpj: z
+    .string()
+    .nullable()
+    .describe("CNPJ ou equivalente fiscal, se aparecer"),
   address: partyAddressSchema.describe("Endereço estruturado da empresa"),
 });
 
@@ -84,14 +89,8 @@ const exporterSchema = z.object({
 });
 
 const invoiceProductSchema = z.object({
-  code: z
-    .string()
-    .nullable()
-    .describe("Código / referência / SKU do produto"),
-  ncm: z
-    .string()
-    .nullable()
-    .describe("NCM ou HS code"),
+  code: z.string().nullable().describe("Código / referência / SKU do produto"),
+  ncm: z.string().nullable().describe("NCM ou HS code"),
   description: z.string().nullable().describe("Descrição do produto"),
 });
 
@@ -103,9 +102,7 @@ export const invoiceExtractionSchema = z.object({
   blNumber: z
     .string()
     .nullable()
-    .describe(
-      "Número do BL / Bill of Lading / AWB se constar na invoice",
-    ),
+    .describe("Número do BL / Bill of Lading / AWB se constar na invoice"),
   exporter: exporterSchema.describe("Dados do exportador (shipper)"),
   importer: partySchema.describe(
     "Importador / consignee (nome, CNPJ e endereço)",
@@ -124,7 +121,9 @@ export const packingListExtractionSchema = z.object({
   invoiceNumber: z
     .string()
     .nullable()
-    .describe("Número da Invoice associado ao Packing List, se estiver indicado"),
+    .describe(
+      "Número da Invoice associado ao Packing List, se estiver indicado",
+    ),
 });
 
 export type PackingListExtraction = z.infer<typeof packingListExtractionSchema>;
@@ -136,10 +135,13 @@ export const blExtractionSchema = z.object({
     .string()
     .nullable()
     .describe("Número do Bill of Lading / BL / AWB / conhecimento de embarque"),
-  carrier: z
+  masterBlNumber: z
     .string()
     .nullable()
-    .describe("Armador / transportadora / carrier"),
+    .describe(
+      "BL master / MBL / OCEAN B/L da consolidação, quando o BL do documento for do agente de carga",
+    ),
+  carrier: z.string().nullable().describe("Armador / transportadora / carrier"),
   shipper: z
     .string()
     .nullable()
@@ -162,18 +164,12 @@ export const blExtractionSchema = z.object({
     .string()
     .nullable()
     .describe("Cidade do porto de origem (POL / Port of Loading)"),
-  polCountry: z
-    .string()
-    .nullable()
-    .describe("País do porto de origem (POL)"),
+  polCountry: z.string().nullable().describe("País do porto de origem (POL)"),
   podCity: z
     .string()
     .nullable()
     .describe("Cidade do porto de destino (POD / Port of Discharge)"),
-  podCountry: z
-    .string()
-    .nullable()
-    .describe("País do porto de destino (POD)"),
+  podCountry: z.string().nullable().describe("País do porto de destino (POD)"),
   vessel: z.string().nullable().describe("Navio / vessel"),
   voyage: z.string().nullable().describe("Viagem / voyage"),
   descriptionOfGoods: z
@@ -205,9 +201,7 @@ export const blExtractionSchema = z.object({
   freightValue: z
     .string()
     .nullable()
-    .describe(
-      "Valor do frete (números; preserve o decimal do documento)",
-    ),
+    .describe("Valor do frete (números; preserve o decimal do documento)"),
   freightCurrency: z
     .string()
     .nullable()
@@ -225,13 +219,8 @@ export const blExtractionSchema = z.object({
     .describe(
       "Códigos HS/NCM completos como no documento (não truncar; só o código)",
     ),
-  containerNumbers: z
-    .array(z.string())
-    .describe("Números dos containers"),
-  containerQuantity: z
-    .string()
-    .nullable()
-    .describe("Quantidade de containers"),
+  containerNumbers: z.array(z.string()).describe("Números dos containers"),
+  containerQuantity: z.string().nullable().describe("Quantidade de containers"),
   containerType: z
     .string()
     .nullable()
@@ -240,8 +229,13 @@ export const blExtractionSchema = z.object({
   onboardDate: z
     .string()
     .nullable()
-    .describe("Data de embarque / shipped on board"),
-  eta: z.string().nullable().describe("ETA / data estimada de chegada"),
+    .describe(
+      "Data de embarque / shipped on board (ETS), no padrão DD/MM/AAAA",
+    ),
+  eta: z
+    .string()
+    .nullable()
+    .describe("ETA / data estimada de chegada, no padrão DD/MM/AAAA"),
 });
 
 export type BlExtraction = z.infer<typeof blExtractionSchema>;

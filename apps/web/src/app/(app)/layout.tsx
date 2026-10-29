@@ -17,7 +17,7 @@ export default async function AppLayout({
         email={ctx.email ?? ""}
         isSuperAdmin={isSuperAdmin(ctx.email)}
       />
-      <main className="min-h-screen p-4 md:p-8">{children}</main>
+      <main className="min-h-screen p-4 sm:p-6 md:p-8">{children}</main>
     </div>
   );
 }

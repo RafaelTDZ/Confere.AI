@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CircleCheck, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -9,15 +9,30 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
+import { FlashNotice } from "@/components/ui/flash-notice";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/layout/page-header";
 import { getAuthContext } from "@/lib/auth";
 import {
+  IMPORT_SHIPMENT_STAGE_LABELS,
+  IMPORT_SORT_LABELS,
   IMPORT_STATUS_LABELS,
   displayImportReference,
+  importShipmentStage,
   listTenantImports,
+  normalizeImportSort,
   type ImportRow,
 } from "@/lib/documents";
 import { buildPage, DEFAULT_PAGE_SIZE, type Page } from "@/lib/pagination";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ImportRowActions } from "@/components/importacoes/import-row-actions";
 import { ListFilters } from "@/components/ui/list-filters";
 import { Pagination } from "@/components/ui/pagination";
@@ -26,18 +41,29 @@ const STATUS_OPTIONS = Object.entries(IMPORT_STATUS_LABELS).map(
   ([value, { label }]) => ({ value, label }),
 );
 
+const SORT_OPTIONS = Object.entries(IMPORT_SORT_LABELS).map(
+  ([value, label]) => ({ value, label }),
+);
+
+const SHIPMENT_STAGE_VARIANTS = {
+  awaiting_shipment: "secondary",
+  in_transit: "default",
+  arrived: "success",
+} as const;
+
 export default async function ImportacoesPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    saved?: string;
     page?: string;
     q?: string;
     status?: string;
+    sort?: string;
   }>;
 }) {
   const params = await searchParams;
   const auth = await getAuthContext();
+  const sort = normalizeImportSort(params.sort);
   const hasFilters = Boolean(params.q?.trim()) || Boolean(params.status?.trim());
 
   let importPage: Page<ImportRow> = buildPage<ImportRow>(
@@ -46,44 +72,43 @@ export default async function ImportacoesPage({
     1,
     DEFAULT_PAGE_SIZE,
   );
-  let error: string | null = null;
+  let loadFailed = false;
   try {
     importPage = await listTenantImports(auth.tenantId, {
       page: params.page,
       search: params.q,
       status: params.status,
+      sort,
     });
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
+    console.error("[importacoes] falha ao listar importações:", err);
+    loadFailed = true;
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
-      {params.saved === "ok" && (
-        <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
-          Importação atualizada com sucesso.
-        </p>
-      )}
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <FlashNotice />
 
-      <div>
-        <p className="mb-1 flex items-center gap-1.5 text-sm font-medium text-primary">
-          <Package className="h-4 w-4" />
-          Importações
-        </p>
-        <h1 className="text-2xl font-bold tracking-tight">Suas importações</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Operações consolidadas por referência, número de BL ou invoice.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Importações"
+        icon={Package}
+        title="Suas importações"
+        description="Operações consolidadas por referência, número de BL ou invoice."
+      />
 
-      {error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Não foi possível carregar</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
+      {loadFailed ? (
+        <Notice tone="danger" title="Não foi possível carregar as importações.">
+          <p>
+            Verifique sua conexão e tente de novo. Se o problema continuar,
+            fale com o suporte.
+          </p>
+          <Link
+            href="/importacoes"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}
+          >
+            Tentar de novo
+          </Link>
+        </Notice>
       ) : (
         <>
           <ListFilters
@@ -92,6 +117,8 @@ export default async function ImportacoesPage({
             searchPlaceholder="Buscar por referência"
             statusValue={params.status}
             statusOptions={STATUS_OPTIONS}
+            sortValue={sort}
+            sortOptions={SORT_OPTIONS}
             clearHref="/importacoes"
           />
 
@@ -133,55 +160,55 @@ export default async function ImportacoesPage({
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">
-                  {importPage.total}{" "}
-                  {importPage.total === 1 ? "importação" : "importações"}
-                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Importações</CardTitle>
+                  <Badge variant="secondary">{importPage.total}</Badge>
+                </div>
               </CardHeader>
-              <CardContent className="overflow-x-auto p-0">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="border-y bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-6 py-3 font-medium">Referência</th>
-                      <th className="px-6 py-3 font-medium">Invoice</th>
-                      <th className="px-6 py-3 font-medium">BL</th>
-                      <th className="px-6 py-3 font-medium">Status</th>
-                      <th className="px-6 py-3 font-medium">Criada em</th>
-                      <th className="px-6 py-3 font-medium">
+              <CardContent className="overflow-hidden p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Referência</TableHead>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>BL</TableHead>
+                      <TableHead>ETA</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>
                         <span className="sr-only">Ações</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {importPage.rows.map((row) => {
-                      const status = IMPORT_STATUS_LABELS[row.status] ?? {
-                        label: row.status,
-                        variant: "outline" as const,
-                      };
+                      const stage = importShipmentStage({
+                        onboardDate: row.onboardDate,
+                        status: row.trackingStatus,
+                      });
                       return (
-                        <tr
-                          key={row.id}
-                          className="group relative cursor-pointer border-b last:border-0 hover:bg-muted/30"
-                        >
-                          <td className="px-6 py-3 font-medium">
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium">
                             <Link
                               href={`/importacoes/${row.id}`}
                               aria-label={`Abrir operação ${displayImportReference(row) || "sem referência"}`}
-                              className="after:absolute after:inset-0 after:z-0 after:content-[''] group-hover:underline"
+                              className="hover:underline"
                             >
                               {displayImportReference(row) || "—"}
                             </Link>
-                          </td>
-                          <td className="px-6 py-3 text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
                             {row.invoice_number || "—"}
-                          </td>
-                          <td className="px-6 py-3 text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">
                             {row.bl_number || "—"}
-                          </td>
-                          <td className="px-6 py-3">
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
+                            {row.eta || "—"}
+                          </TableCell>
+                          <TableCell>
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <Badge variant={status.variant}>
-                                {status.label}
+                              <Badge variant={SHIPMENT_STAGE_VARIANTS[stage]}>
+                                {IMPORT_SHIPMENT_STAGE_LABELS[stage]}
                               </Badge>
                               {(row.consignee_divergences?.length ?? 0) > 0 && (
                                 <Badge variant="warning">
@@ -189,22 +216,19 @@ export default async function ImportacoesPage({
                                 </Badge>
                               )}
                             </div>
-                          </td>
-                          <td className="px-6 py-3 text-muted-foreground">
-                            {formatDate(row.created_at)}
-                          </td>
-                          <td className="px-6 py-3 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             <ImportRowActions
                               importId={row.id}
                               reference={displayImportReference(row) || "sem referência"}
                               canRemove={auth.role !== "viewer"}
                             />
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}

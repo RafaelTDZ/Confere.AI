@@ -1,8 +1,12 @@
 import "server-only";
 
 export {
+  IMPORT_SHIPMENT_STAGE_LABELS,
+  IMPORT_SORT_LABELS,
   IMPORT_STATUS_LABELS,
   displayImportReference,
+  importShipmentStage,
+  normalizeImportSort,
   type ImportRow,
 } from "@/lib/documents/imports-shared";
 export {
@@ -10,6 +14,7 @@ export {
   listTenantImports,
   deleteImportRecord,
   updateImportRecord,
+  updateImportExtractionData,
   ImportConflictError,
   ImportValidationError,
 } from "@/lib/documents/imports";
@@ -37,11 +42,7 @@ export {
   type PartyAddress,
   type PartyRole,
 } from "@/lib/documents/parties-shared";
-export type {
-  ConsigneeDefault,
-  ConsigneeDivergence,
-  ConsigneeSnapshot,
-} from "@/lib/documents/consignee-check";
+export type { ConsigneeDefault } from "@/lib/documents/consignee-check";
 export {
   listTenantNcms,
   getNcmById,

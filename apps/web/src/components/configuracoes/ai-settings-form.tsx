@@ -219,7 +219,7 @@ export function AiSettingsForm() {
             </select>
             <p className="break-all font-mono text-xs text-muted-foreground">{model}</p>
             {!configured && (
-              <p className="text-sm text-amber-600">
+              <p className="text-sm text-warning-text">
                 Atenção: sem a chave do {providerInfo?.name ?? provider} no
                 servidor, as chamadas vão falhar (503). Salve mesmo assim ou peça
                 ao responsável pelo deploy.

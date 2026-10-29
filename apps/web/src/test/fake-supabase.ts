@@ -6,7 +6,7 @@ export type FakeTables = Record<string, FakeRow[]>;
 
 export type FakeFilter = {
   column: string;
-  operator: "eq" | "in" | "ilike" | "or";
+  operator: "eq" | "in" | "ilike" | "lt" | "lte" | "gte" | "or";
   value: unknown;
 };
 
@@ -14,6 +14,8 @@ export type FakeQueryLog = {
   table: string;
   operation: "select" | "insert" | "update" | "delete";
   filters: FakeFilter[];
+  /** Linha(s) do insert/update (nulo em selects). */
+  payload?: FakeRow | FakeRow[] | null;
 };
 
 export type FakeError = {
@@ -27,10 +29,52 @@ export type FakeResponse = {
   count?: number | null;
 };
 
-type FakeOrCondition = {
-  column: string;
-  pattern: string;
-};
+type FakeOrCondition =
+  | { kind: "ilike"; column: string; pattern: string }
+  | { kind: "is"; column: string; negate: boolean }
+  | {
+      kind: "compare";
+      column: string;
+      operator: "lt" | "lte" | "gt" | "gte";
+      value: string;
+    };
+
+/** Compara valores heterogêneos como o Postgres faria com `text`/`timestamptz`. */
+function compareValues(left: unknown, right: unknown): number | null {
+  if (left == null || right == null) return null;
+  if (typeof left === "number") {
+    const numeric = Number(right);
+    if (Number.isNaN(numeric)) return null;
+    return left === numeric ? 0 : left < numeric ? -1 : 1;
+  }
+  const a = String(left);
+  const b = String(right);
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
+function matchesOrCondition(row: FakeRow, condition: FakeOrCondition): boolean {
+  const value = row[condition.column];
+  switch (condition.kind) {
+    case "ilike":
+      return matchesLike(value, condition.pattern);
+    case "is":
+      return condition.negate ? value != null : value == null;
+    case "compare": {
+      const order = compareValues(value, condition.value);
+      if (order == null) return false;
+      switch (condition.operator) {
+        case "lt":
+          return order < 0;
+        case "lte":
+          return order <= 0;
+        case "gt":
+          return order > 0;
+        case "gte":
+          return order >= 0;
+      }
+    }
+  }
+}
 
 /**
  * Converte um padrão SQL LIKE em RegExp ancorada e case-insensitive.
@@ -69,20 +113,42 @@ function matchesLike(value: unknown, pattern: string): boolean {
   return likeToRegExp(pattern).test(text);
 }
 
-/** Aceita apenas a sintaxe usada no projeto: `col.ilike.%termo%,outra.ilike.%termo%`. */
+/** Aceita apenas a sintaxe usada no projeto: `col.ilike.%termo%,col.is.null,col.lte.valor`. */
 function parseOrExpression(expression: string): FakeOrCondition[] {
   const conditions = expression
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
-    .map((part) => {
-      const match = /^([A-Za-z0-9_]+)\.ilike\.(.*)$/.exec(part);
+    .map((part): FakeOrCondition => {
+      const match = /^([A-Za-z0-9_]+)\.(ilike|is|lt|lte|gt|gte)\.(.*)$/.exec(
+        part,
+      );
       if (!match) {
         throw new Error(
-          `FakeSupabase: expressão .or() não suportada ("${part}"). Use "coluna.ilike.padrão" separado por vírgulas.`,
+          `FakeSupabase: expressão .or() não suportada ("${part}"). Use "coluna.ilike.padrão", "coluna.is.null" ou "coluna.lte.valor" separado por vírgulas.`,
         );
       }
-      return { column: match[1] ?? "", pattern: match[2] ?? "" };
+      const column = match[1] ?? "";
+      const operator = match[2] ?? "";
+      const raw = match[3] ?? "";
+
+      if (operator === "ilike") {
+        return { kind: "ilike", column, pattern: raw };
+      }
+      if (operator === "is") {
+        if (raw !== "null" && raw !== "not.null") {
+          throw new Error(
+            `FakeSupabase: operador .or() não suportado ("${part}"). Use "coluna.is.null" ou "coluna.is.not.null".`,
+          );
+        }
+        return { kind: "is", column, negate: raw === "not.null" };
+      }
+      return {
+        kind: "compare",
+        column,
+        operator: operator as "lt" | "lte" | "gt" | "gte",
+        value: raw,
+      };
     });
 
   if (conditions.length === 0) {
@@ -100,6 +166,11 @@ type Operation = FakeQueryLog["operation"];
 export type FakeErrorTarget = {
   table?: string;
   operation?: Operation;
+  /**
+   * Condição extra sobre a query (filtros/payload). Use quando a tabela recebe
+   * várias atualizações e só uma delas deve falhar.
+   */
+  match?: (query: FakeQueryLog) => boolean;
 };
 
 export type FakeStorageRemoval = {
@@ -265,10 +336,7 @@ export class FakeSupabase {
     return this;
   }
 
-  takePendingError(query?: {
-    table: string;
-    operation: Operation;
-  }): FakeError | null {
+  takePendingError(query?: FakeQueryLog): FakeError | null {
     if (!query) {
       return this.pendingErrors.shift()?.error ?? null;
     }
@@ -276,7 +344,8 @@ export class FakeSupabase {
       ({ target }) =>
         (target.table === undefined || target.table === query.table) &&
         (target.operation === undefined ||
-          target.operation === query.operation),
+          target.operation === query.operation) &&
+        (target.match === undefined || target.match(query)),
     );
     if (index === -1) return null;
     const [entry] = this.pendingErrors.splice(index, 1);
@@ -370,12 +439,20 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
   private payload: FakeRow | FakeRow[] | null = null;
   private columns: string | undefined;
   private filters: FakeFilter[] = [];
-  private orderBy: { column: string; ascending: boolean } | null = null;
+  private orderBy: {
+    column: string;
+    ascending: boolean;
+    nullsFirst: boolean;
+  } | null = null;
   private limitCount: number | null = null;
   private rangeBounds: { from: number; to: number } | null = null;
   private countMode: "exact" | null = null;
   private returnsRows = false;
   private response: FakeResponse | null = null;
+  private upsertOptions: {
+    onConflict?: string;
+    ignoreDuplicates?: boolean;
+  } | null = null;
 
   constructor(
     private readonly db: FakeSupabase,
@@ -403,6 +480,21 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
+  /**
+   * Simula `insert ... on conflict do nothing`, forma usada no projeto (ex.:
+   * `tracking_events` por `shipment_id,fingerprint`). Sem `ignoreDuplicates`,
+   * as linhas são inseridas como no `insert`.
+   */
+  upsert(
+    rows: FakeRow | FakeRow[],
+    options: { onConflict?: string; ignoreDuplicates?: boolean } = {},
+  ): this {
+    this.operation = "insert";
+    this.payload = rows;
+    this.upsertOptions = options;
+    return this;
+  }
+
   delete(): this {
     this.operation = "delete";
     return this;
@@ -423,6 +515,24 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
+  /** `<` como no PostgREST; datas ISO comparam na ordem lexicográfica. */
+  lt(column: string, value: unknown): this {
+    this.filters.push({ column, operator: "lt", value });
+    return this;
+  }
+
+  /** `<=` como no PostgREST; datas ISO comparam na ordem lexicográfica. */
+  lte(column: string, value: unknown): this {
+    this.filters.push({ column, operator: "lte", value });
+    return this;
+  }
+
+  /** `>=` como no PostgREST. */
+  gte(column: string, value: unknown): this {
+    this.filters.push({ column, operator: "gte", value });
+    return this;
+  }
+
   or(expression: string): this {
     this.filters.push({
       column: "",
@@ -432,8 +542,15 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
-  order(column: string, options?: { ascending?: boolean }): this {
-    this.orderBy = { column, ascending: options?.ascending ?? true };
+  order(
+    column: string,
+    options?: { ascending?: boolean; nullsFirst?: boolean },
+  ): this {
+    this.orderBy = {
+      column,
+      ascending: options?.ascending ?? true,
+      nullsFirst: options?.nullsFirst ?? false,
+    };
     return this;
   }
 
@@ -484,6 +601,8 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     const failure = this.db.takePendingError({
       table: this.table,
       operation: this.operation,
+      filters: [...this.filters],
+      payload: this.operation === "select" ? null : this.payload,
     });
     if (failure) {
       this.db.queries.push({
@@ -515,6 +634,7 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
             : [];
         const inserted: FakeRow[] = [];
         for (const row of inputs) {
+          if (this.isDuplicateUpsert(row, [...rows, ...inserted])) continue;
           this.db.options.beforeInsert?.(this.table, { ...row });
           const conflict = this.db.findUniqueConflict(this.table, row);
           if (conflict) {
@@ -568,6 +688,23 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this.response;
   }
 
+  private isDuplicateUpsert(row: FakeRow, existing: FakeRow[]): boolean {
+    const options = this.upsertOptions;
+    if (!options?.ignoreDuplicates) return false;
+
+    const keyColumns = (options.onConflict ?? "id")
+      .split(",")
+      .map((column) => column.trim())
+      .filter(Boolean);
+    if (keyColumns.length === 0) return false;
+
+    return existing.some((candidate) =>
+      keyColumns.every(
+        (column) => row[column] != null && candidate[column] === row[column],
+      ),
+    );
+  }
+
   private matches(row: FakeRow): boolean {
     return this.filters.every((filter) => {
       const value = row[filter.column];
@@ -578,9 +715,21 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
           return (filter.value as readonly unknown[]).includes(value);
         case "ilike":
           return matchesLike(value, filter.value as string);
+        case "lte": {
+          const order = compareValues(value, filter.value);
+          return order != null && order <= 0;
+        }
+        case "lt": {
+          const order = compareValues(value, filter.value);
+          return order != null && order < 0;
+        }
+        case "gte": {
+          const order = compareValues(value, filter.value);
+          return order != null && order >= 0;
+        }
         case "or":
           return (filter.value as FakeOrCondition[]).some((condition) =>
-            matchesLike(row[condition.column], condition.pattern),
+            matchesOrCondition(row, condition),
           );
       }
     });
@@ -588,13 +737,13 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
 
   private applyOrder(rows: FakeRow[]): FakeRow[] {
     if (!this.orderBy) return rows;
-    const { column, ascending } = this.orderBy;
+    const { column, ascending, nullsFirst } = this.orderBy;
     return [...rows].sort((a, b) => {
       const aValue = a[column] as string | number | null | undefined;
       const bValue = b[column] as string | number | null | undefined;
       if (aValue === bValue) return 0;
-      if (aValue == null) return 1;
-      if (bValue == null) return -1;
+      if (aValue == null) return nullsFirst ? -1 : 1;
+      if (bValue == null) return nullsFirst ? 1 : -1;
       const result = aValue < bValue ? -1 : 1;
       return ascending ? result : -result;
     });

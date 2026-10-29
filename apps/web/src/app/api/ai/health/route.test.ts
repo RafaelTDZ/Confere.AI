@@ -12,16 +12,25 @@ const mocks = vi.hoisted(() => ({
   getAiModelId: vi.fn(),
   getDefaultLanguageModel: vi.fn(),
   generateText: vi.fn(),
+  consumeRateLimit: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (
+      body: unknown,
+      init?: { status?: number; headers?: Record<string, string> },
+    ) => ({
       status: init?.status ?? 200,
       body,
+      headers: init?.headers ?? {},
       json: async () => body,
     }),
   },
+}));
+
+vi.mock("@/lib/security/rate-limit", () => ({
+  consumeRateLimit: mocks.consumeRateLimit,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -82,6 +91,13 @@ async function readJson(response: {
   return { status: response.status, body: await response.json() };
 }
 
+const RATE_LIMIT_OK = {
+  allowed: true,
+  remaining: 19,
+  resetAt: "2026-10-29T13:00:00.000Z",
+  retryAfterSeconds: 600,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getUser.mockResolvedValue({
@@ -94,6 +110,7 @@ beforeEach(() => {
   mocks.getAiModelId.mockReturnValue("env-model");
   mocks.getDefaultLanguageModel.mockReturnValue("language-model");
   mocks.generateText.mockResolvedValue({ text: "  ok  " });
+  mocks.consumeRateLimit.mockResolvedValue(RATE_LIMIT_OK);
 });
 
 afterEach(() => {
@@ -209,6 +226,72 @@ describe("GET /api/ai/health", () => {
 
     expect(status).toBe(502);
     expect(body).toEqual({ error: "provider indisponível" });
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it("consome o rate limit por tenant dentro do limite", async () => {
+    const { status } = await readJson(await GET());
+
+    expect(status).toBe(200);
+    expect(mocks.consumeRateLimit).toHaveBeenCalledWith({
+      bucket: `ai:health:${AUTH_CONTEXT.tenantId}`,
+      limit: 20,
+      windowSeconds: 3600,
+    });
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+  });
+
+  it("retorna 429 com Retry-After quando o limite estoura", async () => {
+    mocks.consumeRateLimit.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      resetAt: "2026-10-29T13:00:00.000Z",
+      retryAfterSeconds: 1234,
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(429);
+    expect(response.headers).toEqual({ "Retry-After": "1234" });
+    expect(await response.json()).toEqual({
+      error: "Muitos testes de IA em pouco tempo. Tente novamente mais tarde.",
+      retryAfterSeconds: 1234,
+    });
+    expect(mocks.generateText).not.toHaveBeenCalled();
+  });
+
+  it("não consome o rate limit sem sessão", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error("sem sessão"),
+    });
+
+    const { status } = await readJson(await GET());
+
+    expect(status).toBe(401);
+    expect(mocks.consumeRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("não consome o rate limit quando falta a chave do provider (503)", async () => {
+    mocks.getDefaultLanguageModel.mockImplementation(() => {
+      throw new AiConfigError("FIREWORKS_API_KEY ausente");
+    });
+
+    const { status } = await readJson(await GET());
+
+    expect(status).toBe(503);
+    expect(mocks.consumeRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("segue o fluxo quando o rate limiter está indisponível (fail-open)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.consumeRateLimit.mockRejectedValue(new Error("RPC fora"));
+
+    const { status } = await readJson(await GET());
+
+    expect(status).toBe(200);
     expect(consoleError).toHaveBeenCalled();
   });
 });

@@ -3,8 +3,15 @@
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function BackButton({ fallbackHref }: { fallbackHref: string }) {
+export function BackButton({
+  fallbackHref,
+  className,
+}: {
+  fallbackHref: string;
+  className?: string;
+}) {
   const router = useRouter();
 
   function goBack() {
@@ -23,7 +30,7 @@ export function BackButton({ fallbackHref }: { fallbackHref: string }) {
       aria-label="Voltar para a página anterior"
       title="Voltar"
       onClick={goBack}
-      className="-ml-2"
+      className={cn("-ml-2", className)}
     >
       <ArrowLeft className="h-5 w-5" />
     </Button>

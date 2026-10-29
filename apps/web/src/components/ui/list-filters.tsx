@@ -13,8 +13,15 @@ export type ListFiltersProps = {
   statusName?: string;
   statusValue?: string;
   statusOptions?: FilterOption[];
+  /** Ordenação (campo `sort`); sem opções, o select não é renderizado. */
+  sortLabel?: string;
+  sortValue?: string;
+  sortOptions?: FilterOption[];
   clearHref: string;
 };
+
+const SELECT_CLASS_NAME =
+  "h-9 rounded-md border border-input bg-card px-3 py-1 text-sm text-foreground transition-colors focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function ListFilters({
   action,
@@ -23,6 +30,9 @@ export function ListFilters({
   statusName = "status",
   statusValue,
   statusOptions,
+  sortLabel = "Ordenar por",
+  sortValue,
+  sortOptions,
   clearHref,
 }: ListFiltersProps) {
   return (
@@ -43,10 +53,24 @@ export function ListFilters({
           name={statusName}
           defaultValue={statusValue ?? ""}
           aria-label="Filtrar por status"
-          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className={SELECT_CLASS_NAME}
         >
           <option value="">Todos</option>
           {statusOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
+      {sortOptions && sortOptions.length > 0 && (
+        <select
+          name="sort"
+          defaultValue={sortValue ?? sortOptions[0]?.value}
+          aria-label={sortLabel}
+          className={SELECT_CLASS_NAME}
+        >
+          {sortOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

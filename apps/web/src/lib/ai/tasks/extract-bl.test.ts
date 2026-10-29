@@ -66,6 +66,7 @@ const ENDERECO_VAZIO = {
 
 const BL_COMPLETO: BlExtraction = {
   number: "  bl-123  ",
+  masterBlNumber: " hLCU sha 2502baxd3 ",
   carrier: " maersk line ",
   shipper: " acme export co. ",
   consignee: " importadora xyz ltda ",
@@ -118,6 +119,7 @@ const BL_COMPLETO: BlExtraction = {
 
 const BL_LIMPO: BlExtraction = {
   number: "BL-123",
+  masterBlNumber: "HLCUSHA2502BAXD3",
   carrier: "MAERSK LINE",
   shipper: "ACME EXPORT CO.",
   consignee: "IMPORTADORA XYZ LTDA",
@@ -146,18 +148,19 @@ const BL_LIMPO: BlExtraction = {
   freightValue: "1.500,00",
   freightCurrency: "USD",
   freightTerms: "PREPAID",
-  freeTime: "21 DAYS",
+  freeTime: "21 DIAS",
   ncm: ["8471.30.12", "8504.40.90", "8517.62.00"],
   containerNumbers: ["MSCU1234567"],
   containerQuantity: "2",
-  containerType: "40HC",
+  containerType: "40 HC",
   sealNumbers: ["S123"],
-  onboardDate: "2026-10-01T10:00:00Z",
+  onboardDate: "01/10/2026",
   eta: "02/11/2026",
 };
 
 const BL_VAZIO: BlExtraction = {
   number: null,
+  masterBlNumber: null,
   carrier: null,
   shipper: null,
   consignee: null,
@@ -349,7 +352,7 @@ describe("extractBl", () => {
     expect(resultado.bl.volumes).toBeNull();
   });
 
-  it("preserva textos que parecem data sem aplicar uppercase", async () => {
+  it("normaliza datas para DD/MM/AAAA sem alterar outros textos", async () => {
     mocks.generateText.mockResolvedValue(
       resultadoComSucesso({
         ...BL_VAZIO,
@@ -362,7 +365,7 @@ describe("extractBl", () => {
     const resultado = await extractBl(PREPARED_PDF);
 
     expect(resultado.bl.freeTime).toBe("01/10/2026");
-    expect(resultado.bl.onboardDate).toBe("2026-10-01");
+    expect(resultado.bl.onboardDate).toBe("01/10/2026");
     expect(resultado.bl.eta).toBe("02/11/2026 10:00");
   });
 
@@ -433,5 +436,51 @@ describe("extractBl", () => {
     await expect(extractBl(PREPARED_IMAGE)).rejects.toBe(erro);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     expect(mocks.shouldFallbackPdfEngine).not.toHaveBeenCalled();
+  });
+
+  it("preenche o master BL pelo markdown quando a IA não devolve", async () => {
+    mocks.generateText.mockResolvedValue(resultadoComSucesso(BL_VAZIO));
+
+    const resultado = await extractBl({
+      provider: "fireworks",
+      modelId: "model-doc",
+      isPdf: true,
+      filename: "doc.pdf",
+      content: [
+        {
+          type: "text",
+          text: [
+            "BILL OF LADING: SASE3388881",
+            "MASTER B/L NO.: HLCUSHA2502BAXD3",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(resultado.bl.masterBlNumber).toBe("HLCUSHA2502BAXD3");
+  });
+
+  it("não sobrescreve o master BL devolvido pela IA", async () => {
+    mocks.generateText.mockResolvedValue(
+      resultadoComSucesso({
+        ...BL_VAZIO,
+        masterBlNumber: "MAEU123456789",
+      }),
+    );
+
+    const resultado = await extractBl({
+      provider: "fireworks",
+      modelId: "model-doc",
+      isPdf: true,
+      filename: "doc.pdf",
+      content: [
+        {
+          type: "text",
+          text: "MASTER B/L NO.: HLCUSHA2502BAXD3",
+        },
+      ],
+    });
+
+    expect(resultado.bl.masterBlNumber).toBe("MAEU123456789");
   });
 });

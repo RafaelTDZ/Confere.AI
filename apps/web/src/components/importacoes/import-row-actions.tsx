@@ -56,7 +56,7 @@ export function ImportRowActions({
           title="Remover importação"
           disabled={deleting}
           onClick={handleDelete}
-          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          className="text-destructive-text hover:bg-destructive/10 hover:text-destructive-text"
         >
           {deleting ? (
             <LoaderCircle className="h-4 w-4 animate-spin" />

@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CircleCheck,
-  CircleAlert,
   CircleDashed,
   CloudUpload,
   LoaderCircle,
@@ -17,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
 import type { DocumentType } from "@/lib/ai/schemas";
 import {
   DOCUMENT_TYPE_LABELS,
@@ -41,7 +41,8 @@ type JobStatusResponse = {
 };
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLLS = 150;
+// 340s: cobre o teto de 300s da função + fila/overhead.
+const MAX_POLLS = 170;
 
 /** Acompanha o job até concluir/falhar (a análise roda em background). */
 async function waitForJob(
@@ -172,11 +173,11 @@ export function UploadDropzone({
           if (next) void handleFile(next);
         }}
         className={cn(
-          "group flex w-full flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed px-6 text-center transition-all",
+          "group flex w-full flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed px-6 text-center transition-colors duration-150",
           embedded ? "min-h-40 py-8" : "min-h-64 py-10",
           dragging
-            ? "scale-[1.01] border-primary bg-primary/5"
-            : "border-muted-foreground/25 bg-muted/30 hover:border-primary/60 hover:bg-primary/5",
+            ? "border-primary bg-primary-soft"
+            : "border-input bg-muted hover:border-primary hover:bg-primary-soft",
           loading && "pointer-events-none opacity-70",
         )}
       >
@@ -243,9 +244,9 @@ export function UploadDropzone({
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
+              className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-500"
               style={{
-                width: `${(receivedCount / IMPORT_DOCUMENT_TYPES.length) * 100}%`,
+                transform: `scaleX(${receivedCount / IMPORT_DOCUMENT_TYPES.length})`,
               }}
             />
           </div>
@@ -256,10 +257,10 @@ export function UploadDropzone({
                 <li
                   key={type}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    "inline-flex h-6 items-center gap-1.5 rounded-sm border px-2 text-xs font-medium transition-colors",
                     present
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : "border-border bg-muted/50 text-muted-foreground",
+                      ? "border-primary/30 bg-primary-soft text-primary-text"
+                      : "border-border bg-card text-muted-foreground",
                   )}
                 >
                   {present ? (
@@ -278,12 +279,7 @@ export function UploadDropzone({
         </div>
       )}
 
-      {error && (
-        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <CircleAlert className="h-4 w-4 shrink-0" />
-          {error}
-        </p>
-      )}
+      {error && <Notice tone="danger">{error}</Notice>}
     </>
   );
 

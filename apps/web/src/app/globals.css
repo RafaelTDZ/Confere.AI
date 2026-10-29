@@ -3,46 +3,87 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Tokens: docs/design/identidade-visual.md (seção 3). Nomes shadcn mantidos
+ * para não mexer em todos os componentes; a proposta mapeia assim:
+ * canvas→background, surface→card, accent→primary, danger→destructive,
+ * border-strong→input, focus→ring.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --background: #f5f6f8;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --primary: #1d4ed8;
+    --primary-foreground: #ffffff;
+    --primary-hover: #1e40af;
+    --primary-active: #1e3a8a;
+    --primary-soft: #eaf0fd;
+    --primary-text: #1d4ed8;
+    --secondary: #eef1f5;
+    --secondary-foreground: #3f4a5c;
+    --muted: #f1f3f6;
+    --muted-foreground: #5b6678;
+    --accent: #f1f3f6;
+    --accent-foreground: #0f172a;
+    --destructive: #b91c1c;
+    --destructive-foreground: #ffffff;
+    --destructive-hover: #991b1b;
+    --destructive-text: #b91c1c;
+    --destructive-soft: #fdecec;
+    --success: #15803d;
+    --success-foreground: #ffffff;
+    --success-text: #166534;
+    --success-soft: #e7f6ec;
+    --warning: #b45309;
+    --warning-foreground: #ffffff;
+    --warning-text: #92400e;
+    --warning-soft: #fef3c7;
+    --border: #e3e7ed;
+    --input: #757f90;
+    --ring: #1d4ed8;
     --radius: 0.5rem;
+    --elevation-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+    --elevation-overlay: 0 12px 32px -12px rgb(15 23 42 / 0.25);
   }
 
+  /* Tema escuro: aplicado por `components/theme/theme-provider.tsx` (classe `dark` no <html>). */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: #0a0e14;
+    --foreground: #e8ecf2;
+    --card: #11161f;
+    --card-foreground: #e8ecf2;
+    --primary: #7aa2ff;
+    --primary-foreground: #0a0e14;
+    --primary-hover: #93b4ff;
+    --primary-active: #5f86e8;
+    --primary-soft: #1a2748;
+    --primary-text: #8ab0ff;
+    --secondary: #1c2431;
+    --secondary-foreground: #b4bdcb;
+    --muted: #171e2a;
+    --muted-foreground: #8e99ab;
+    --accent: #171e2a;
+    --accent-foreground: #e8ecf2;
+    --destructive: #b91c1c;
+    --destructive-foreground: #ffffff;
+    --destructive-hover: #991b1b;
+    --destructive-text: #f5a3a3;
+    --destructive-soft: #2b1517;
+    --success: #7dd3a0;
+    --success-foreground: #0a0e14;
+    --success-text: #7dd3a0;
+    --success-soft: #12291e;
+    --warning: #f5c863;
+    --warning-foreground: #0a0e14;
+    --warning-text: #f5c863;
+    --warning-soft: #2a2110;
+    --border: #232c3b;
+    --input: #5a6478;
+    --ring: #8ab0ff;
+    --elevation-xs: none;
+    --elevation-overlay: none;
   }
 }
 
@@ -52,5 +93,62 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family:
+      var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
   }
+}
+
+@keyframes pulse-opacity {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Movimento não essencial some; o spinner vira pulso de opacidade (ele sinaliza carregamento). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-spin {
+    animation: pulse-opacity 1.6s ease-in-out infinite !important;
+  }
+}
+
+/* Mapa Leaflet no escuro: tiles invertidos; controles e tooltip usam tokens. */
+.dark .leaflet-container {
+  background-color: var(--muted);
+}
+
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.7);
+}
+
+.dark .leaflet-bar a,
+.dark .leaflet-control-attribution,
+.dark .leaflet-tooltip {
+  background-color: var(--card);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.dark .leaflet-bar a:hover {
+  background-color: var(--muted);
+}
+
+.dark .leaflet-control-attribution {
+  color: var(--muted-foreground);
+}
+
+.dark .leaflet-control-attribution a {
+  color: var(--primary-text);
+}
+
+.dark .leaflet-tooltip-top::before {
+  border-top-color: var(--card);
 }

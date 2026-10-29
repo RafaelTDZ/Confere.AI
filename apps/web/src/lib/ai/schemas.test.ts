@@ -44,6 +44,7 @@ function invoiceValida() {
 function blValido() {
   return {
     number: "BL-001",
+    masterBlNumber: "MAEU123456789",
     carrier: "Armador Exemplo",
     shipper: "Shipper Exemplo",
     consignee: "Consignatária Exemplo",
@@ -255,6 +256,9 @@ describe("blExtractionSchema", () => {
     expect(blExtractionSchema.safeParse(semCampo(payload, "number")).success).toBe(
       false,
     );
+    expect(
+      blExtractionSchema.safeParse(semCampo(payload, "masterBlNumber")).success,
+    ).toBe(false);
     expect(
       blExtractionSchema.safeParse(semCampo(payload, "consigneeDetails"))
         .success,

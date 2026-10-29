@@ -1,5 +1,4 @@
 import {
-  CircleCheck,
   FileCheck2,
   FileText,
   FileUp,
@@ -15,6 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Notice } from "@/components/ui/notice";
+import { PageHeader } from "@/components/layout/page-header";
 import { UploadDropzone } from "@/components/analise/upload-dropzone";
 
 const STEPS = [
@@ -67,28 +68,18 @@ export default async function AnalisePage({
   const params = await searchParams;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8">
+    <div className="mx-auto w-full max-w-5xl space-y-6">
       {params.partes === "ok" && (
-        <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
+        <Notice tone="success">
           Consignee e notify cadastrados com sucesso.
-        </p>
+        </Notice>
       )}
-      <header className="space-y-1">
-        <div className="flex items-center gap-2 text-primary">
-          <Sparkles className="h-4 w-4" />
-          <span className="text-xs font-medium uppercase tracking-wide">
-            Análise com IA
-          </span>
-        </div>
-        <h1 className="text-balance text-2xl font-bold tracking-tight">
-          Nova análise de importação
-        </h1>
-        <p className="max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
-          Envie os documentos da sua importação e o Confere.ia classifica,
-          extrai e confere as informações automaticamente.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="Análise com IA"
+        icon={Sparkles}
+        title="Nova análise de importação"
+        description="Envie os documentos da sua importação e o Confere AI classifica, extrai e confere as informações automaticamente."
+      />
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
         <UploadDropzone />

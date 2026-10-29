@@ -15,13 +15,16 @@ import {
   sha256Hex,
 } from "@/lib/ai/file-utils";
 import { getAiModelId, type AiOverrides } from "@/lib/ai";
+import { detectDocumentTypes, preparedDocumentText } from "@/lib/ai/document-type-heuristic";
 import { getAiOverrides } from "@/lib/settings/ai-settings";
 import type {
   BlExtraction,
+  DocumentClassification,
   DocumentType,
   InvoiceExtraction,
   PackingListExtraction,
 } from "@/lib/ai/schemas";
+import type { AiTaskUsage } from "@/lib/ai/usage";
 import {
   attachAiLogsToImport,
   persistAiLog,
@@ -36,8 +39,10 @@ import {
 import {
   findOrCreateImport,
   fillImportKeysIfEmpty,
+  fillImportReferenceIfEmpty,
   clearAutoReferenceIfNeeded,
   getImportDetail,
+  syncImportEta,
   updateImportConsignee,
   updateImportConsigneeDivergences,
   updateImportStatus,
@@ -52,11 +57,16 @@ import {
   IMPORT_DOCUMENT_TYPES,
   normalizeImportKey,
 } from "@/lib/documents/imports-shared";
+import { extractImportReference } from "@/lib/documents/import-reference";
 import {
   findLatestExtractionsByDocumentIds,
   persistExtractionResult,
   type LatestExtraction,
 } from "@/lib/documents/extractions";
+import {
+  enqueueTrackingForImport,
+  processQueuedTrackingJobs,
+} from "@/lib/tracking/service";
 import {
   combinePendingParties,
   pendingPartiesFromBl,
@@ -309,6 +319,10 @@ async function buildReusableResult(
         });
       }
 
+      if (newDocs.some((doc) => doc.docType === "bill_of_lading")) {
+        await syncImportEta({ tenantId: params.tenantId, importId });
+      }
+
       documents = newDocs;
 
       tracker.importId = importId;
@@ -331,6 +345,15 @@ async function buildReusableResult(
       await clearAutoReferenceIfNeeded({
         tenantId: params.tenantId,
         importId,
+      });
+      await fillImportReferenceIfEmpty({
+        tenantId: params.tenantId,
+        importId,
+        referenceNumber: extractImportReference({
+          filename: file.filename,
+          invoiceNumber,
+          blNumber,
+        })?.value,
       });
 
       await updateImportStatus({
@@ -519,23 +542,69 @@ async function executeAnalyzePipeline(
   }
 
   let prepared: PreparedDocument;
-  let classifyResult;
+  let classifyResult: {
+    classification: DocumentClassification;
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    latencyMs: number;
+    usage: AiTaskUsage;
+  };
   try {
     const classified = await withSpan(
       "ai.classify",
       { "ai.model": modelId },
       async (span) => {
-        // Prepara uma única vez (PDF → imagens no Fireworks) e reutiliza nas
+        // Prepara uma única vez (PDF → markdown ou imagens) e reutiliza nas
         // quatro tasks abaixo.
-        const preparedDocument = await prepareDocument(fileInput, overrides);
+        const preparedDocument = await prepareDocument(fileInput, overrides, {
+          tenantId: params.tenantId,
+          sha256: digest,
+        });
+
+        // 1º) classificação determinística pelo markdown (sem IA, sem custo).
+        const heuristic = detectDocumentTypes({
+          filename,
+          text: preparedDocumentText(preparedDocument.content),
+        });
+        if (heuristic) {
+          span.setAttributes({
+            "ai.classification_source": "heuristic",
+            "ai.types": heuristic.types.join(","),
+            "ai.tokens_in": 0,
+            "ai.tokens_out": 0,
+            "ai.latency_ms": 0,
+          });
+          return {
+            prepared: preparedDocument,
+            result: {
+              classification: { types: heuristic.types, notes: null },
+              model: "heuristic",
+              tokensIn: 0,
+              tokensOut: 0,
+              latencyMs: 0,
+              usage: {
+                tokensIn: 0,
+                tokensOut: 0,
+                reasoningTokens: 0,
+                costUsd: 0,
+                latencyMs: 0,
+              },
+            },
+            source: "heuristic" as const,
+          };
+        }
+
+        // 2º) fallback: o modelo configurado classifica.
         const result = await classifyDocument(preparedDocument);
         span.setAttributes({
+          "ai.classification_source": "model",
           "ai.model": result.model,
           "ai.tokens_in": result.tokensIn,
           "ai.tokens_out": result.tokensOut,
           "ai.latency_ms": result.latencyMs,
         });
-        return { prepared: preparedDocument, result };
+        return { prepared: preparedDocument, result, source: "model" as const };
       },
     );
     prepared = classified.prepared;
@@ -575,6 +644,9 @@ async function executeAnalyzePipeline(
   let bl: BlExtraction | null = null;
   let blModel = classifyResult.model;
   let blTokensUsed: number | null = null;
+  // Erros por tipo: a extração pode falhar sem derrubar a análise inteira, mas
+  // o documento precisa ficar `failed` (nunca `pending` para sempre).
+  const extractionErrors: Partial<Record<DocumentType, string>> = {};
 
   if (types.includes("invoice")) {
     try {
@@ -662,6 +734,8 @@ async function executeAnalyzePipeline(
         status: "error",
         errorMessage: err instanceof Error ? err.message : String(err),
       });
+      extractionErrors.packing_list =
+        err instanceof Error ? err.message : String(err);
       console.error("[analyze-pipeline] falha ao extrair Packing List:", err);
     }
   }
@@ -707,6 +781,8 @@ async function executeAnalyzePipeline(
         status: "error",
         errorMessage: err instanceof Error ? err.message : String(err),
       });
+      extractionErrors.bill_of_lading =
+        err instanceof Error ? err.message : String(err);
       if (!invoice) throw err;
     }
   }
@@ -745,6 +821,29 @@ async function executeAnalyzePipeline(
   }
 
   tracker.importId = importId;
+
+  // Referência da importação vinda do próprio arquivo (campo do documento ou
+  // código do nome do arquivo). Nunca sobrescreve o que o usuário digitou.
+  try {
+    const reference = extractImportReference({
+      filename,
+      markdown: preparedDocumentText(prepared.content),
+      invoiceNumber,
+      blNumber,
+    });
+    if (reference) {
+      await fillImportReferenceIfEmpty({
+        tenantId: params.tenantId,
+        importId,
+        referenceNumber: reference.value,
+      });
+    }
+  } catch (referenceError) {
+    console.error(
+      "[analyze-pipeline] falha ao salvar a referência da importação:",
+      referenceError,
+    );
+  }
 
   try {
     await attachAiLogsToImport({
@@ -887,6 +986,7 @@ async function executeAnalyzePipeline(
           payload: bl,
           tokensUsed: blTokensUsed ?? undefined,
         });
+        await syncImportEta({ tenantId: params.tenantId, importId });
         try {
           await updateDocumentStatus({
             tenantId: params.tenantId,
@@ -916,6 +1016,36 @@ async function executeAnalyzePipeline(
             failedErr,
           );
         }
+      }
+    }
+  }
+
+  // Extração que falhou não pode deixar o documento `pending` para sempre: a
+  // importação fica com os demais resultados, mas o documento sinaliza falha
+  // (e o motivo já está em `ai_logs`).
+  if (shouldPersist) {
+    const previouslyExtracted = new Set(
+      existingByHash
+        .filter((document) => document.status === "extracted")
+        .map((document) => document.id),
+    );
+
+    for (const document of documents) {
+      if (!extractionErrors[document.docType]) continue;
+      if (previouslyExtracted.has(document.id)) continue;
+
+      try {
+        await updateDocumentStatus({
+          tenantId: params.tenantId,
+          documentId: document.id,
+          status: "failed",
+        });
+      } catch (statusError) {
+        console.error(
+          "[analyze-pipeline] falha ao marcar documento como failed:",
+          document.docType,
+          statusError,
+        );
       }
     }
   }
@@ -993,6 +1123,37 @@ async function executeAnalyzePipeline(
         ...pendingParties,
         ...(defaultConsignee ? withoutConsigneeRoles(fallback) : fallback),
       ]);
+    }
+  }
+
+  if (bl) {
+    try {
+      await enqueueTrackingForImport({
+        tenantId: params.tenantId,
+        importId,
+      });
+    } catch (trackingErr) {
+      // Rastreio é acessório: nunca derruba a análise.
+      console.error(
+        "[analyze-pipeline] falha ao enfileirar rastreio do BL:",
+        trackingErr,
+      );
+    }
+
+    try {
+      // Primeira consulta na hora (priorizando o BL): o ETA do armador chega
+      // junto com a análise, em vez de esperar o botão manual ou o cron.
+      await processQueuedTrackingJobs({
+        limit: 1,
+        worker: "analyze",
+        importId,
+      });
+    } catch (trackingErr) {
+      // Sem chave/orçamento o próprio processamento marca `blocked`.
+      console.error(
+        "[analyze-pipeline] falha na primeira consulta de rastreio do BL:",
+        trackingErr,
+      );
     }
   }
 

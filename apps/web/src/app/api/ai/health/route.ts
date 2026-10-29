@@ -9,10 +9,18 @@ import {
 import { getAiOverrides } from "@/lib/settings/ai-settings";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
+import { consumeRateLimit } from "@/lib/security/rate-limit";
+
+/** Cada GET gasta tokens de verdade: teto baixo por tenant, janela de 1h. */
+const HEALTH_RATE_LIMIT = 20;
+const HEALTH_RATE_WINDOW_SECONDS = 60 * 60;
 
 /**
  * Smoke autenticado da integração de IA (config efetiva do tenant).
  * GET /api/ai/health → { ok, provider, model, source, text, latencyMs }
+ *
+ * Não grava `ai_logs` (endpoint de diagnóstico não entra na quota mensal de
+ * tokens); o consumo é limitado pelo rate limit por tenant.
  */
 export async function GET() {
   try {
@@ -30,14 +38,45 @@ export async function GET() {
     }
 
     // Garante usuário autenticado com tenant; config de IA é global.
-    await getAuthContext();
+    const auth = await getAuthContext();
     const overrides = await getAiOverrides();
     const provider = getAiProvider(overrides);
     const modelId = getAiModelId(overrides);
+    // Resolve o modelo antes do rate limit: sem chave o endpoint responde 503
+    // sem consumir uma unidade do bucket.
+    const model = getDefaultLanguageModel(overrides);
+
+    try {
+      const rateLimit = await consumeRateLimit({
+        bucket: `ai:health:${auth.tenantId}`,
+        limit: HEALTH_RATE_LIMIT,
+        windowSeconds: HEALTH_RATE_WINDOW_SECONDS,
+      });
+
+      if (!rateLimit.allowed) {
+        return NextResponse.json(
+          {
+            error:
+              "Muitos testes de IA em pouco tempo. Tente novamente mais tarde.",
+            retryAfterSeconds: rateLimit.retryAfterSeconds,
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(rateLimit.retryAfterSeconds),
+            },
+          },
+        );
+      }
+    } catch (error) {
+      // Fail-open: indisponibilidade do rate limiter não derruba o diagnóstico.
+      console.error("[api/ai/health] rate limit indisponível", error);
+    }
+
     const started = Date.now();
 
     const { text } = await generateText({
-      model: getDefaultLanguageModel(overrides),
+      model,
       prompt: 'Responda apenas com a palavra "ok".',
     });
 

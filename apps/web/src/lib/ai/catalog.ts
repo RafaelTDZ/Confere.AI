@@ -5,6 +5,10 @@ import { DEFAULT_FIREWORKS_MODEL } from "@/lib/ai/providers/fireworks-config";
 import { DEFAULT_OPENROUTER_MODEL } from "@/lib/ai/providers/openrouter-model";
 
 const GLM_FLASH_FIREWORKS_MODEL = "accounts/fireworks/routers/glm-flash-latest";
+const DEEPSEEK_V4_FLASH_1017_FIREWORKS_MODEL =
+  "accounts/fireworks/models/deepseek-v4p1-flash-1017";
+const DEEPSEEK_V4_FLASH_FIREWORKS_MODEL =
+  "accounts/fireworks/models/deepseek-v4p1-flash";
 const MUSE_SPARK_OPENROUTER_MODEL = "meta/muse-spark-1.3";
 
 type ModelPreset = {
@@ -28,9 +32,19 @@ export const AI_PROVIDER_CATALOG: ProviderInfo[] = [
       "Provider direto do Fireworks (padrão). PDF → imagens renderizadas no servidor.",
     models: [
       {
+        id: DEEPSEEK_V4_FLASH_1017_FIREWORKS_MODEL,
+        label: "DeepSeek V4.1 Flash 1017",
+        hint: "Config atual · multimodal",
+      },
+      {
+        id: DEEPSEEK_V4_FLASH_FIREWORKS_MODEL,
+        label: "DeepSeek V4.1 Flash",
+        hint: "Snapshot anterior",
+      },
+      {
         id: DEFAULT_FIREWORKS_MODEL,
-        label: "DeepSeek Flash Latest",
-        hint: "Padrão do servidor · multimodal",
+        label: "DeepSeek Flash Latest (router)",
+        hint: "Alias do servidor · multimodal",
       },
       {
         id: GLM_FLASH_FIREWORKS_MODEL,

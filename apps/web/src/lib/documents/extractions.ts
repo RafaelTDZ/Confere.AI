@@ -50,6 +50,51 @@ export async function findLatestExtractionsByDocumentIds(params: {
   return latest;
 }
 
+/**
+ * Sobrescreve o payload da extração mais recente dos documentos indicados
+ * (correção manual do usuário sobre o resultado da IA). Devolve `false` quando
+ * ainda não existe extração para nenhum deles.
+ */
+export async function overwriteLatestExtractionPayload(params: {
+  tenantId: string;
+  documentIds: string[];
+  payload: unknown;
+}): Promise<boolean> {
+  if (params.documentIds.length === 0) return false;
+
+  await assertDocumentOwnership({
+    tenantId: params.tenantId,
+    documentId: params.documentIds[0]!,
+  });
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("extraction_results")
+    .select("id")
+    .eq("tenant_id", params.tenantId)
+    .in("document_id", params.documentIds)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Falha ao buscar extração");
+  }
+  if (!data?.id) return false;
+
+  const { error: updateError } = await admin
+    .from("extraction_results")
+    .update({ payload: params.payload as Json })
+    .eq("id", data.id)
+    .eq("tenant_id", params.tenantId);
+
+  if (updateError) {
+    throw new Error(updateError.message || "Falha ao salvar correção");
+  }
+
+  return true;
+}
+
 export async function persistExtractionResult(params: {
   tenantId: string;
   documentId: string;

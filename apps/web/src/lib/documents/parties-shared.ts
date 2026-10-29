@@ -1,3 +1,5 @@
+import { normalizeUf } from "@/lib/documents/uf-shared";
+
 export type PartyRole = "consignee" | "notify";
 
 export type PartyAddress = {
@@ -140,13 +142,22 @@ const OTHER_LABELS = [
 ] as const;
 
 /**
+ * Rótulos limpos mesmo sem separador. "Bairro" é o nome do próprio campo, então
+ * "Bairro Glória" é rótulo repetido; já "Distrito Industrial" precisa ficar
+ * intacto, por isso só ele entra aqui.
+ */
+const OTHER_LOOSE_LABELS = ["bairro"] as const;
+
+/**
  * Remove rótulos que a IA às vezes repete no valor ("BAIRRO: ZONA INDUSTRIAL",
  * "CEP: 01310-100"). Só remove quando o rótulo é seguido de separador, para não
- * cortar valores legítimos como "Rua das Flores" ou "Sala 5".
+ * cortar valores legítimos como "Rua das Flores" ou "Sala 5". Com
+ * `allowSpace`, o espaço também separa o rótulo do valor.
  */
 function stripAddressLabels(
   value: string | null,
   labels: readonly string[],
+  allowSpace = false,
 ): string | null {
   if (!value) return null;
   let next = value.trim();
@@ -155,10 +166,8 @@ function stripAddressLabels(
   while (changed && next.length > 0) {
     changed = false;
     for (const label of labels) {
-      const pattern = new RegExp(
-        `^${escapeRegExp(label)}\\s*[:=\\-–—]\\s*`,
-        "i",
-      );
+      const separator = allowSpace ? "[\\s:=\\-–—]+" : "\\s*[:=\\-–—]\\s*";
+      const pattern = new RegExp(`^${escapeRegExp(label)}${separator}`, "i");
       const stripped = next.replace(pattern, "").trim();
       if (stripped !== next) {
         next = stripped;
@@ -174,13 +183,17 @@ export function parsePartyAddress(value: unknown): PartyAddress {
   if (typeof value === "string") {
     return {
       ...EMPTY_PARTY_ADDRESS,
-      other: stripAddressLabels(trimmedOrNull(value), OTHER_LABELS),
+      other: stripAddressLabels(
+        stripAddressLabels(trimmedOrNull(value), OTHER_LOOSE_LABELS, true),
+        OTHER_LABELS,
+      ),
     };
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ...EMPTY_PARTY_ADDRESS };
   }
   const row = value as Record<string, unknown>;
+  const state = stripAddressLabels(trimmedOrNull(row.state), STATE_LABELS);
   return {
     street: stripAddressLabels(trimmedOrNull(row.street), STREET_LABELS),
     number: stripAddressLabels(
@@ -196,12 +209,42 @@ export function parsePartyAddress(value: unknown): PartyAddress {
       POSTAL_LABELS,
     ),
     city: stripAddressLabels(trimmedOrNull(row.city), CITY_LABELS),
-    state: stripAddressLabels(trimmedOrNull(row.state), STATE_LABELS),
+    state: normalizeUf(state) ?? state,
     country: stripAddressLabels(trimmedOrNull(row.country), COUNTRY_LABELS),
     other: stripAddressLabels(
-      trimmedOrNull(row.other ?? row.other_info),
+      stripAddressLabels(
+        trimmedOrNull(row.other ?? row.other_info),
+        OTHER_LOOSE_LABELS,
+        true,
+      ),
       OTHER_LABELS,
     ),
+  };
+}
+
+/** Normaliza um valor de party para o padrão do produto (maiúsculas). */
+export function uppercasePartyText(value: string | null): string | null {
+  if (!value) return null;
+  const next = value.trim().replace(/\s+/g, " ").toUpperCase();
+  return next.length > 0 ? next : null;
+}
+
+function trimTrailingSeparators(value: string | null): string | null {
+  if (!value) return null;
+  const next = value.replace(/[,;]+$/, "").trim();
+  return next.length > 0 ? next : null;
+}
+
+export function uppercasePartyAddress(address: PartyAddress): PartyAddress {
+  return {
+    street: uppercasePartyText(address.street),
+    number: uppercasePartyText(address.number),
+    complement: uppercasePartyText(address.complement),
+    postalCode: uppercasePartyText(address.postalCode),
+    city: uppercasePartyText(address.city),
+    state: uppercasePartyText(address.state),
+    country: uppercasePartyText(address.country),
+    other: trimTrailingSeparators(uppercasePartyText(address.other)),
   };
 }
 
@@ -221,9 +264,13 @@ export function mergePartyAddress(
   };
 }
 
-export function formatAddressLine(address: PartyAddress | null | undefined): string {
+export function formatAddressLine(
+  address: PartyAddress | null | undefined,
+): string {
   if (!address) return "";
-  const streetLine = [address.street, address.number].filter(Boolean).join(", ");
+  const streetLine = [address.street, address.number]
+    .filter(Boolean)
+    .join(", ");
   return [
     streetLine,
     address.complement,

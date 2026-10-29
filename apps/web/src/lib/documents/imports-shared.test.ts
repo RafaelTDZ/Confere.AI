@@ -3,8 +3,94 @@ import { describe, expect, it } from "vitest";
 import {
   displayImportReference,
   fallbackSavedReference,
+  importShipmentStage,
+  IMPORT_SHIPMENT_STAGE_LABELS,
   normalizeImportKey,
+  trackingStatusPriority,
+  type ImportShipmentStage,
 } from "./imports-shared";
+
+describe("importShipmentStage", () => {
+  it("retorna aguardando embarque sem data de embarque nem status de rastreio", () => {
+    expect(importShipmentStage({})).toBe("awaiting_shipment");
+    expect(
+      importShipmentStage({ onboardDate: null, status: null }),
+    ).toBe("awaiting_shipment");
+    expect(
+      importShipmentStage({ onboardDate: "  ", status: "" }),
+    ).toBe("awaiting_shipment");
+  });
+
+  it("retorna em trânsito com data de embarque", () => {
+    expect(importShipmentStage({ onboardDate: "10/10/2026" })).toBe(
+      "in_transit",
+    );
+    expect(
+      importShipmentStage({ onboardDate: "10/10/2026", status: null }),
+    ).toBe("in_transit");
+  });
+
+  it("retorna em trânsito com qualquer status informativo ainda não chegado", () => {
+    for (const status of [
+      "pending",
+      "in_transit",
+      "transshipment",
+      "not_found",
+      "blocked",
+      "error",
+    ]) {
+      expect(importShipmentStage({ status })).toBe("in_transit");
+    }
+  });
+
+  it("retorna chegada confirmada só com status de chegada/final", () => {
+    for (const status of [
+      "arrived",
+      "discharged",
+      "delivered",
+      "empty_returned",
+    ]) {
+      expect(importShipmentStage({ status })).toBe("arrived");
+      expect(
+        importShipmentStage({ onboardDate: "10/10/2026", status }),
+      ).toBe("arrived");
+    }
+  });
+
+  it("ignora a ATA: embarque em trânsito continua em trânsito", () => {
+    expect(
+      importShipmentStage({
+        onboardDate: "10/10/2026",
+        status: "in_transit",
+      }),
+    ).toBe("in_transit");
+  });
+
+  it("prioriza chegada > em trânsito > demais status", () => {
+    expect(trackingStatusPriority("arrived")).toBeGreaterThan(
+      trackingStatusPriority("in_transit"),
+    );
+    expect(trackingStatusPriority("transshipment")).toBeGreaterThan(
+      trackingStatusPriority("not_found"),
+    );
+    expect(trackingStatusPriority("delivered")).toBeGreaterThan(
+      trackingStatusPriority("in_transit"),
+    );
+  });
+
+  it("expõe rótulos para cada etapa", () => {
+    const stages: ImportShipmentStage[] = [
+      "awaiting_shipment",
+      "in_transit",
+      "arrived",
+    ];
+    expect(stages.map((stage) => IMPORT_SHIPMENT_STAGE_LABELS[stage])).toEqual([
+      "Aguardando embarque",
+      "Em trânsito",
+      "Chegada confirmada",
+    ]);
+  });
+});
 
 describe("normalizeImportKey", () => {
   it("retorna null para valores vazios", () => {

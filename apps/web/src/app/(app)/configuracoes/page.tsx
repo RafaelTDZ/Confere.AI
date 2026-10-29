@@ -77,7 +77,7 @@ export default async function ConfiguracoesPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {consigneeError ? (
-              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive-text">
                 Não foi possível carregar o consignee padrão: {consigneeError}
               </p>
             ) : (

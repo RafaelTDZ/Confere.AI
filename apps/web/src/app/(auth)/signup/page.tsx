@@ -13,7 +13,7 @@ export default function SignupPage() {
     <main className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">Confere.ia</CardTitle>
+          <CardTitle className="text-2xl">Confere AI</CardTitle>
           <CardDescription>
             Gestão de importações com análise documental por IA
           </CardDescription>

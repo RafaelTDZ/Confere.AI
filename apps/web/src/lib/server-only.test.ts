@@ -12,6 +12,7 @@ const LIB_DIR = fileURLToPath(new URL(".", import.meta.url));
 const CLIENT_SAFE = new Set([
   "utils.ts",
   "pagination.ts",
+  "flash.ts",
   "ai/schemas.ts",
   "ai/usage.ts",
   "ai/model-compat.ts",
@@ -22,6 +23,11 @@ const CLIENT_SAFE = new Set([
   "supabase/fetch.ts",
   "supabase/public-key.ts",
   "documents/consignee-check.ts",
+  "tracking/shared.ts",
+  "tracking/carriers.ts",
+  "tracking/bl-prefix.ts",
+  "tracking/validate.ts",
+  "tracking/manual-event.ts",
 ]);
 
 function listTypeScriptFiles(dir: string): string[] {

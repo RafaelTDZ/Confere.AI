@@ -11,6 +11,7 @@ import {
   documentClassificationSchema,
   type DocumentClassification,
 } from "@/lib/ai/schemas";
+import { runAiTask } from "@/lib/ai/task-timeout";
 import { extractAiTaskUsage, type AiTaskUsage } from "@/lib/ai/usage";
 
 export type { AnalyzeFileInput } from "@/lib/ai/document-content";
@@ -18,8 +19,10 @@ export type { AnalyzeFileInput } from "@/lib/ai/document-content";
 async function classifyOnce(
   prepared: PreparedDocument,
   pdfEngine: PdfEngine,
+  abortSignal: AbortSignal,
 ) {
   return generateText({
+    abortSignal,
     model: getDocumentLanguageModel({
       provider: prepared.provider,
       modelId: prepared.modelId,
@@ -67,7 +70,9 @@ export async function classifyDocument(prepared: PreparedDocument): Promise<{
 
   let result;
   try {
-    result = await classifyOnce(prepared, "native");
+    result = await runAiTask("classify", (signal) =>
+      classifyOnce(prepared, "native", signal),
+    );
   } catch (error) {
     if (
       prepared.isPdf &&
@@ -75,7 +80,9 @@ export async function classifyDocument(prepared: PreparedDocument): Promise<{
       shouldFallbackPdfEngine(error)
     ) {
       // Fallback: OCR via OpenRouter quando o processamento nativo falha
-      result = await classifyOnce(prepared, "mistral-ocr");
+      result = await runAiTask("classify:mistral-ocr", (signal) =>
+        classifyOnce(prepared, "mistral-ocr", signal),
+      );
     } else {
       throw error;
     }

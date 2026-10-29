@@ -386,6 +386,7 @@ export type Database = {
           created_at: string;
           created_by: string | null;
           currency: string | null;
+          eta: string | null;
           id: string;
           incoterm: string | null;
           invoice_number: string | null;
@@ -403,6 +404,7 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           currency?: string | null;
+          eta?: string | null;
           id?: string;
           incoterm?: string | null;
           invoice_number?: string | null;
@@ -420,6 +422,7 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           currency?: string | null;
+          eta?: string | null;
           id?: string;
           incoterm?: string | null;
           invoice_number?: string | null;
@@ -768,6 +771,275 @@ export type Database = {
         };
         Relationships: [];
       };
+      tracking_events: {
+        Row: {
+          container_number: string | null;
+          created_at: string;
+          created_by: string | null;
+          description: string | null;
+          event_at: string;
+          fingerprint: string;
+          id: string;
+          location: string | null;
+          shipment_id: string;
+          source: string;
+          status: string;
+          tenant_id: string;
+          vessel: string | null;
+          voyage: string | null;
+        };
+        Insert: {
+          container_number?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          event_at: string;
+          fingerprint: string;
+          id?: string;
+          location?: string | null;
+          shipment_id: string;
+          source?: string;
+          status: string;
+          tenant_id: string;
+          vessel?: string | null;
+          voyage?: string | null;
+        };
+        Update: {
+          container_number?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          event_at?: string;
+          fingerprint?: string;
+          id?: string;
+          location?: string | null;
+          shipment_id?: string;
+          source?: string;
+          status?: string;
+          tenant_id?: string;
+          vessel?: string | null;
+          voyage?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_events_shipment_id_fkey";
+            columns: ["shipment_id"];
+            isOneToOne: false;
+            referencedRelation: "tracking_shipments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tracking_events_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_jobs: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          last_error: string | null;
+          locked_by: string | null;
+          locked_until: string | null;
+          run_after: string;
+          shipment_id: string;
+          status: string;
+          strategy: string;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          locked_by?: string | null;
+          locked_until?: string | null;
+          run_after?: string;
+          shipment_id: string;
+          status?: string;
+          strategy: string;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          id?: string;
+          last_error?: string | null;
+          locked_by?: string | null;
+          locked_until?: string | null;
+          run_after?: string;
+          shipment_id?: string;
+          status?: string;
+          strategy?: string;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_jobs_shipment_id_fkey";
+            columns: ["shipment_id"];
+            isOneToOne: false;
+            referencedRelation: "tracking_shipments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tracking_jobs_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_shipments: {
+        Row: {
+          ata: string | null;
+          attempts: number;
+          carrier_code: string;
+          container_number: string | null;
+          created_at: string;
+          error_code: string | null;
+          error_message: string | null;
+          eta: string | null;
+          eta_original: string | null;
+          fetched_at: string | null;
+          id: string;
+          import_id: string;
+          last_event_at: string | null;
+          last_event_description: string | null;
+          last_event_location: string | null;
+          last_http_status: number | null;
+          locked_until: string | null;
+          next_check_at: string | null;
+          query_type: string;
+          query_value: string;
+          raw: Json | null;
+          snapshot_path: string | null;
+          source: string;
+          status: string;
+          strategy: string;
+          tenant_id: string;
+          updated_at: string;
+          vessel: string | null;
+          voyage: string | null;
+        };
+        Insert: {
+          ata?: string | null;
+          attempts?: number;
+          carrier_code: string;
+          container_number?: string | null;
+          created_at?: string;
+          error_code?: string | null;
+          error_message?: string | null;
+          eta?: string | null;
+          eta_original?: string | null;
+          fetched_at?: string | null;
+          id?: string;
+          import_id: string;
+          last_event_at?: string | null;
+          last_event_description?: string | null;
+          last_event_location?: string | null;
+          last_http_status?: number | null;
+          locked_until?: string | null;
+          next_check_at?: string | null;
+          query_type: string;
+          query_value: string;
+          raw?: Json | null;
+          snapshot_path?: string | null;
+          source?: string;
+          status?: string;
+          strategy?: string;
+          tenant_id: string;
+          updated_at?: string;
+          vessel?: string | null;
+          voyage?: string | null;
+        };
+        Update: {
+          ata?: string | null;
+          attempts?: number;
+          carrier_code?: string;
+          container_number?: string | null;
+          created_at?: string;
+          error_code?: string | null;
+          error_message?: string | null;
+          eta?: string | null;
+          eta_original?: string | null;
+          fetched_at?: string | null;
+          id?: string;
+          import_id?: string;
+          last_event_at?: string | null;
+          last_event_description?: string | null;
+          last_event_location?: string | null;
+          last_http_status?: number | null;
+          locked_until?: string | null;
+          next_check_at?: string | null;
+          query_type?: string;
+          query_value?: string;
+          raw?: Json | null;
+          snapshot_path?: string | null;
+          source?: string;
+          status?: string;
+          strategy?: string;
+          tenant_id?: string;
+          updated_at?: string;
+          vessel?: string | null;
+          voyage?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_shipments_import_id_fkey";
+            columns: ["import_id"];
+            isOneToOne: false;
+            referencedRelation: "imports";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tracking_shipments_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tracking_usage: {
+        Row: {
+          credits_used: number;
+          period: string;
+          scrapes: number;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          credits_used?: number;
+          period: string;
+          scrapes?: number;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          credits_used?: number;
+          period?: string;
+          scrapes?: number;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tracking_usage_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -827,6 +1099,28 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      claim_tracking_jobs: {
+        Args: {
+          p_limit: number;
+          p_max_attempts?: number | null;
+          p_strategy?: string | null;
+          p_worker: string;
+        };
+        Returns: {
+          attempts: number;
+          created_at: string;
+          id: string;
+          last_error: string | null;
+          locked_by: string | null;
+          locked_until: string | null;
+          run_after: string;
+          shipment_id: string;
+          status: string;
+          strategy: string;
+          tenant_id: string;
+          updated_at: string;
+        }[];
+      };
       consume_rate_limit: {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
         Returns: {
@@ -834,6 +1128,15 @@ export type Database = {
           remaining: number;
           reset_at: string;
         }[];
+      };
+      consume_tracking_credits: {
+        Args: {
+          p_credits: number;
+          p_limit: number;
+          p_period: string;
+          p_tenant_id: string;
+        };
+        Returns: boolean;
       };
       create_tenant_with_owner: { Args: { p_name: string }; Returns: string };
       custom_access_token_hook: { Args: { event: Json }; Returns: Json };

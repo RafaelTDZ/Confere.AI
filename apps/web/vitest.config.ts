@@ -18,7 +18,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text"],
-      include: ["src/lib/documents/**/*.ts", "src/lib/ai/**/*.ts"],
+      include: ["src/lib/documents/**/*.ts", "src/lib/ai/**/*.ts", "src/lib/tracking/**/*.ts"],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       thresholds: {
         "src/lib/documents/**": {
@@ -32,6 +32,12 @@ export default defineConfig({
           functions: 98,
           statements: 98,
           branches: 97,
+        },
+        "src/lib/tracking/{validate,carriers,normalize,shared}.ts": {
+          lines: 85,
+          functions: 90,
+          statements: 85,
+          branches: 75,
         },
       },
     },

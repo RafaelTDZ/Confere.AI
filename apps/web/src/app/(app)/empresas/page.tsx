@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Building2, CircleCheck } from "lucide-react";
+import { Building2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -8,25 +9,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAuthContext } from "@/lib/auth";
+import { Notice } from "@/components/ui/notice";
+import { FlashNotice } from "@/components/ui/flash-notice";
 import {
-  listTenantParties,
-  type PartyRow,
-} from "@/lib/documents";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/layout/page-header";
+import { getAuthContext } from "@/lib/auth";
+import { listTenantParties, type PartyRow } from "@/lib/documents";
 import { buildPage, DEFAULT_PAGE_SIZE, type Page } from "@/lib/pagination";
 import { cn, formatDate } from "@/lib/utils";
 import { EmpresaRowActions } from "@/components/empresas/empresa-row-actions";
 import { ListFilters } from "@/components/ui/list-filters";
 import { Pagination } from "@/components/ui/pagination";
 
-function toErrorMessage(value: unknown): string {
-  return value instanceof Error ? value.message : String(value);
-}
-
 export default async function EmpresasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const auth = await getAuthContext();
@@ -38,45 +43,41 @@ export default async function EmpresasPage({
     1,
     DEFAULT_PAGE_SIZE,
   );
-  let error: string | null = null;
+  let loadFailed = false;
   try {
     partyPage = await listTenantParties(auth.tenantId, {
       page: params.page,
       search: params.q,
     });
   } catch (err) {
-    error = toErrorMessage(err);
+    console.error("[empresas] falha ao listar empresas:", err);
+    loadFailed = true;
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
-      {params.saved === "ok" && (
-        <p className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-          <CircleCheck className="h-4 w-4 shrink-0 text-primary" />
-          Empresa atualizada com sucesso.
-        </p>
-      )}
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <FlashNotice />
 
-      <div>
-        <p className="mb-1 flex items-center gap-1.5 text-sm font-medium text-primary">
-          <Building2 className="h-4 w-4" />
-          Empresas
-        </p>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Empresas cadastradas
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Consignee e notify gravados a partir das análises neste tenant.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Empresas"
+        icon={Building2}
+        title="Empresas cadastradas"
+        description="Consignee e notify gravados a partir das análises neste tenant."
+      />
 
-      {error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Não foi possível carregar</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
+      {loadFailed ? (
+        <Notice tone="danger" title="Não foi possível carregar as empresas.">
+          <p>
+            Verifique sua conexão e tente de novo. Se o problema continuar,
+            fale com o suporte.
+          </p>
+          <Link
+            href="/empresas"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}
+          >
+            Tentar de novo
+          </Link>
+        </Notice>
       ) : (
         <>
           <ListFilters
@@ -125,63 +126,63 @@ export default async function EmpresasPage({
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">
-                  {partyPage.total}{" "}
-                  {partyPage.total === 1 ? "empresa" : "empresas"}
-                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Empresas</CardTitle>
+                  <Badge variant="secondary">{partyPage.total}</Badge>
+                </div>
               </CardHeader>
-              <CardContent className="overflow-x-auto p-0">
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="border-y bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-6 py-3 font-medium">Nome</th>
-                      <th className="px-6 py-3 font-medium">CNPJ</th>
-                      <th className="px-6 py-3 font-medium">Cidade</th>
-                      <th className="px-6 py-3 font-medium">Estado</th>
-                      <th className="px-6 py-3 font-medium">País</th>
-                      <th className="px-6 py-3 font-medium">Atualizado em</th>
-                      <th className="px-6 py-3 font-medium">
+              <CardContent className="overflow-hidden p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>CNPJ</TableHead>
+                      <TableHead>Cidade</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>País</TableHead>
+                      <TableHead>Atualizado em</TableHead>
+                      <TableHead>
                         <span className="sr-only">Ações</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {partyPage.rows.map((row) => (
-                      <tr
-                        key={row.id}
-                        className="group relative cursor-pointer border-b last:border-0 hover:bg-muted/30"
-                      >
-                        <td className="px-6 py-3 font-medium">
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">
                           <Link
                             href={`/empresas/${row.id}`}
                             aria-label={`Abrir cadastro de ${row.name}`}
-                            className="after:absolute after:inset-0 after:z-0 after:content-[''] group-hover:underline"
+                            className="hover:underline"
                           >
                             {row.name}
                           </Link>
-                        </td>
-                        <td className="px-6 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
                           {row.cnpj || "—"}
-                        </td>
-                        <td className="px-6 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
                           {row.address.city || "—"}
-                        </td>
-                        <td className="px-6 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
                           {row.address.state || "—"}
-                        </td>
-                        <td className="px-6 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
                           {row.address.country || "—"}
-                        </td>
-                        <td className="px-6 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
                           {formatDate(row.updated_at)}
-                        </td>
-                        <td className="px-6 py-3 text-right">
-                          <EmpresaRowActions partyId={row.id} partyName={row.name} />
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <EmpresaRowActions
+                            partyId={row.id}
+                            partyName={row.name}
+                          />
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           )}

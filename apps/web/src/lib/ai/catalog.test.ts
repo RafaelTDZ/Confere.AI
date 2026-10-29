@@ -14,12 +14,35 @@ describe("AI_PROVIDER_CATALOG", () => {
     expect(AI_PROVIDER_CATALOG.at(-1)?.name).toBe("OpenRouter");
   });
 
-  it("usa o modelo padrão do Fireworks como primeiro modelo do catálogo", () => {
+  it("abre o catálogo Fireworks com o DeepSeek V4.1 Flash 1017 (config atual)", () => {
     const primeiroModelo = AI_PROVIDER_CATALOG[0]?.models[0];
 
-    expect(primeiroModelo?.id).toBe(DEFAULT_FIREWORKS_MODEL);
-    expect(primeiroModelo?.label).toBe("DeepSeek Flash Latest");
-    expect(primeiroModelo?.hint).toBe("Padrão do servidor · multimodal");
+    expect(primeiroModelo?.id).toBe(
+      "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+    );
+    expect(primeiroModelo?.label).toBe("DeepSeek V4.1 Flash 1017");
+    expect(primeiroModelo?.hint).toContain("multimodal");
+  });
+
+  it("mantém o snapshot anterior do DeepSeek V4.1 Flash como preset", () => {
+    const modelos = AI_PROVIDER_CATALOG[0]?.models ?? [];
+    const snapshotAnterior = modelos.find(
+      (modelo) => modelo.id === "accounts/fireworks/models/deepseek-v4p1-flash",
+    );
+
+    expect(snapshotAnterior).toBeDefined();
+    expect(snapshotAnterior?.label).toBe("DeepSeek V4.1 Flash");
+    expect(snapshotAnterior?.hint).toBe("Snapshot anterior");
+  });
+
+  it("mantém o router padrão do servidor como preset", () => {
+    const modelos = AI_PROVIDER_CATALOG[0]?.models ?? [];
+    const router = modelos.find(
+      (modelo) => modelo.id === DEFAULT_FIREWORKS_MODEL,
+    );
+
+    expect(router).toBeDefined();
+    expect(router?.label).toBe("DeepSeek Flash Latest (router)");
   });
 
   it("inclui o preset GLM Flash Latest no Fireworks", () => {
