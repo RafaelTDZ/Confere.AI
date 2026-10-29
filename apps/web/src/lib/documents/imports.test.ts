@@ -4,6 +4,7 @@ import {
   clearAutoReferenceIfNeeded,
   deleteImportRecord,
   fillImportKeysIfEmpty,
+  fillImportReferenceIfEmpty,
   findOrCreateImport,
   getImportDetail,
   ImportConflictError,
@@ -12,6 +13,7 @@ import {
   syncImportEta,
   updateImportConsignee,
   updateImportConsigneeDivergences,
+  updateImportExtractionData,
   updateImportRecord,
 } from "@/lib/documents/imports";
 import type { ImportSort } from "@/lib/documents/imports-shared";
@@ -1964,5 +1966,90 @@ describe("clearAutoReferenceIfNeeded", () => {
     expect(findImport("import-by-bl", TENANT_A)?.reference_number).toBe(
       "IMP-20261023-AB12CD",
     );
+  });
+});
+
+describe("updateImportExtractionData", () => {
+  it("grava correcao de BL, produtos e numeros", async () => {
+    const detail = await updateImportExtractionData(TENANT_A, "import-detail", {
+      invoiceNumber: "INV-CORRIGIDA",
+      blNumber: "BL-CORRIGIDO",
+      bl: { carrier: "Maersk" },
+      products: [{ code: "P1", ncm: "12345678", description: "Peca" }],
+    });
+
+    expect(detail).toMatchObject({
+      invoice_number: "INV-CORRIGIDA",
+      bl_number: "BL-CORRIGIDO",
+    });
+
+    const blExtraction = admin
+      .rows("extraction_results")
+      .find((row) => row.document_id === "doc-detail-bl");
+    expect(blExtraction?.payload).toMatchObject({
+      number: "BL-CORRIGIDO",
+      carrier: "Maersk",
+    });
+
+    const invoiceExtraction = admin
+      .rows("extraction_results")
+      .find((row) => row.id === "extraction-detail-invoice-new");
+    expect(invoiceExtraction?.payload).toMatchObject({
+      number: "INV-CORRIGIDA",
+      products: [{ code: "P1", ncm: "12345678", description: "Peca" }],
+    });
+  });
+
+  it("exige extracao de BL para corrigir o BL", async () => {
+    await expect(
+      updateImportExtractionData(TENANT_A, "import-detail-empty", {
+        bl: { carrier: "Maersk" },
+      }),
+    ).rejects.toBeInstanceOf(ImportValidationError);
+  });
+
+  it("exige extracao de Invoice para corrigir os produtos", async () => {
+    await expect(
+      updateImportExtractionData(TENANT_A, "import-detail-empty", {
+        products: [],
+      }),
+    ).rejects.toBeInstanceOf(ImportValidationError);
+  });
+});
+
+describe("fillImportReferenceIfEmpty", () => {
+  it("preenche a referencia quando esta vazia", async () => {
+    const filled = await fillImportReferenceIfEmpty({
+      tenantId: TENANT_A,
+      importId: "import-detail-empty",
+      referenceNumber: "  OYH128  ",
+    });
+
+    expect(filled).toBe(true);
+    expect(findImport("import-detail-empty", TENANT_A)?.reference_number).toBe(
+      "OYH128",
+    );
+  });
+
+  it("nao sobrescreve a referencia existente", async () => {
+    await fillImportReferenceIfEmpty({
+      tenantId: TENANT_A,
+      importId: "import-detail",
+      referenceNumber: "OUTRA",
+    });
+
+    expect(findImport("import-detail", TENANT_A)?.reference_number).toBe(
+      "PO-DETAIL",
+    );
+  });
+
+  it("ignora valor vazio", async () => {
+    await expect(
+      fillImportReferenceIfEmpty({
+        tenantId: TENANT_A,
+        importId: "import-detail-empty",
+        referenceNumber: "   ",
+      }),
+    ).resolves.toBe(false);
   });
 });

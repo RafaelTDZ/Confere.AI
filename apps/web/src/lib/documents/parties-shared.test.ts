@@ -10,6 +10,7 @@ import {
   mergePartyAddress,
   normalizeCnpjDigits,
   parsePartyAddress,
+  partyRolesLabel,
   uppercasePartyAddress,
   uppercasePartyText,
   type PartyAddress,
@@ -288,5 +289,18 @@ describe("uppercasePartyAddress", () => {
     expect(
       uppercasePartyAddress({ ...EMPTY_PARTY_ADDRESS, other: "Gloria," }).other,
     ).toBe("GLORIA");
+  });
+});
+
+describe("partyRolesLabel", () => {
+  it("descreve o papel único", () => {
+    expect(partyRolesLabel(["consignee"])).toBe("Consignee (importador)");
+    expect(partyRolesLabel(["notify"])).toBe("Notify (adquirente)");
+  });
+
+  it("remove papéis repetidos e junta com 'e'", () => {
+    expect(partyRolesLabel(["consignee", "notify", "consignee"])).toBe(
+      "Consignee (importador) e Notify (adquirente)",
+    );
   });
 });

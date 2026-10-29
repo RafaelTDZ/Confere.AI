@@ -71,4 +71,25 @@ Copies of such provisions are obtainable upon request from the Carrier or his ag
 
     expect(result).toBeNull();
   });
+
+  it("aceita o campo depois da janela inicial quando é título de linha", () => {
+    const boilerplate = "CLAUSULA CONTRATUAL. ".repeat(300);
+    const markdown = `${boilerplate}\n\n## EXPORT REFERENCES\nPO-LATE-01\n`;
+
+    const result = extractImportReference({ markdown, filename: "documento.pdf" });
+
+    expect(result).toEqual({ value: "PO-LATE-01", source: "document" });
+  });
+
+  it("ignora o campo no meio de um parágrafo fora da janela inicial", () => {
+    const boilerplate = "CLAUSULA CONTRATUAL. ".repeat(300);
+    const markdown = `${boilerplate}\nver EXPORT REFERENCES PO-TARDE no clausulado\n`;
+
+    const result = extractImportReference({
+      markdown,
+      filename: "OYH200 bl - 10-10-2026.pdf",
+    });
+
+    expect(result).toEqual({ value: "OYH200", source: "filename" });
+  });
 });

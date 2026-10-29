@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   attachAiLogsToImport,
+  getImportAiFailures,
   getMonthlyTokenUsage,
   persistAiLog,
 } from "@/lib/documents/ai-logs";
@@ -283,5 +284,69 @@ describe("attachAiLogsToImport", () => {
         logIds: ["log-1"],
       }),
     ).rejects.toThrow("Falha ao vincular logs à importação");
+  });
+});
+
+describe("getImportAiFailures", () => {
+  it("traz so a tentativa mais recente de cada capability com erro", async () => {
+    mocks.readClient = new FakeSupabase({
+      ai_logs: [
+        {
+          id: "log-1",
+          tenant_id: "tenant-a",
+          import_id: "import-1",
+          capability: "extract_bl",
+          status: "success",
+          error_message: null,
+          created_at: "2026-03-01T00:00:00.000Z",
+        },
+        {
+          id: "log-2",
+          tenant_id: "tenant-a",
+          import_id: "import-1",
+          capability: "classify",
+          status: "error",
+          error_message: null,
+          created_at: "2026-02-01T00:00:00.000Z",
+        },
+        {
+          id: "log-3",
+          tenant_id: "tenant-a",
+          import_id: "import-1",
+          capability: "extract_bl",
+          status: "error",
+          error_message: "falhou",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const failures = await getImportAiFailures({
+      tenantId: "tenant-a",
+      importId: "import-1",
+    });
+
+    expect(failures).toEqual([
+      {
+        capability: "classify",
+        message: "Falha ao analisar o documento",
+        createdAt: "2026-02-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("devolve lista vazia quando a leitura falha", async () => {
+    const read = new FakeSupabase({ ai_logs: [] });
+    read.failNext(
+      { message: "sem permissao" },
+      { table: "ai_logs", operation: "select" },
+    );
+    mocks.readClient = read;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      getImportAiFailures({ tenantId: "tenant-a", importId: "import-1" }),
+    ).resolves.toEqual([]);
+    expect(errorSpy).toHaveBeenCalled();
   });
 });

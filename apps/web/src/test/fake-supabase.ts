@@ -6,7 +6,7 @@ export type FakeTables = Record<string, FakeRow[]>;
 
 export type FakeFilter = {
   column: string;
-  operator: "eq" | "in" | "ilike" | "lt" | "lte" | "gte" | "or";
+  operator: "eq" | "in" | "ilike" | "is" | "lt" | "lte" | "gte" | "or";
   value: unknown;
 };
 
@@ -515,6 +515,12 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
     return this;
   }
 
+  /** `is` como no PostgREST: usado para `IS NULL` (`.is("col", null)`). */
+  is(column: string, value: unknown): this {
+    this.filters.push({ column, operator: "is", value });
+    return this;
+  }
+
   /** `<` como no PostgREST; datas ISO comparam na ordem lexicográfica. */
   lt(column: string, value: unknown): this {
     this.filters.push({ column, operator: "lt", value });
@@ -715,6 +721,8 @@ export class FakeQueryBuilder implements PromiseLike<FakeResponse> {
           return (filter.value as readonly unknown[]).includes(value);
         case "ilike":
           return matchesLike(value, filter.value as string);
+        case "is":
+          return filter.value == null ? value == null : value === filter.value;
         case "lte": {
           const order = compareValues(value, filter.value);
           return order != null && order <= 0;
