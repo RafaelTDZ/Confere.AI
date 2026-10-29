@@ -190,7 +190,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Rastreio de BL/container | Firecrawl + timeline/ETA por importação; **uma consulta por importação** (BL com prefixo → master BL → primeiro container), cadência semanal/diária, cron diário e refresh pela fila; orçamento de créditos e fallback manual |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 699 testes em 43 arquivos; CI roda `test:coverage` (gates: `documents` 88%, `ai` 98%) |
+| Testes automatizados | Vitest 5.0.5 — 1.208 testes em 72 arquivos; CI roda `test:coverage` (gates: `documents` 96% funções/88% linhas, `ai` 98%, `tracking` 85% linhas) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 
