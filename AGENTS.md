@@ -35,6 +35,16 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
    Fallback legado: `NEXT_PUBLIC_SUPABASE_ANON_KEY` (JWT).
 
    O Next carrega o `.env` da raiz via `apps/web/next.config.ts` — não use `apps/web/.env.local`.
+   Se existir `.env.local` **na raiz**, ele é carregado com **prioridade sobre o `.env`** (é onde a
+   Vercel CLI grava `VERCEL_OIDC_TOKEN`); não coloque configuração do produto nele.
+
+   **Só as chaves são obrigatórias.** Modelo, rate limits, orçamentos de crédito, cadência do
+   rastreio e knobs do parse têm default no código; o `.env.example` lista os opcionais comentados
+   com o default ao lado. Precedência do modelo: `app_settings.ai` (dropdown de `/configuracoes`)
+   → `FIREWORKS_MODEL`/`OPENROUTER_MODEL` do `.env` → `DEFAULT_FIREWORKS_MODEL`/
+   `DEFAULT_OPENROUTER_MODEL` em `lib/ai/providers/*`. Um clone novo **sem** `.env` ainda compila e
+   sobe, mas o login não funciona (falta a publishable key) e a IA responde 503 sem a chave do
+   provider.
 
    **Env vazio no processo ganha do arquivo:** se o shell/CI exportar
    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=` (string vazia), o Next **não** aplica o valor
