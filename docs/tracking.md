@@ -388,19 +388,27 @@ OOCL `OOLU`/`OOCU` — e, por último, o prefixo do **master** BL
 (`lib/tracking/bl-prefix.ts`). Containers de locadora (TXTU/Textainer,
 TGHU/Triton, SEGU/Seacastle, TCNU…) pertencem ao dono do equipamento e **não**
 identificam o armador.
+
+O armador devolvido pela IA só é aceito quando a marca aparece no **texto do
+PDF** (`normalizeCarrier` recebe o markdown em `applyMarkdownFallbacks`). Sem a
+marca no documento o valor é palpite — o modelo costuma repetir o primeiro
+exemplo do prompt (ex.: `CMA CGM` num BL da MSC com navio `LE HAVRE`) — e cai
+para a inferência por navio/container.
+
 Armador desconhecido não permite decidir se o BL é de casa: o BL do documento
 continua sendo a consulta e o fallback de `not_found` promove o primeiro
 container. Para a CMA, o alvo de BL é criado como `link` (sem custo) porque o BL
 emitido por forwarder não é rastreável no portal; o primeiro container é a
 chave (os demais ficam `link`).
 
-Quando o armador só é identificado **depois** (ex.: BL de house analisado antes
-do mapa de prefixos de container), o `enqueueTrackingForImport` **adota** as
-linhas gravadas com `carrier_code = 'unknown'`: corrige o armador das linhas do
-mesmo BL/container (sem duplicar, já que `carrier_code` faz parte da chave do
-upsert) e volta o alvo para `pending` — o `blocked`
-(`carrier_unsupported`) anterior era consequência do armador errado. Acontece no
-botão "Atualizar" e na primeira consulta de uma nova análise.
+Quando o armador resolvido difere do gravado, o `enqueueTrackingForImport`
+**adota** as linhas do mesmo BL/container: corrige o `carrier_code` (sem
+duplicar, já que ele faz parte da chave do upsert) e volta o alvo para
+`pending` — `blocked` (`carrier_unsupported`) ou `not_found` anterior era
+consequência do armador errado. Linha que já tem `tracking_events` (scrape de
+outro armador ou evento manual) **nunca** é reescrita: o histórico fica e o alvo
+correto é criado em paralelo. Acontece no botão "Atualizar" e na primeira
+consulta de uma nova análise.
 
 Validado em 27/10/2026 com um BL real (CMA CGM KRYPTON, Shekou → Itapoá):
 `actions` preenchendo `#Reference` → 2 eventos, ETA 02/11/2026, status

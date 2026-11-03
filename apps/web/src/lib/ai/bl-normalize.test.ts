@@ -59,8 +59,7 @@ function blOych120(): BlExtraction {
     podCountry: "BRAZIL",
     vessel: "CMA CGM KRYPTON",
     voyage: "0BDPFW1MA",
-    descriptionOfGoods:
-      "TOILET (SHIPPER'S LOAD AND COUNT / SAID TO CONTAIN)",
+    descriptionOfGoods: "TOILET (SHIPPER'S LOAD AND COUNT / SAID TO CONTAIN)",
     grossWeight: "40,093.200",
     volumes: "2,664",
     packages: "CAIXAS",
@@ -149,11 +148,13 @@ describe("normalizeContainerType", () => {
 describe("normalizeDescription", () => {
   it("remove o boilerplate do BL", () => {
     expect(
-      normalizeDescription("TOILET (SHIPPER'S LOAD AND COUNT / SAID TO CONTAIN)"),
+      normalizeDescription(
+        "TOILET (SHIPPER'S LOAD AND COUNT / SAID TO CONTAIN)",
+      ),
     ).toBe("TOILET");
-    expect(
-      normalizeDescription("GABIONS - SEE THE ATTACHED RIDER"),
-    ).toBe("GABIONS");
+    expect(normalizeDescription("GABIONS - SEE THE ATTACHED RIDER")).toBe(
+      "GABIONS",
+    );
   });
 
   it("remove a cauda de NCM/embalagem de madeira (rider)", () => {
@@ -188,6 +189,30 @@ describe("normalizeCarrier", () => {
     expect(normalizeCarrier("MAERSK LINE", "MSC AURORA", [])).toBe(
       "MAERSK LINE",
     );
+  });
+
+  it("descarta armador que não aparece no documento (palpite do modelo)", () => {
+    // OYH142: o modelo repetiu o exemplo do prompt (`CMA CGM`) num BL da MSC,
+    // cujo texto só traz o navio `LE HAVRE` e os containers `MSGU...`.
+    expect(
+      normalizeCarrier(
+        "CMA CGM",
+        "LE HAVRE",
+        ["TXTU4077041", "MSGU6161889"],
+        "LX PANTOS LOGISTICS (QINGDAO) CO.,LTD.\nLE HAVRE\nQI640A\nTXTU4077041/MSGU6161889",
+      ),
+    ).toBe("MSC");
+  });
+
+  it("mantém o armador quando a marca está no texto do documento", () => {
+    expect(
+      normalizeCarrier(
+        "CMA CGM",
+        "LE HAVRE",
+        ["TXTU4077041"],
+        "EXPORTING VESSEL/VOYAGE\nCMA CGM ATLANTIC\nSE3060W19",
+      ),
+    ).toBe("CMA CGM");
   });
 });
 
@@ -258,7 +283,6 @@ SAID TO CONTAIN
 40,093.200</td><td rowspan="2">CBM(M3)
 136.000</td></tr><tr><td colspan="2">FREIGHT PREPAID
 SAY : TWO (40HCX2) CONTAINERS ONLY.</td></tr><tr><td colspan="3">NO OF ORIGINAL B/L THREE(3)</td><td colspan="2">PLACE AND DATE OF ISSUE SHENZHEN,CHINA OCT/01/2026</td><td>ON BOARD DATE OCT/01/2026</td></tr></tbody></table>`;
-
 
 describe("applyMarkdownFallbacks", () => {
   it("devolve o BL intacto quando o markdown está vazio", () => {

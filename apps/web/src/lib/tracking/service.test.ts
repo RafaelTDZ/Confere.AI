@@ -933,11 +933,12 @@ describe("refreshTrackingForImport", () => {
     ).toHaveLength(0);
   });
 
-  it("resolve o armador inferido pelos containers e reaproveita as linhas do armador desconhecido", async () => {
+  it("resolve o armador pelos containers e adota as linhas do armador errado", async () => {
     // OYH142: BL de casa da LX Pantos, navio `LE HAVRE` sem a marca da MSC.
-    // A primeira análise gravou tudo como `unknown` (BL em `blocked`); ao
-    // identificar o armador, as linhas antigas são adotadas — não duplicadas —
-    // e o primeiro container assume a consulta pela API da MSC.
+    // A primeira análise gravou tudo como CMA CGM (palpite do modelo, BL em
+    // `not_found` no portal da CMA); ao resolver o armador pelos containers, as
+    // linhas são adotadas — não duplicadas — e o primeiro container assume a
+    // consulta pela API da MSC.
     mocks.getImportDetail.mockResolvedValue({
       bl_number: "PLIQD4H08324",
       bl: {
@@ -964,18 +965,16 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        carrier_code: "unknown",
+        carrier_code: "cma",
         strategy: "firecrawl",
         query_value: "PLIQD4H08324",
-        status: "blocked",
-        error_code: "carrier_unsupported",
-        error_message: "Armador sem portal de rastreio suportado",
+        status: "not_found",
         next_check_at: null,
         fetched_at: "2020-01-01T00:00:00.000Z",
       }),
       shipmentRow({
         id: "container-1",
-        carrier_code: "unknown",
+        carrier_code: "cma",
         strategy: "link",
         query_type: "container",
         query_value: "TXTU4077041",
@@ -985,7 +984,7 @@ describe("refreshTrackingForImport", () => {
       }),
       shipmentRow({
         id: "container-2",
-        carrier_code: "unknown",
+        carrier_code: "cma",
         strategy: "link",
         query_type: "container",
         query_value: "MSGU6161889",
@@ -1010,7 +1009,7 @@ describe("refreshTrackingForImport", () => {
       "msc",
       "msc",
     ]);
-    // O `blocked` anterior era consequência do armador errado.
+    // O resultado anterior (portal da CMA, `not_found`) era do armador errado.
     expect(shipments.find((row) => row.id === "bl")).toMatchObject({
       strategy: "link",
       status: "pending",
@@ -1029,6 +1028,76 @@ describe("refreshTrackingForImport", () => {
       queryValue: "TXTU4077041",
     });
     expect(mocks.scrape).not.toHaveBeenCalled();
+  });
+
+  it("não reescreve linha que já tem evento do armador anterior", async () => {
+    mocks.getImportDetail.mockResolvedValue({
+      bl_number: "PLIQD4H08324",
+      bl: {
+        number: "PLIQD4H08324",
+        carrier: null,
+        vessel: "LE HAVRE",
+        containerNumbers: ["TXTU4077041", "MSGU6161889"],
+      },
+    });
+    mocks.msc.mockResolvedValue({
+      ok: true,
+      httpStatus: 200,
+      snapshot: {
+        found: true,
+        status: "in_transit",
+        vessel: "LE HAVRE",
+        voyage: "QI640A",
+        eta: "2026-11-24",
+        containers: ["TXTU4077041"],
+        events: [],
+        notes: null,
+      },
+    });
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        id: "bl-antigo",
+        carrier_code: "cma",
+        strategy: "link",
+        query_value: "PLIQD4H08324",
+        next_check_at: null,
+      }),
+      shipmentRow({
+        id: "container-antigo",
+        carrier_code: "cma",
+        strategy: "link",
+        query_type: "container",
+        query_value: "TXTU4077041",
+        container_number: "TXTU4077041",
+        next_check_at: null,
+      }),
+    );
+    db.rows("tracking_events").push({
+      id: "event-1",
+      tenant_id: TENANT,
+      shipment_id: "container-antigo",
+      event_at: "2026-10-03T00:00:00.000Z",
+      description: "Loaded on vessel",
+    });
+
+    const result = await refreshTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+      force: true,
+    });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    const shipments = db.rows("tracking_shipments");
+    // Histórico do outro armador preservado; o alvo correto é criado em paralelo.
+    expect(
+      shipments.find((row) => row.id === "container-antigo"),
+    ).toMatchObject({ carrier_code: "cma", strategy: "link" });
+    expect(
+      shipments.find(
+        (row) =>
+          row.carrier_code === "msc" && row.query_value === "TXTU4077041",
+      ),
+    ).toMatchObject({ strategy: "http" });
   });
 
   it("rebaixa containers antigos e encerra os jobs Ã³rfÃ£os antes de consultar", async () => {

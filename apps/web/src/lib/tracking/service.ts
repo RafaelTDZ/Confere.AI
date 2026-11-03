@@ -307,17 +307,22 @@ function daysUntil(date: string): number {
 }
 
 /**
- * Adota as linhas criadas quando o armador ainda não era identificado.
+ * Adota as linhas criadas quando o armador era outro (linha `unknown` ou com
+ * armador inferido errado).
  *
  * `carrier_code` faz parte da chave do upsert (`import_id, carrier_code,
  * query_type, query_value`): sem esta reconciliação, resolver o armador depois
- * — BL de forwarder sem a marca no texto/navio, inferido pelos containers —
- * criaria um shipment **duplicado** para o mesmo BL/container. As linhas antigas
- * passam a apontar para o armador resolvido e voltam a `pending`: o `blocked`
- * anterior (`carrier_unsupported`) foi consequência do armador errado e não deve
- * virar histórico do embarque.
+ * — BL de forwarder sem a marca no texto/navio, inferido pelos containers, ou
+ * armador corrigido na extração — criaria um shipment **duplicado** para o
+ * mesmo BL/container. As linhas adotadas passam a apontar para o armador
+ * resolvido e voltam a `pending`: o resultado anterior (inclusive
+ * `blocked`/`carrier_unsupported`) era consequência do armador errado.
+ *
+ * Nunca reescreve histórico: linha com evento próprio (scrape de outro armador
+ * ou evento manual) fica como está. Quando o alvo já existe com o armador
+ * certo, a linha antiga segue como `link` e o upsert não insere de novo.
  */
-async function adoptUnknownCarrierRows(params: {
+async function adoptStaleCarrierRows(params: {
   admin: AdminClient;
   tenantId: string;
   importId: string;
@@ -355,12 +360,32 @@ async function adoptUnknownCarrierRows(params: {
         other.query_value === row.query_value,
     );
 
-  const staleIds = rows
+  const candidates = rows
     .filter(
       (row) =>
-        row.carrier_code === "unknown" && isTarget(row) && !alreadyAdopted(row),
+        row.carrier_code !== params.carrier &&
+        isTarget(row) &&
+        !alreadyAdopted(row),
     )
     .map((row) => row.id);
+
+  if (candidates.length === 0) return [];
+
+  // Evento é dado real (inclusive o manual): não reescreve a linha.
+  const { data: events, error: eventsError } = await params.admin
+    .from("tracking_events")
+    .select("shipment_id")
+    .eq("tenant_id", params.tenantId)
+    .in("shipment_id", candidates);
+
+  if (eventsError) {
+    throw new Error(
+      `Falha ao listar eventos do rastreio: ${eventsError.message}`,
+    );
+  }
+
+  const withHistory = new Set((events ?? []).map((event) => event.shipment_id));
+  const staleIds = candidates.filter((id) => !withHistory.has(id));
 
   if (staleIds.length === 0) return [];
 
@@ -375,6 +400,9 @@ async function adoptUnknownCarrierRows(params: {
       last_http_status: null,
       error_code: null,
       error_message: null,
+      eta: null,
+      vessel: null,
+      voyage: null,
     })
     .in("id", staleIds)
     .eq("tenant_id", params.tenantId);
@@ -388,6 +416,7 @@ async function adoptUnknownCarrierRows(params: {
     importId: params.importId,
     carrier: params.carrier,
     shipments: staleIds.length,
+    kept: candidates.length - staleIds.length,
   });
 
   return staleIds;
@@ -429,9 +458,9 @@ export async function enqueueTrackingForImport(params: {
   const admin = createSupabaseAdminClient();
   const strategy = trackingStrategyForCarrier(carrier);
 
-  // Antes do upsert: corrige o `carrier_code` das linhas gravadas quando o
-  // armador não era identificado (senão a chave do upsert cria duplicatas).
-  await adoptUnknownCarrierRows({
+  // Antes do upsert: corrige o `carrier_code` das linhas gravadas com outro
+  // armador (senão a chave do upsert cria duplicatas).
+  await adoptStaleCarrierRows({
     admin,
     tenantId: params.tenantId,
     importId: params.importId,

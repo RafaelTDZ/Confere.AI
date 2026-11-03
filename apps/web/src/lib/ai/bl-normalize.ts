@@ -4,6 +4,7 @@ import type { BlExtraction } from "@/lib/ai/schemas";
 import { formatDateBr } from "@/lib/documents/import-edit-shared";
 import {
   CARRIERS,
+  detectCarrier,
   inferCarrier,
   type CarrierCode,
 } from "@/lib/tracking/carriers";
@@ -88,7 +89,9 @@ export function parseDecimalBr(
 
   const decimals = decimalSeparator
     ? text.length -
-      (decimalSeparator === "," ? text.lastIndexOf(",") : text.lastIndexOf(".")) -
+      (decimalSeparator === ","
+        ? text.lastIndexOf(",")
+        : text.lastIndexOf(".")) -
       1
     : 0;
 
@@ -152,9 +155,7 @@ export function normalizeContainerType(
 }
 
 /** "21 days" / "21 DIAS" → "21 DIAS". */
-function normalizeFreeTimeBr(
-  value: string | null | undefined,
-): string | null {
+function normalizeFreeTimeBr(value: string | null | undefined): string | null {
   const raw = value?.trim() ?? "";
   if (!raw) return null;
 
@@ -187,17 +188,51 @@ export function normalizeDescription(
   return cleaned.length > 0 ? cleaned : raw.toUpperCase();
 }
 
+/** Texto comparável: sem acentos, minúsculo, pontuação virando espaço. */
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * O nome do armador aparece no texto do documento? O modelo às vezes repete um
+ * exemplo do prompt quando o documento só identifica o armador pelo
+ * navio/containers — ex.: `CMA CGM` num BL da MSC (`LE HAVRE`, containers
+ * `MSGU...`). Sem a marca no texto, o palpite é descartado e a inferência por
+ * navio/container decide.
+ */
+function mentionsCarrier(documentText: string, carrier: CarrierCode): boolean {
+  const text = ` ${normalizeForMatch(documentText)} `;
+  return (CARRIERS[carrier]?.aliases ?? []).some((alias) => {
+    const needle = normalizeForMatch(alias);
+    return needle.length > 0 && text.includes(` ${needle} `);
+  });
+}
+
 /**
  * Se o BL foi emitido por um forwarder, troca pelo armador oceânico
  * inferido do navio/containers (ex.: LX Pantos + CMA CGM KRYPTON → CMA CGM).
+ *
+ * `documentText` (markdown do PDF) valida o armador devolvido pela IA: um nome
+ * que não aparece no documento é palpite e cai para a inferência.
  */
 export function normalizeCarrier(
   carrier: string | null | undefined,
   vessel: string | null | undefined,
   containers: string[],
+  documentText?: string | null,
 ): string | null {
   const raw = carrier?.trim() ?? "";
-  const shouldInfer = !raw || FORWARDER_RE.test(raw);
+  const code = detectCarrier(raw);
+  const unsupported =
+    Boolean(documentText) &&
+    code !== "unknown" &&
+    !mentionsCarrier(documentText ?? "", code);
+  const shouldInfer = !raw || FORWARDER_RE.test(raw) || unsupported;
   if (!shouldInfer) return raw.toUpperCase();
 
   const inferred = inferCarrier("", containers, vessel ?? null);
@@ -208,11 +243,19 @@ export function normalizeCarrier(
 }
 
 /** Aplica todas as normalizações no payload extraído do BL. */
-export function normalizeBlExtraction(bl: BlExtraction): BlExtraction {
+export function normalizeBlExtraction(
+  bl: BlExtraction,
+  options: { documentText?: string | null } = {},
+): BlExtraction {
   return {
     ...bl,
     masterBlNumber: normalizeTrackingNumber(bl.masterBlNumber),
-    carrier: normalizeCarrier(bl.carrier, bl.vessel, bl.containerNumbers),
+    carrier: normalizeCarrier(
+      bl.carrier,
+      bl.vessel,
+      bl.containerNumbers,
+      options.documentText,
+    ),
     grossWeight: formatDecimalBr(bl.grossWeight, { groupThousands: true }),
     volumes: normalizeIntegerBr(bl.volumes),
     measurement: formatDecimalBr(bl.measurement),
@@ -317,36 +360,38 @@ export function applyMarkdownFallbacks(
     ),
   ).filter((value): value is string => Boolean(value));
 
-  return normalizeBlExtraction({
-    ...bl,
-    masterBlNumber: isBlank(bl.masterBlNumber)
-      ? masterBlNumber
-      : bl.masterBlNumber,
-    grossWeight: isBlank(bl.grossWeight) ? grossWeight : bl.grossWeight,
-    measurement: isBlank(bl.measurement) ? measurement : bl.measurement,
-    volumes: isBlank(bl.volumes) ? volumes : bl.volumes,
-    containerQuantity: isBlank(bl.containerQuantity)
-      ? containerQuantity
-      : bl.containerQuantity,
-    containerType: isBlank(bl.containerType)
-      ? containerTypeParts
-        ? `${containerTypeParts[1]} ${containerTypeParts[2]}`
-        : null
-      : bl.containerType,
-    freightValue: isBlank(bl.freightValue) ? (oft?.[2] ?? null) : bl.freightValue,
-    freightCurrency: isBlank(bl.freightCurrency)
-      ? (oft?.[1] ?? null)
-      : bl.freightCurrency,
-    freeTime: isBlank(bl.freeTime) ? freeTime : bl.freeTime,
-    onboardDate: isBlank(bl.onboardDate) ? onboardDate : bl.onboardDate,
-    descriptionOfGoods: isBlank(bl.descriptionOfGoods)
-      ? description
-      : bl.descriptionOfGoods,
-    containerNumbers:
-      bl.containerNumbers.length > 0
-        ? bl.containerNumbers
-        : containerNumbers,
-    ncm: bl.ncm.length > 0 ? bl.ncm : ncm,
-  });
+  return normalizeBlExtraction(
+    {
+      ...bl,
+      masterBlNumber: isBlank(bl.masterBlNumber)
+        ? masterBlNumber
+        : bl.masterBlNumber,
+      grossWeight: isBlank(bl.grossWeight) ? grossWeight : bl.grossWeight,
+      measurement: isBlank(bl.measurement) ? measurement : bl.measurement,
+      volumes: isBlank(bl.volumes) ? volumes : bl.volumes,
+      containerQuantity: isBlank(bl.containerQuantity)
+        ? containerQuantity
+        : bl.containerQuantity,
+      containerType: isBlank(bl.containerType)
+        ? containerTypeParts
+          ? `${containerTypeParts[1]} ${containerTypeParts[2]}`
+          : null
+        : bl.containerType,
+      freightValue: isBlank(bl.freightValue)
+        ? (oft?.[2] ?? null)
+        : bl.freightValue,
+      freightCurrency: isBlank(bl.freightCurrency)
+        ? (oft?.[1] ?? null)
+        : bl.freightCurrency,
+      freeTime: isBlank(bl.freeTime) ? freeTime : bl.freeTime,
+      onboardDate: isBlank(bl.onboardDate) ? onboardDate : bl.onboardDate,
+      descriptionOfGoods: isBlank(bl.descriptionOfGoods)
+        ? description
+        : bl.descriptionOfGoods,
+      containerNumbers:
+        bl.containerNumbers.length > 0 ? bl.containerNumbers : containerNumbers,
+      ncm: bl.ncm.length > 0 ? bl.ncm : ncm,
+    },
+    { documentText: text },
+  );
 }
-
