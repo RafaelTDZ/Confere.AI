@@ -1,7 +1,10 @@
 import "server-only";
 
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
+
+const log = createLogger("ai-logs");
 
 export async function persistAiLog(params: {
   tenantId: string;
@@ -37,13 +40,28 @@ export async function persistAiLog(params: {
       .single();
 
     if (error) {
-      console.error("[ai_logs] falha ao persistir:", error);
+      log.error("persist_failed", {
+        tenantId: params.tenantId,
+        importId: params.importId,
+        capability: params.capability,
+        model: params.model,
+        status: params.status,
+        error,
+      });
       return null;
     }
 
     return data?.id ?? null;
   } catch (err) {
-    console.error("[ai_logs] falha ao persistir:", err);
+    log.error("persist_failed", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      capability: params.capability,
+      model: params.model,
+      status: params.status,
+      error: err,
+      unexpected: true,
+    });
     return null;
   }
 }
@@ -124,7 +142,11 @@ export async function getImportAiFailures(params: {
       .limit(40);
 
     if (error) {
-      console.error("[ai-logs] falha ao ler erros da importação:", error);
+      log.error("failures_read_failed", {
+        tenantId: params.tenantId,
+        importId: params.importId,
+        error,
+      });
       return [];
     }
 
@@ -145,7 +167,12 @@ export async function getImportAiFailures(params: {
 
     return failures;
   } catch (error) {
-    console.error("[ai-logs] falha inesperada ao ler erros:", error);
+    log.error("failures_read_failed", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      error,
+      unexpected: true,
+    });
     return [];
   }
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createLogger } from "@/lib/observability/logger";
 import { notFound, redirect } from "next/navigation";
 import { Shield } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,8 @@ function CountCard({ label, value }: { label: string; value: number }) {
   );
 }
 
+const log = createLogger("page/admin");
+
 export default async function AdminTenantPage({
   params,
 }: {
@@ -54,7 +57,11 @@ export default async function AdminTenantPage({
       path: `/admin/${tenantId}`,
     });
   } catch (error) {
-    console.error("[admin] falha ao registrar auditoria:", error);
+    log.error("audit_failed", {
+      tenantId,
+      path: `/admin/${tenantId}`,
+      error,
+    });
   }
 
   const { tenant, counts } = detail;

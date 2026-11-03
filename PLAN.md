@@ -1,6 +1,7 @@
 # Plano — Confere.ia
 
-Roadmap e estado atual do produto. Atualizado em out/2026.
+Roadmap e estado atual do produto. Atualizado em out/2026; última revisão verificada
+contra o código em 30/10/2026.
 
 ## Visão
 
@@ -28,7 +29,9 @@ divergências entre documentos.
   - RPC `create_tenant_with_owner` como fallback (`ensureUserTenant`)
   - RPC `email_registered` para verificar email no login
 - [x] **Shell autenticado**
-  - Sidebar com Nova análise (`/analise`), Importações (`/importacoes`) e Produtos (`/produtos`)
+  - Sidebar com Nova análise (`/analise`), Importações (`/importacoes`), Empresas
+    (`/empresas`), NCM (`/ncm`) e Produtos (`/produtos`); Admin (`/admin`) e
+    Configurações (`/configuracoes`) só para super-admin
   - Overlay mobile com menu abrível
 - [x] **Página `/analise`**
   - Dropzone de upload ligada a `POST /api/ai/analyze` (202 + job na fila; worker classifica e extrai)
@@ -36,32 +39,58 @@ divergências entre documentos.
   - Barra de progresso de documentos recebidos (atualizada pelos tipos classificados)
 - [x] **Página `/importacoes`**
   - Lista `imports` do tenant com RLS (`getReadClient`); `service_role` só em escritas/jobs
+  - Busca por referência, filtro por status, ordenação e paginação (`ListFilters` +
+    `Pagination`); colunas de Invoice, BL, ETA, estágio do embarque e aviso de
+    divergência de consignee
+- [x] **Página `/importacoes/[id]`** — detalhe e revisão da importação
+  - Cards recolhíveis "Dados do BL" e "Produtos" (`collapsible-card.tsx`), edição de
+    referência/fornecedor, produtos, campos do BL e BL master via `PATCH /api/imports/[id]`,
+    botão "Rastrear" no cabeçalho do card do BL e divergências do consignee padrão
+- [x] **Página `/empresas`** — lista e edição das parties do tenant (RLS), com
+  formulário de partes pendentes em `/analise/[importId]/partes`
+- [x] **Página `/ncm`** — lista, criação e edição de NCMs do tenant (`/ncm/nova`, `/ncm/[id]`)
+- [x] **Página `/rastreio`** — lista de shipments do tenant com filtros (em trânsito,
+  chegando, sem ETA, sem consulta) e detalhe em `/rastreio/[shipmentId]`; sem item na
+  sidebar (acesso pela importação)
 - [x] **Página `/produtos`**
   - Placeholder (CRUD ainda não implementado)
 - [x] **Migrations** — schema completo do domínio já criado no banco
 - [x] **Documentação** — `README.md`, `AGENTS.md`, `.env.example`
 - [x] **Infra Fireworks + OpenRouter** — clients servidor (`apps/web/src/lib/ai`), Fireworks como padrão (`accounts/fireworks/routers/deepseek-flash-latest`) e OpenRouter como opção; smoke autenticado `GET /api/ai/health`; PDF no Fireworks é convertido em imagens
-- [x] **Upload + classificação + extração de chaves** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e responde `202`; worker persiste `imports`/`documents` e extrai Invoice, número de Invoice explícito no Packing List e campos do BL
+- [x] **Upload + classificação + extração** — `POST /api/ai/analyze` enfileira (`ai_jobs`) e
+  responde `202`; worker persiste `imports`/`documents` e extrai Invoice (cabeçalho,
+  partes e produtos), Packing List (número da Invoice quando explícito, volumes,
+  pesos e produtos) e BL (identificador, partes, containers, pesos, ETA e BL master);
+  a classificação é heurística primeiro e só cai no modelo quando não há marcador forte
 - [x] **Observabilidade** — `@vercel/otel` no `instrumentation.ts` + spans/métricas do pipeline em `lib/observability/tracing.ts`
 - [x] **Painel admin global** — `/admin` somente leitura (super-admin): tenants, contadores, uso de IA e detalhe por tenant com auditoria em `audit_logs`
 - [x] **Consignee padrão** — uma empresa do tenant vinculada a todas as importações; documento comparado e divergências (nome, CNPJ, endereço) exibidas na importação e no formulário de partes
-- [x] **Rastreio de BL/container** — após extrair o BL, o pipeline enfileira o rastreio (`tracking_shipments`/`tracking_jobs`); Firecrawl consulta Maersk, MSC, CMA CGM, Hapag-Lloyd e COSCO, com timeline, ETA, navio/viagem, orçamento de créditos por tenant e fallback link/manual (`apps/web/src/lib/tracking`)
+- [x] **Rastreio de BL/container** — após extrair o BL, o pipeline enfileira o rastreio
+  (`tracking_shipments`/`tracking_jobs`) e faz a primeira consulta na hora; **uma consulta
+  por importação** (BL do documento → BL master → 1º container), com timeline, ETA,
+  navio/viagem, orçamento de créditos por tenant e fallback link/manual. Armadores:
+  Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, HMM, ONE e OOCL (link/manual por
+  captcha); MSC, HMM e ONE usam API interna (0 créditos) (`apps/web/src/lib/tracking`,
+  detalhes em `docs/tracking.md`)
 - [x] **Parse de PDF em markdown** — `POST /v2/parse` do Firecrawl converte o PDF (OCR quando necessário) em markdown antes das tasks de IA; o texto vira `TextPart` para todos os providers, com cache por `(tenant_id, sha256)` em `document_parses`, orçamento mensal de créditos e fallback para o pipeline de imagens/PDF quando o parse falha, vem curto ou estoura o teto (`docs/pdf-markdown.md`; `lib/ai/document-parse.ts` + migration `20261028150000_document_parse`) 
+- [x] **Testes automatizados** — Vitest 5 no `apps/web/src`: 72 arquivos cobrindo rotas de
+  API, pipeline de análise, IA (tasks/providers/parse), rastreio, RLS/isolamento de tenant
+  e utilitários; `pnpm test:coverage` com gates por pasta no CI
 
 ### Não implementado (UI ou backend)
 
-- [ ] Extração de Packing List
 - [ ] Comparação entre documentos (regras de negócio)
-- [ ] Tela de revisão de divergências
+- [ ] Tela de revisão de divergências completa (hoje só a comparação do consignee padrão)
 - [ ] CRUD de produtos
-- [ ] Detalhe / revisão de importação
-- [ ] Testes automatizados
-- [ ] Observabilidade (Sentry/OTEL configuráveis mas não integrados)
+- [ ] Conclusão da análise (`imports.status = 'completed'` + `reviewed_at`/`reviewed_by` —
+  as colunas ainda não existem no schema)
+- [ ] Sentry (o OpenTelemetry já está integrado — ver "Entregue")
+- [ ] Testes end-to-end (unitários e de integração já existem)
 
 ## Pendências — fluxo pós-extração (out/2026)
 
 > Levantado em 28/10/2026 ao revisar o que acontece **depois** que a IA extrai e
-> grava os dados. Nada aqui está implementado.
+> grava os dados; revisado em 30/10/2026 contra o código. Nada aqui está implementado.
 
 ### 1. Conclusão da análise e o papel do botão "Salvar"
 
@@ -76,6 +105,10 @@ e a importação fica em `awaiting_review` para sempre — **nenhum código grav
 
 Não muda status, não reanalisa e não sincroniza o rastreio. Salvar sem editar
 também reenvia o BL inteiro (`buildBlPayload`), gerando um write idêntico.
+
+> **Requisito de schema:** `imports` já aceita `status = 'completed'` (check da
+> migration inicial), mas **não tem** `reviewed_at`/`reviewed_by` — a conclusão
+> exige migration nova antes da rota.
 
 - [ ] Separar as duas intenções na UI:
   - **Salvar alterações** — aplica edições, sincroniza o rastreio e **não escreve
@@ -206,27 +239,35 @@ também reenvia o BL inteiro (`buildBlPayload`), gerando um write idêntico.
   `TRACKING_FAR_ETA_INTERVAL_MINUTES=10080` (7 dias); `nextCheckAtFor`
   (`lib/tracking/service.ts:158`) usa `daysUntil(eta) <= 7` como corte.
 - [x] `not_found` segue 24h e erro/blocked segue backoff (máx. 24h).
+- [x] **Chegada confirmada encerra o rastreio** (03/11/2026): `arrived`,
+  `discharged`, `delivered` e `empty_returned` (`isArrivedTrackingStatus`)
+  gravam `next_check_at = null`, o cron não reenfileira, `enqueueTrackingForImport`
+  não cria job para o shipment e o refresh manual responde `skipped: "arrived"`
+  (nem com `force`). Job pendente é encerrado sem scrape (`done`/`arrived`).
 
 ### 3.1 Rastreio — lacunas técnicas confirmadas
 
 Plano detalhado revisado em 28/10 (arquivo fora do repo:
-`~/.opencode/plan/2026-10-28-fluxo-rastreio-bl.md`); resumo:
+`~/.opencode/plan/2026-10-28-fluxo-rastreio-bl.md`); lacunas L1–L4, prune e
+`source` **reconferidas no código em 30/10/2026** e seguem abertas:
 
 - [ ] **L1** `PATCH /api/imports/[id]` não sincroniza rastreio — corrigir
-  BL/containers não cria alvos novos.
+  BL/containers não cria alvos novos (`api/imports/[id]/route.ts`).
 - [ ] **L2** Correção deixa alvo órfão (upsert `ignoreDuplicates` por
   `import_id, carrier_code, query_type, query_value`) e o principal continua o
   antigo (`getTrackingForImport`/`getPrimaryTrackingShipmentId` usam
   `created_at asc` como desempate). Trocar por ordenação semântica (alvo do BL
   atual primeiro).
-- [ ] **L3** `merge_imports` não move `tracking_shipments`; o `delete` da origem
-  derruba por cascade.
-- [ ] **L4** `buildReusableResult` (caminho de cache/dedupe) não enfileira rastreio.
+- [ ] **L3** `merge_imports` não move `tracking_shipments` (a migration
+  `20261026122627_merge_delete_imports.sql` move `documents`, `analysis_results`,
+  `product_matches` e `ai_logs`); o `delete` da origem derruba por cascade.
+- [ ] **L4** `buildReusableResult` (caminho de cache/dedupe,
+  `analyze-pipeline.ts`) não enfileira rastreio.
 - [x] **Cron reenfileira por `next_check_at`**: `claim_tracking_jobs` só reserva
   jobs `queued`, então a cadência não se sustentava sozinha. O cron
   (`GET/POST /api/tracking/run`) chama `enqueueDueTrackingShipments` (lote 8)
   antes de `processQueuedTrackingJobs`: enfileira shipments com `next_check_at`
-  nulo/vencido, `strategy` `http`/`firecrawl`, status não terminal e sem job
+  nulo/vencido, `strategy` `http`/`firecrawl`, sem chegada confirmada e sem job
   `queued`/`running` (ordem `next_check_at asc nulls first`). Sem chamada
   externa no enqueue; crédito só é debitado no processamento.
 - [ ] Prune de alvos obsoletos: preservar `source = 'manual'`, shipments com
@@ -245,7 +286,10 @@ Plano detalhado revisado em 28/10 (arquivo fora do repo:
   (BL/Invoice sem `number`, Packing List sem `invoiceNumber`/produtos) — evita
   documento fantasma na importação.
 
-## Schema do banco (existente, aguardando uso)
+## Schema do banco
+
+Tabelas em uso normal; as marcadas "ainda sem uso" existem e aguardam a comparação
+entre documentos (seção 2).
 
 | Tabela | Propósito |
 |--------|-----------|
@@ -253,11 +297,23 @@ Plano detalhado revisado em 28/10 (arquivo fora do repo:
 | `tenant_members` | Membros com role (owner/admin/operator/viewer) |
 | `tenant_settings` | Configurações por tenant |
 | `products` | Catálogo de produtos do tenant |
+| `parties` | Empresas (exportador, importador, notify) usadas nas importações |
+| `ncms` | Cadastro de NCMs do tenant |
 | `imports` | Importações (agrupamento de documentos) |
 | `documents` | Arquivos enviados (invoice, BL, packing list) |
 | `extraction_results` | Dados extraídos por documento |
-| `analysis_results` | Resultado da comparação entre documentos |
-| `product_matches` | Match produto extraído ↔ catálogo |
+| `analysis_results` | Resultado da comparação entre documentos (ainda sem uso) |
+| `product_matches` | Match produto extraído ↔ catálogo (ainda sem uso) |
+| `ai_jobs` | Fila de análise (upload → 202 → worker) |
+| `document_parses` | Cache do PDF→markdown do Firecrawl por `(tenant_id, sha256)` |
+| `document_parse_usage` | Consumo mensal de créditos de parse por tenant |
+| `tracking_shipments` | Alvos de rastreio (BL/container) por importação |
+| `tracking_events` | Timeline deduplicada por shipment |
+| `tracking_jobs` | Fila de rastreio com claim atômico |
+| `tracking_usage` | Créditos de rastreio por tenant/mês |
+| `port_geocodes` | Cache de geocodificação POL/POD (mapa da rota) |
+| `app_settings` | Config global (provedor/modelo de IA) |
+| `rate_limit_buckets` | Rate limit por chave (análise, refresh, check-email) |
 | `audit_logs` | Auditoria de ações |
 | `ai_logs` | Logs de chamadas à IA |
 
@@ -267,22 +323,25 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 
 ### Fase 1 — Upload e armazenamento
 
-- Conectar dropzone ao Supabase Storage (ou provider externo)
-- Criar registro em `imports` e `documents` no upload
-- Validar tipo/tamanho de arquivo (PDF, PNG, JPG)
-- Atualizar barra de progresso com documentos reais
+- [x] Conectar dropzone ao Supabase Storage (bucket `import-documents`, pasta = tenant)
+- [x] Criar registro em `imports` e `documents` no upload (via `ai_jobs` / worker)
+- [x] Validar tipo/tamanho de arquivo (PDF, PNG, JPG)
+- [x] Atualizar barra de progresso com documentos reais (tipos classificados)
 
 ### Fase 2 — Classificação com IA
 
-- Enviar documento para modelo de visão (classificar: invoice, BL, packing list)
-- Atualizar `documents.type` com resultado
-- Feedback visual na dropzone (badges de tipo identificado)
+- [x] Classificar documento (invoice, BL, packing list) — heurística de cabeçalhos
+  primeiro; modelo só quando não há marcador forte
+- [x] Atualizar `documents.doc_type` com resultado
+- [x] Feedback visual na dropzone (badges de tipo identificado)
 
 ### Fase 3 — Extração de dados
 
-- [x] Pipeline OCR + LLM para Invoice (campos atuais: número, partes, produtos)
+- [x] Pipeline OCR + LLM para Invoice (número, partes, produtos e referências)
 - [x] Persistir Invoice em `extraction_results` (+ confirmação `extractionResultId` na API)
-- [ ] Expandir Invoice (valores, INCOTERM) e extrair BL (container, peso) / Packing List (volumes)
+- [x] Extrair BL (identificador, partes, containers, pesos, ETA, BL master) e Packing
+  List (número da Invoice quando explícito, volumes, pesos e produtos)
+- [ ] Expandir Invoice (valores, INCOTERM) e completar cubagem/valores no BL
 
 ### Fase 4 — Comparação e análise
 
@@ -292,23 +351,25 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 
 ### Fase 5 — Revisão e histórico
 
-- Tela de revisão com divergências apontadas
-- Aprovação/rejeição da análise
-- Listagem de análises anteriores por tenant
-- Dashboard com métricas básicas
+- Tela de revisão com divergências apontadas (hoje só consignee, em `/importacoes/[id]`)
+- Aprovação/rejeição da análise (conclusão: seção "Pendências" → item 1)
+- [x] Listagem de análises anteriores por tenant (`/importacoes`, filtros por status)
+- Dashboard com métricas básicas (hoje só o painel `/admin`, super-admin)
 
 ### Fase 6 — Qualidade e operação
 
-- Reintroduzir testes (unitários para regras de negócio, integração para auth)
-- Integrar Sentry e OpenTelemetry
-- CI/CD com lint, typecheck, build e testes
-- Reavaliar reintrodução de `packages/domain` e `packages/infrastructure` conforme complexidade
+- [x] Reintroduzir testes (unitários para regras de negócio, integração para auth e rotas)
+- [ ] Integrar Sentry (OpenTelemetry já integrado via `@vercel/otel`)
+- [x] CI/CD com lint, typecheck, build e testes (`.github/workflows/ci.yml`)
+- [ ] Reavaliar reintrodução de `packages/domain` e `packages/infrastructure` conforme complexidade
+- [ ] Testes end-to-end (Playwright) do fluxo upload → análise → revisão
 
 ## Dívida técnica conhecida
 
 | Item | Detalhe |
 |------|---------|
-| Sem testes | Pacotes com testes foram removidos na simplificação; nenhum teste no `apps/web` |
+| Testes E2E | Só existem testes unitários/integração (Vitest); nenhum fluxo de browser automatizado |
+| Sentry | OTel integrado, mas sem captura de erros/traces no Sentry |
 | Grants RLS private.* | Migration `20250731190000_grant_private_rls_functions.sql` — aplicar no cloud se selects autenticados ainda falharem |
 
 ## Arquitetura atual
@@ -317,18 +378,28 @@ Funções auxiliares no schema `private`: `current_tenant_id()`, `current_role()
 Browser
   │
   ├─ /login, /signup          → React (client + Supabase browser via /supabase proxy)
-  ├─ /analise                 → React (sidebar + dropzone → /api/ai/analyze)
+  ├─ /analise                 → React (sidebar + dropzone → /api/ai/analyze; status via /api/ai/jobs/[jobId])
+  ├─ /analise/[importId]/partes → formulário de partes pendentes da importação
   ├─ /importacoes             → Server Component (lista via lib/documents)
+  ├─ /importacoes/[id]        → detalhe/revisão (cards recolhíveis, PATCH, rastreio, consignee)
+  ├─ /empresas, /ncm          → cadastros do tenant (RLS; criação/edição)
+  ├─ /rastreio, /rastreio/[shipmentId] → shipments do tenant e detalhe (timeline, mapa, ações)
   ├─ /produtos                → Placeholder catálogo
+  ├─ /admin, /configuracoes   → super-admin (`ADMIN_EMAILS`): painel global e config de IA/consignee
   ├─ /supabase/*              → Route handler (body bufferizado, headers filtrados) → Supabase cloud
   ├─ /api/auth/check-email    → Client público (sem cookies) → RPC email_registered
   ├─ /api/ai/health           → Fireworks/OpenRouter generateText (sessão obrigatória; chave só no servidor)
-  └─ /api/ai/analyze          → cria job (202) → worker prepara o documento (PDF→imagens no Fireworks) e roda classificação/extração
+  ├─ /api/ai/analyze          → cria job (202) → worker: Firecrawl /v2/parse (ou PDF→imagens) + classificação/extração
+  ├─ /api/ai/jobs/run         → drena jobs órfãos (Bearer CRON_SECRET)
+  ├─ /api/imports/[id]        → PATCH (edição de referência/BL/produtos) e DELETE
+  ├─ /api/imports/[id]/tracking/{refresh,events} → atualização e evento manual
+  ├─ /api/tracking/run        → cron: reenfileira por `next_check_at` e processa (Bearer CRON_SECRET)
+  └─ /api/settings/ai         → config global de provedor/modelo (super-admin)
 
 apps/web/src
   ├─ app/                     → Rotas e pages finas
-  ├─ components/              → ui + auth + layout + analise
-  └─ lib/                     → ai (providers/, tasks/), auth, documents, settings, supabase
+  ├─ components/              → ui + auth + layout + analise + importacoes + tracking
+  └─ lib/                     → ai (providers/, tasks/), tracking (providers/), auth, documents, admin, settings, supabase
 
 Next.js proxy                  → refresh de sessão; limpa cookie se JWT inválido
 
@@ -338,6 +409,7 @@ Supabase cloud (`https://pavxbcsolcvekwslhzmf.supabase.co`)
   ├─ Storage                  → bucket `import-documents` (pasta raiz = tenant_id)
   └─ Triggers                 → provisionamento automático de tenant no signup
 
+Firecrawl                     → /v2/parse (PDF→markdown, cache) e rastreio por armador (1 crédito/página)
 Fireworks (padrão)            → routers deepseek-flash-latest e glm-flash-latest (FIREWORKS_API_KEY; PDF→imagens)
 OpenRouter (opção)            → ~openai/gpt-luna-latest e meta/muse-spark-1.3 (OPENROUTER_API_KEY)
 ```
@@ -354,10 +426,14 @@ Diagnóstico principal:
 - Tokens são o tema padrão do shadcn/ui; não há cor de marca nem tokens de sucesso/aviso/info.
 - Falhas de WCAG: badge `success` (branco sobre verde, 3,22:1) e `warning` (2,13:1); erro em texto (~3,8:1); borda de input (1,23:1).
 - Modo escuro: tokens em `globals.css`, `ThemeProvider` + script no `<head>` (classe `dark`, preferência em `localStorage` `confere-theme`) e toggle na sidebar e no login. Detalhes em `docs/design/identidade-visual.md` (seção 4.9).
-- Rastreio não aparece no menu lateral; o detalhe tem cabeçalhos em inglês.
+- Rastreio não aparece no menu lateral (decisão de 29/10/2026; acesso pela importação
+  e pela rota `/rastreio`), e o detalhe do shipment ainda tem cabeçalhos em inglês.
 - Sem `loading.tsx`, `error.tsx` nem `prefers-reduced-motion`.
 
-Decisões pendentes (seção 8 do documento): cor de marca ("Azul Porto" `#1D4ED8` proposto), fonte (Inter), tamanho de texto de UI (14px, desvio da regra de 16px da skill), Rastreio no menu e "Produtos" no menu. (Modo escuro: ativado, com padrão do sistema.)
+Decisões pendentes (seção 8 do documento): cor de marca ("Azul Porto" `#1D4ED8` proposto),
+fonte (Inter) e tamanho de texto de UI (14px, desvio da regra de 16px da skill).
+Já decidido: modo escuro ativado com padrão do sistema, "Produtos" no menu e Rastreio
+fora do menu lateral.
 
 Validação visual pendente: o browser não estava conectado durante a análise, então a crítica foi feita por código. Conferir screenshots e contraste (axe/Lighthouse) antes de aprovar.
 

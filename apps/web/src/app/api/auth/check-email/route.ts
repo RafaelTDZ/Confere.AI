@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { NextResponse } from "next/server";
 import {
   consumeRateLimit,
@@ -7,6 +8,8 @@ import {
   getCheckEmailRateWindowSeconds,
 } from "@/lib/security/rate-limit";
 import { createSupabasePublicClient } from "@/lib/supabase/public-client";
+
+const log = createLogger("api/auth/check-email");
 
 export const runtime = "nodejs";
 
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       // Fail-open: indisponibilidade do rate limiter não bloqueia a verificação.
-      console.error("[auth/check-email] rate limit indisponível", error);
+      log.error("rate_limit_unavailable", { error });
     }
 
     const { email } = await request.json();
@@ -71,7 +74,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      console.error("[auth/check-email] RPC error:", error);
+      log.error("rpc_failed", { error });
       return NextResponse.json(
         { error: "Erro ao verificar email" },
         { status: 500 },
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ exists: Boolean(data) });
   } catch (error) {
-    console.error("[auth/check-email] Error:", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: "Erro ao verificar email" },
       { status: 500 },

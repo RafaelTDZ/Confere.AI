@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 import { POST } from "@/app/api/ai/analyze/route";
 import { UnauthorizedError } from "@/lib/auth";
@@ -242,8 +243,8 @@ describe("POST /api/ai/analyze", () => {
   });
 
   it("segue o fluxo quando o rate limiter lança erro (fail-open)", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
+    const consoleWarn = vi
+      .spyOn(console, "warn")
       .mockImplementation(() => {});
     const failure = new Error("banco indisponível");
     mocks.consumeRateLimit.mockRejectedValue(failure);
@@ -251,10 +252,9 @@ describe("POST /api/ai/analyze", () => {
     const { status } = await readJson(await POST(makeRequest()));
 
     expect(status).toBe(202);
-    expect(consoleError).toHaveBeenCalledWith(
-      "[api/ai/analyze] rate limit indisponível",
-      failure,
-    );
+    expectLog(consoleWarn, "rate_limit_unavailable", {
+      error: { message: "banco indisponível" },
+    });
     expect(mocks.createAiJob).toHaveBeenCalledTimes(1);
   });
 
@@ -278,8 +278,8 @@ describe("POST /api/ai/analyze", () => {
   });
 
   it("segue o fluxo quando o cálculo de quota lança erro (fail-open)", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
+    const consoleWarn = vi
+      .spyOn(console, "warn")
       .mockImplementation(() => {});
     const failure = new Error("ai_logs indisponível");
     mocks.getMonthlyTokenUsage.mockRejectedValue(failure);
@@ -287,10 +287,9 @@ describe("POST /api/ai/analyze", () => {
     const { status } = await readJson(await POST(makeRequest()));
 
     expect(status).toBe(202);
-    expect(consoleError).toHaveBeenCalledWith(
-      "[api/ai/analyze] quota indisponível",
-      failure,
-    );
+    expectLog(consoleWarn, "quota_check_unavailable", {
+      error: { message: "ai_logs indisponível" },
+    });
     expect(mocks.createAiJob).toHaveBeenCalledTimes(1);
   });
 
@@ -379,10 +378,10 @@ describe("POST /api/ai/analyze", () => {
 
     const callback = mocks.afterCallbacks[0];
     await expect(callback?.()).resolves.toBeUndefined();
-    expect(consoleError).toHaveBeenCalledWith(
-      "[api/ai/analyze] worker falhou",
-      expect.any(Error),
-    );
+    expectLog(consoleError, "worker_failed", {
+      jobId: JOB_ID,
+      error: { message: "worker quebrou" },
+    });
   });
 
   it("repassa o importId UUID ao job", async () => {

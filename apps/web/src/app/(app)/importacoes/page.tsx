@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createLogger } from "@/lib/observability/logger";
 import { Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -51,6 +52,8 @@ const SHIPMENT_STAGE_VARIANTS = {
   arrived: "success",
 } as const;
 
+const log = createLogger("page/importacoes");
+
 export default async function ImportacoesPage({
   searchParams,
 }: {
@@ -81,7 +84,12 @@ export default async function ImportacoesPage({
       sort,
     });
   } catch (err) {
-    console.error("[importacoes] falha ao listar importações:", err);
+    log.warn("imports_list_failed", {
+      search: params.q,
+      status: params.status,
+      sort,
+      error: err,
+    });
     loadFailed = true;
   }
 

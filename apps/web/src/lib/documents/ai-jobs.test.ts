@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 import {
   claimAiJob,
   claimNextAiJob,
@@ -350,16 +351,16 @@ describe("removeAiJobFile", () => {
   });
 
   it("registra falha do Storage sem lançar", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.storage.removeError = { message: "storage offline" };
 
     await expect(
       removeAiJobFile(`${TENANT_A}/_jobs/${JOB_ID}/invoice.pdf`),
     ).resolves.toBeUndefined();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[ai-jobs] falha ao remover arquivo do job",
-      { message: "storage offline" },
-    );
+    expectLog(warnSpy, "job_file_remove_failed", {
+      storagePath: `${TENANT_A}/_jobs/${JOB_ID}/invoice.pdf`,
+      error: { message: "storage offline" },
+    });
   });
 });

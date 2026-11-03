@@ -7,12 +7,15 @@ import {
   parsePdfWithFirecrawl,
 } from "@/lib/ai/document-parse";
 import { renderPdfPages } from "@/lib/ai/pdf-pages";
+import { createLogger, createTimer } from "@/lib/observability/logger";
 import {
   getAiModelId,
   getAiProvider,
   type AiOverrides,
   type AiProviderId,
 } from "@/lib/ai/provider";
+
+const log = createLogger("document-content");
 
 /** Arquivo recebido para análise (bytes já normalizados pelo pipeline). */
 export type AnalyzeFileInput = {
@@ -82,6 +85,7 @@ export async function prepareDocument(
   const isPdf = file.mediaType === PDF_MEDIA_TYPE;
 
   if (isPdf && parseContext && isDocumentParseEnabled()) {
+    const parseTimer = createTimer();
     try {
       const parsed = await parsePdfWithFirecrawl({
         tenantId: parseContext.tenantId,
@@ -91,6 +95,17 @@ export async function prepareDocument(
       });
 
       if (parsed.ok) {
+        log.info("pdf_parse_used", {
+          tenantId: parseContext.tenantId,
+          sha256: parseContext.sha256.slice(0, 12),
+          filename: file.filename,
+          provider,
+          pages: parsed.document.pages,
+          credits: parsed.document.credits,
+          chars: parsed.document.markdown.length,
+          cached: parsed.document.cached,
+          elapsedMs: parseTimer.elapsedMs(),
+        });
         return {
           provider,
           modelId,
@@ -115,17 +130,26 @@ export async function prepareDocument(
         };
       }
 
-      console.warn(
-        "[document-content] parse de PDF indisponível, usando imagens:",
-        parsed.errorCode,
-        parsed.errorMessage,
-      );
+      log.warn("pdf_parse_fallback", {
+        tenantId: parseContext.tenantId,
+        sha256: parseContext.sha256.slice(0, 12),
+        filename: file.filename,
+        provider,
+        fallback: provider === "fireworks" ? "images" : "native_pdf",
+        errorCode: parsed.errorCode,
+        errorMessage: parsed.errorMessage,
+        elapsedMs: parseTimer.elapsedMs(),
+      });
     } catch (error) {
       // Parse é acessório: qualquer falha cai no pipeline de imagens.
-      console.error(
-        "[document-content] falha inesperada no parse de PDF:",
+      log.error("pdf_parse_unexpected_error", {
+        tenantId: parseContext.tenantId,
+        filename: file.filename,
+        provider,
+        fallback: provider === "fireworks" ? "images" : "native_pdf",
         error,
-      );
+        elapsedMs: parseTimer.elapsedMs(),
+      });
     }
   }
 

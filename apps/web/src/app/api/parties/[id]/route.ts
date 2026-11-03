@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   getPartyById,
@@ -38,6 +39,8 @@ function parsePartyPatch(body: unknown): {
   };
 }
 
+const log = createLogger("api/parties");
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const auth = await getAuthContext();
@@ -54,7 +57,7 @@ export async function GET(_request: Request, context: RouteContext) {
     if (error instanceof PartyNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/parties GET id]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:
@@ -94,7 +97,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error instanceof PartyValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    console.error("[api/parties PATCH]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:
@@ -128,7 +131,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     if (error instanceof PartyNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/parties DELETE id]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Falha ao excluir empresa" },
       { status: 500 },

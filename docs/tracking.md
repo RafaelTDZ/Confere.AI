@@ -25,7 +25,8 @@ container).
    - **Manual**: `POST /api/imports/[id]/tracking/refresh` (10/h por tenant).
      Aplica o **cooldown por importação** (`TRACKING_REFRESH_COOLDOWN_MINUTES`,
      padrão 30; ver [Cache curto do botão Atualizar](#cache-curto-do-botão-atualizar-cooldown)):
-     consulta recente não é repetida nem com `force`. Enfileira e consome **1**
+     consulta recente não é repetida nem com `force`. Embarque com **chegada confirmada** não é consultado (`skipped: "arrived"`), nem com `force`.
+     Enfileira e consome **1**
      job pela fila (`processQueuedTrackingJobs` com `importId`/`limit: 1`, worker
      `refresh`), então o job é marcado `running` → `done`/`failed` — não sobra
      job `queued` órfão. `force` (usado pelo botão) ignora `next_check_at`; sem
@@ -34,7 +35,7 @@ container).
    - **Cron**: `GET/POST /api/tracking/run` (Bearer `CRON_SECRET`). Antes de
      drenar, reenfileira até 8 shipments **vencidos** por `next_check_at`
      (`enqueueDueTrackingShipments`: nulo ou ≤ agora, `strategy` `http`/`firecrawl`,
-     status não terminal e sem job `queued`/`running`) e então processa até 4 com
+     status sem chegada confirmada e sem job `queued`/`running`) e então processa até 4 com
      claim atômico via `public.claim_tracking_jobs`. O claim aceita `queued`
      vencido **ou** `running` com lock expirado e `attempts < 3` (worker
      morto/timeout) e marca `failed` (`stale_timeout`) quem estourou o teto —
@@ -99,6 +100,25 @@ container).
 - Quando o BL devolve os containers, `fanOutBlSnapshot` replica o snapshot e
   marca as linhas como `link` (sem scrape individual).
 
+## Chegada confirmada encerra o rastreio automático
+
+- Com o status `arrived` (chegou ao porto), `discharged` (descarregado),
+  `delivered` ou `empty_returned`, o embarque acabou para fins de rastreio:
+  `nextCheckAtFor` grava `next_check_at = null` e o cron
+  (`enqueueDueTrackingShipments`) para de reenfileirar o shipment. O teste de
+  decisão é `isArrivedTrackingStatus`/`isTrackingQueryableStatus`
+  (`lib/tracking/shared.ts`).
+- `enqueueTrackingForImport` também não cria job para shipment já chegado (nova
+  análise da importação não gasta crédito) e `processQueuedTrackingJobs`
+  encerra job que sobrou na fila (`done` + `last_error: "arrived"`) sem scrape.
+- O botão "Atualizar" responde **200** com `{ skipped: "arrived" }` — mesmo com
+  `force` — e a UI mostra "Chegada confirmada — o rastreio automático foi
+  concluído e não há mais consultas.". Alvos `link` continuam aceitando evento
+  manual, e a tela mostra "Concluído" em "Próxima consulta".
+- A regra é intencionalmente mais cedo do que o antigo "status final": depois da
+  atracação/descarga o portal não traz mais nada operacionalmente útil e cada
+  consulta custa crédito.
+
 ## Cache curto do botão "Atualizar" (cooldown)
 
 - `refreshTrackingForImport` lê os alvos consultáveis da importação
@@ -134,7 +154,7 @@ container).
 - O número do master fica no payload da extração do BL (não em `imports`) e o
   usuário pode corrigi-lo no formulário ("BL master (MBL)").
 - No detalhe do rastreio (`/rastreio/[shipmentId]`), um shipment `query_type =
-  'bl'` cujo `query_value` difere de `imports.bl_number` é rotulado como
+'bl'` cujo `query_value` difere de `imports.bl_number` é rotulado como
   **BL master** (badge e seletor de irmãos), para não parecer outro embarque.
 
 ## Divergência de navio (rollover/transbordo)
@@ -146,7 +166,7 @@ container).
   snapshot normalmente: `found`, status, ETA, containers e eventos preservados.
 - A divergência só é sinalizada: `snapshot.vesselMismatch = { expected, found }`
   (`raw.expectedVessel` × navio do portal) e uma nota curta (`Navio no portal
-  diferente do BL: <portal> × <BL>`, somada às `notes` do portal). Snapshots sem
+diferente do BL: <portal> × <BL>`, somada às `notes` do portal). Snapshots sem
   divergência (ou com o mesmo navio, ignorando caixa/pontuação) têm
   `vesselMismatch: null`.
 - O navio/viagem **exibidos** são os do portal (persistidos em
@@ -170,7 +190,7 @@ container).
   `MSIRYOE261000021`) ou do master que também não retornou dados.
 - `fallbackToFirstContainer` (`lib/tracking/service.ts`) exige:
   - nenhum outro container consultável na importação (`strategy in
-    ('http','firecrawl')`);
+('http','firecrawl')`);
   - ao menos um container `link` (escolhe o primeiro por `created_at asc`);
   - `carrierSupportsContainer(carrier_code)` — provider que não aceita container
     não promove nada (fica manual).
@@ -215,7 +235,7 @@ container).
 ## Tela de rastreio (`/rastreio`)
 
 - **Lista do tenant**: `lib/tracking/list.ts` → `listTenantTracking({ tenantId,
-  importId?, filter?, limit? })` lê `tracking_shipments` com `getReadClient`
+importId?, filter?, limit? })` lê `tracking_shipments` com `getReadClient`
   (RLS), ordena pelo último evento (mais recente primeiro; sem evento no fim) e
   resolve a importação em **uma** consulta `in` em `imports` — sem N+1. A
   referência usa `displayImportReference` com fallback para `bl_number`.
@@ -223,15 +243,15 @@ container).
   `CARRIERS`), BL/container (`TRACKING_QUERY_LABELS` + número), status
   (`trackingStatusLabel`), ETA em DD/MM/AAAA com "em X dias"/"há X dias",
   último evento e próxima consulta (`trackingNextCheckLabel`: data agendada,
-  "Concluído" só em status finais e "Aguardando consulta" nos demais sem
+  "Concluído" só com a chegada confirmada e "Aguardando consulta" nos demais sem
   `next_check_at`). Em viewports estreitas a tabela rola na horizontal
   (`overflow-x-auto`, `min-w-[980px]`) em vez de cortar as últimas colunas.
 - **Resumo**: total, em trânsito (`in_transit`/`transshipment`), chegando (ETA
-  em até 7 dias, incluindo atrasado, exceto status finais) e sem ETA. Os
+  em até 7 dias, incluindo atrasado, exceto após a chegada) e sem ETA. Os
   contadores respeitam o escopo (`?import=`), mas não o filtro ativo.
 - **Filtros como links** (`?filtro=todos|transito|chegando|sem_eta|sem_consulta`),
   sem JavaScript no client. `sem_consulta` cobre `fetched_at` nulo e shipment
-  não terminal sem `next_check_at`.
+  que ainda espera consulta sem `next_check_at`.
 - **Acesso pela importação**: a importação (`/importacoes/[id]`) tem **somente o
   botão** "Rastrear" dentro do card **"Dados do BL"** (o card do BL,
   alinhado à direita do título) → detalhe do shipment principal
@@ -257,7 +277,7 @@ container).
 ## Detalhe do shipment (`/rastreio/[shipmentId]`)
 
 - **Dados**: `lib/tracking/detail.ts` → `getTrackingShipmentDetail({ tenantId,
-  shipmentId })` lê via `getReadClient` (RLS) e filtra `tenant_id` em todas as
+shipmentId })` lê via `getReadClient` (RLS) e filtra `tenant_id` em todas as
   consultas. Shipment de outro tenant é tratado como inexistente
   (`TrackingShipmentNotFoundError` → `notFound()`).
 - **Cabeçalho**: armador (`carrierLabelFor`), tag `BL`/`BL master`/`CNTR`,
@@ -342,30 +362,45 @@ container).
   eventos futuros e descrições de previsão ("estimated", "planned"). Não é
   sobrescrito depois de preenchido.
 - Falha na gravação dos marcos é logada (`[tracking] falha ao gravar marcos do
-  embarque`) e **não** derruba o rastreio: o snapshot principal segue
+embarque`) e **não** derruba o rastreio: o snapshot principal segue
   normalmente (mesmo padrão do ETA do BL).
 
 ## Armadores
 
-| Armador | Código | Portal | Observação |
-|---|---|---|---|
-| Maersk | `maersk` | `/tracking/{número}` | SPA atrás do Akamai: exige `proxy: stealth` e ~18s. O BL retorna os containers; o retry (`attempts = 2`) vale só para `not_found` real, nunca para divergência de navio. |
-| MSC | `msc` | `/api/feature/tools/TrackingInfo` | **API JSON gratuita** (0 créditos) com cookie de sessão. BL de casa (forwarder) não existe na MSC → `link`; só o primeiro container é consultado (os demais `link`). |
-| CMA CGM | `cma` | `/ebusiness/tracking` | Formulário POST: o scraping abre a página base e preenche `#Reference` (`actions`). BL de casa (forwarder) não é reconhecido — o rastreio efetivo é pelo primeiro container (os demais `link`). |
-| Hapag-Lloyd | `hapag` | `track-by-container-solution.html` / `track-by-booking-solution.html` | Formulário AEM (`hl12`/`hl16` + `hl25`/`hl18`) via Firecrawl `actions`, ~12s. Em 28/10/2026 o portal estava **em manutenção**; BL de casa (não `HLCU`) fica `link` e só o primeiro container é consultado. |
-| COSCO | `cosco` | `/scct/public/ct/base` | SPA nova: `trackingType=blNumber\|containerNumber\|bookingNumber` + `number` na URL, ~14s. O BL devolve os containers; o fan-out evita consultas individuais. |
-| OOCL | `oocl` | `oocl.com/.../cargotracking.aspx` | Portal com **captcha da CargoSmart**: v1 usa `link` + evento manual (sem rastreio automático). |
-| HMM | `hmm` | `hmm21.com/e-service/general/trackNTrace` | **API interna** (0 créditos) com sessão + CSRF. BL com prefixo `HMMU` é a fonte autoritativa (container `link`); BL de casa sem master cai para o primeiro container, porque a API aceita `cntr`. |
-| ONE | `one` | `one-line.com/one-ecom/manage-shipment/cargo-tracking` | **API interna** `ecomm.one-line.com/api` (0 créditos, sem captcha). BL `ONEY` é autoritativo e o container fica `link` (recarga); BL de casa sem master cai para o primeiro container (`CNTR_NO`). |
-| Evergreen | `evergreen` | `ct.shipmentlink.com/servlet/TDB1_CargoTracking.do` | Formulário POST (`#s_bl`/`#s_cntr` + `#NO`). O BL retorna todos os containers; o serviço replica o resultado e não consulta container por container. |
+| Armador     | Código      | Portal                                                                | Observação                                                                                                                                                                                                 |
+| ----------- | ----------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Maersk      | `maersk`    | `/tracking/{número}`                                                  | SPA atrás do Akamai: exige `proxy: stealth` e ~18s. O BL retorna os containers; o retry (`attempts = 2`) vale só para `not_found` real, nunca para divergência de navio.                                   |
+| MSC         | `msc`       | `/api/feature/tools/TrackingInfo`                                     | **API JSON gratuita** (0 créditos) com cookie de sessão. BL de casa (forwarder) não existe na MSC → `link`; só o primeiro container é consultado (os demais `link`).                                       |
+| CMA CGM     | `cma`       | `/ebusiness/tracking`                                                 | Formulário POST: o scraping abre a página base e preenche `#Reference` (`actions`). BL de casa (forwarder) não é reconhecido — o rastreio efetivo é pelo primeiro container (os demais `link`).            |
+| Hapag-Lloyd | `hapag`     | `track-by-container-solution.html` / `track-by-booking-solution.html` | Formulário AEM (`hl12`/`hl16` + `hl25`/`hl18`) via Firecrawl `actions`, ~12s. Em 28/10/2026 o portal estava **em manutenção**; BL de casa (não `HLCU`) fica `link` e só o primeiro container é consultado. |
+| COSCO       | `cosco`     | `/scct/public/ct/base`                                                | SPA nova: `trackingType=blNumber\|containerNumber\|bookingNumber` + `number` na URL, ~14s. O BL devolve os containers; o fan-out evita consultas individuais.                                              |
+| OOCL        | `oocl`      | `oocl.com/.../cargotracking.aspx`                                     | Portal com **captcha da CargoSmart**: v1 usa `link` + evento manual (sem rastreio automático).                                                                                                             |
+| HMM         | `hmm`       | `hmm21.com/e-service/general/trackNTrace`                             | **API interna** (0 créditos) com sessão + CSRF. BL com prefixo `HMMU` é a fonte autoritativa (container `link`); BL de casa sem master cai para o primeiro container, porque a API aceita `cntr`.          |
+| ONE         | `one`       | `one-line.com/one-ecom/manage-shipment/cargo-tracking`                | **API interna** `ecomm.one-line.com/api` (0 créditos, sem captcha). BL `ONEY` é autoritativo e o container fica `link` (recarga); BL de casa sem master cai para o primeiro container (`CNTR_NO`).         |
+| Evergreen   | `evergreen` | `ct.shipmentlink.com/servlet/TDB1_CargoTracking.do`                   | Formulário POST (`#s_bl`/`#s_cntr` + `#NO`). O BL retorna todos os containers; o serviço replica o resultado e não consulta container por container.                                                       |
 
 O reconhecimento usa o campo `carrier` do BL (`lib/tracking/carriers.ts`) e,
-quando ele não identifica, o prefixo do **master** BL (`lib/tracking/bl-prefix.ts`).
+quando ele não identifica, o nome do navio, os **prefixos de container do próprio
+armador** — Maersk `MAEU`/`MRKU`/`MRSU`/`SUDU`, MSC `MSCU`/`MEDU`/`MSGU`/`MSDU`/
+`MSBU`, CMA `CMDU`/`CMAU`/`CGMU`, Hapag `HLBU`/`HLXU`/`HLKU`, COSCO `COSU`/`CSNU`/
+`CBHU`, Evergreen `EGLV`/`EGHU`/`EGSU`/`EMCU`, HMM `HMMU`/`HDMU`, ONE `ONEU` e
+OOCL `OOLU`/`OOCU` — e, por último, o prefixo do **master** BL
+(`lib/tracking/bl-prefix.ts`). Containers de locadora (TXTU/Textainer,
+TGHU/Triton, SEGU/Seacastle, TCNU…) pertencem ao dono do equipamento e **não**
+identificam o armador.
 Armador desconhecido não permite decidir se o BL é de casa: o BL do documento
 continua sendo a consulta e o fallback de `not_found` promove o primeiro
 container. Para a CMA, o alvo de BL é criado como `link` (sem custo) porque o BL
 emitido por forwarder não é rastreável no portal; o primeiro container é a
 chave (os demais ficam `link`).
+
+Quando o armador só é identificado **depois** (ex.: BL de house analisado antes
+do mapa de prefixos de container), o `enqueueTrackingForImport` **adota** as
+linhas gravadas com `carrier_code = 'unknown'`: corrige o armador das linhas do
+mesmo BL/container (sem duplicar, já que `carrier_code` faz parte da chave do
+upsert) e volta o alvo para `pending` — o `blocked`
+(`carrier_unsupported`) anterior era consequência do armador errado. Acontece no
+botão "Atualizar" e na primeira consulta de uma nova análise.
 
 Validado em 27/10/2026 com um BL real (CMA CGM KRYPTON, Shekou → Itapoá):
 `actions` preenchendo `#Reference` → 2 eventos, ETA 02/11/2026, status
@@ -381,6 +416,13 @@ MSC STELLA M X / QI633A, ETA 01/11/2026): 2 containers, 12 eventos e **0
 créditos** de Firecrawl. O BL de casa `PLIQD4H06868` retorna “No results found”
 e fica como `link`. Com a regra de uma consulta por importação, só o primeiro
 container (`MSMU4775369`) é consultado e os demais ficam `link`.
+
+Validado também com a OYH142 (BL de casa `PLIQD4H08324`, LX Pantos, navio
+`LE HAVRE` — nome sem a marca — e master MSC `MEDUADY26783`, que não está
+impresso no draft): o armador é inferido pelo container `MSGU6161889`, o primeiro
+container (`TXTU4077041`, Textainer) é consultado pela API e devolve 4 eventos com
+ETA 24/11/2026. Antes do mapa de prefixos o BL ficava `unknown` e a consulta
+morria em `carrier_unsupported`.
 
 Maersk validada com o BL `276430227` (SAN NICOLAS MAERSK / 639W, ETA
 14/11/2026, container `MMAU1421499`): o portal exige `proxy: stealth` e ~18s;
@@ -437,15 +479,18 @@ GEOCODE_USER_AGENT=confere-ia/1.0 (contato@confere.ai)
 Cadência efetiva (`nextCheckAtFor`): **semanal (7 dias)** por importação e
 **diária** quando faltar **≤ 7 dias** para o ETA (`daysUntil(eta) <= 7`).
 `not_found` mantém 24h e erro/blocked usa backoff exponencial (1h → máx. 24h),
-com jitter de até 10%. O botão "Atualizar" não usa a cadência: aplica o
-cooldown curto de `TRACKING_REFRESH_COOLDOWN_MINUTES` (padrão 30; `0` desativa)
+com jitter de até 10%. **Chegada confirmada** (`arrived`/`discharged`/
+`delivered`/`empty_returned`) não agenda nada: `next_check_at = null` e o
+shipment sai da fila para sempre. O botão "Atualizar" não usa a cadência: aplica
+o cooldown curto de `TRACKING_REFRESH_COOLDOWN_MINUTES` (padrão 30; `0` desativa)
 sobre o `fetched_at` do alvo consultável.
 
 Quem materializa a cadência é o cron: `enqueueDueTrackingShipments` roda antes
 do processamento e cria `tracking_jobs` para os shipments cujo `next_check_at`
-nulo/vencido, ignorando `link`/`manual`, status terminais (`delivered`,
-`empty_returned`) e quem já tem job `queued`/`running`. O enqueue não faz
-chamada externa nem consome crédito — o orçamento só é debitado no scrape.
+nulo/vencido, ignorando `link`/`manual`, embarques com chegada confirmada
+(`arrived`, `discharged`, `delivered`, `empty_returned`) e quem já tem job
+`queued`/`running`. O enqueue não faz chamada externa nem consome crédito — o
+orçamento só é debitado no scrape.
 
 Custo aproximado: `importações ativas × ciclos/mês × 30 × 5 créditos` (v1 usa
 extração JSON). No ciclo semanal (~4 consultas/mês) 30 importações custam
@@ -474,28 +519,28 @@ Auditoria das travas que impedem rajadas/loops nas chamadas pagas (Firecrawl de
 rastreio e de parse, e modelo de IA). Legenda de gap: **—** = coberto;
 **baixo** = risco residual aceitável; **real** = vale correção.
 
-| Proteção | Onde | Gap real |
-|---|---|---|
-| Rate limit de refresh: **10/h por tenant** | `app/api/imports/[id]/tracking/refresh/route.ts` | Baixo: é por tenant (usuários do mesmo tenant somam 10/h) e cliques barrados pelo cooldown também consomem a janela. |
-| **Cooldown por importação**: `fetched_at` + `TRACKING_REFRESH_COOLDOWN_MINUTES` (padrão 30, `0` desativa), inclusive após falha e com `force` | `refreshTrackingForImport` (`lib/tracking/service.ts`) + `lib/tracking/config.ts` | — (novo; cobre o clique repetido no mesmo alvo). |
-| Orçamento mensal **tenant** (atômico) e **global** (pré-checagem) | `lib/tracking/usage.ts` + RPC `consume_tracking_credits` | Real (baixo impacto): o RPC só recebe `p_limit` do tenant; o teto global é checado no app antes do RPC e pode estourar sob concorrência entre tenants. |
-| Lock otimista de **10 min** no shipment | `processShipment` | Baixo: se a function morrer, o lock expira sozinho em 10 min. |
-| **Claim atômico** de jobs (`for update skip locked`) + lotes (cron reenfileira 8, processa ≤ 4; refresh 1) | `claim_tracking_jobs` (migration `20261029120000_tracking_stale_jobs.sql`), `/api/tracking/run`, `processQueuedTrackingJobs` | —: o claim aceita `queued` vencido **ou** `running` com `locked_until < now()` e `attempts < 3`; quem estourou o teto vira `failed` (`stale_timeout`) e o shipment volta a ser enfileirado. O claim escopado por importação (TS) aplica o mesmo critério. |
-| Backoff + `next_check_at` com jitter de 10% | `nextCheckAtFor` | — para o cron (24h em `not_found`, 1h→24h em erro); o botão ignora de propósito e agora é limitado pelo cooldown. |
-| **1 alvo consultável por importação** (BL ou 1º container) | `buildTrackingTargets` + reconciliação em `enqueueTrackingForImport` | — (containers `link` não são consultados nem pelo cron nem pelo botão). |
-| **Fallback único** BL `not_found` → 1º container (1 tentativa, sem recursão) | `fallbackToFirstContainer` | Baixo: falha é logada e engolida; o container promovido continua consultável na cadência. |
-| Timeout dos providers: Firecrawl 60s (+5s de abort), MSC/HMM 20–30s, ONE 30s | `lib/tracking/firecrawl.ts`, `lib/tracking/providers/*` | Baixo: `maxDuration = 120` no refresh cobre o pior caso do Firecrawl (65s) com folga; o cron segue com 60s para 4 jobs de ~13s. Se a function morrer mesmo assim, o claim recupera o job `running` órfão. |
-| Evento manual com dedupe por `fingerprint` | `/api/imports/[id]/tracking/events` | Baixo: sem rate limit, mas é escrita barata e idempotente. |
-| Rate limit de análise: **30/h por tenant** | `app/api/ai/analyze/route.ts` | Baixo: **fail-open** se o RPC do limiter falhar; conta upload (não chamada de modelo). Reenvio do mesmo arquivo é deduplicado (`findReusableUpload`) e não gasta Firecrawl/modelo. |
-| Quota mensal de **10M tokens** por tenant (`ai_logs`) | `app/api/ai/analyze/route.ts` | **Real (médio)**: checada só no enqueue e **fail-open**; um job aceito pode ultrapassar a quota. `/api/ai/health` não grava `ai_logs` (não entra na quota), mas tem rate limit próprio. |
-| Timeout de **90s** por task + **1 retry só em timeout** (env `AI_TASK_TIMEOUT_MS`/`AI_TASK_RETRIES`, máx. 3) | `lib/ai/task-timeout.ts` + tasks | Baixo: o SDK de IA não tem `maxRetries` fixado no projeto (usa o default), então 429/5xx podem multiplicar tentativas dentro de cada retry da task. |
-| Fila `ai_jobs`: claim atômico, **attempts ≤ 3**, recuperação de `running` travado há **15 min**; `failed` é terminal | `ai-jobs.ts`, `ai-worker.ts`, RPC `claim_next_ai_job` | — (sem loop de retry infinito). |
-| Dreno da fila: **3 jobs/execução**, teto de **240s** (função 300s) | `app/api/ai/jobs/run/route.ts` | — |
-| Polling do cliente: **170 × 2s (340s)** e para em sucesso/falha | `components/analise/upload-dropzone.tsx` | Baixo: `GET /api/ai/jobs/[id]` é leitura por RLS, sem rate limit (barato). |
-| Smoke de IA autenticado | `app/api/ai/health/route.ts` | —: **20/h por tenant** (`ai:health:<tenant>`, `consumeRateLimit`, 429 + `Retry-After`, fail-open no limiter); `401` sem sessão e `503` sem chave continuam antes do bucket. Não grava `ai_logs` (diagnóstico não consome quota). |
-| Cache de parse por `(tenant, sha256)` | `lib/documents/document-parses.ts` | Baixo: uploads simultâneos do mesmo arquivo podem passar os dois antes do cache (parse duplicado). |
-| Orçamento de parse por tenant (`DOCUMENT_PARSE_MONTHLY_CREDITS`, `0` = sem teto) | `lib/ai/document-parse.ts` | **Real (baixo)**: pré-checagem seguida de `consumeDocumentParseCredits`; quando o consumo falha o documento é processado mesmo assim (overshoot de 1 documento). Não há teto global de parse. |
-| Parse: timeout de **90s**, **30 páginas**, sem retry, e falha cai para imagens/PDF | `lib/ai/document-parse.ts` + `prepareDocument` | — (parse é acessório: nunca derruba a análise). |
+| Proteção                                                                                                                                      | Onde                                                                                                                         | Gap real                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rate limit de refresh: **10/h por tenant**                                                                                                    | `app/api/imports/[id]/tracking/refresh/route.ts`                                                                             | Baixo: é por tenant (usuários do mesmo tenant somam 10/h) e cliques barrados pelo cooldown também consomem a janela.                                                                                                                                      |
+| **Cooldown por importação**: `fetched_at` + `TRACKING_REFRESH_COOLDOWN_MINUTES` (padrão 30, `0` desativa), inclusive após falha e com `force` | `refreshTrackingForImport` (`lib/tracking/service.ts`) + `lib/tracking/config.ts`                                            | — (novo; cobre o clique repetido no mesmo alvo).                                                                                                                                                                                                          |
+| Orçamento mensal **tenant** (atômico) e **global** (pré-checagem)                                                                             | `lib/tracking/usage.ts` + RPC `consume_tracking_credits`                                                                     | Real (baixo impacto): o RPC só recebe `p_limit` do tenant; o teto global é checado no app antes do RPC e pode estourar sob concorrência entre tenants.                                                                                                    |
+| Lock otimista de **10 min** no shipment                                                                                                       | `processShipment`                                                                                                            | Baixo: se a function morrer, o lock expira sozinho em 10 min.                                                                                                                                                                                             |
+| **Claim atômico** de jobs (`for update skip locked`) + lotes (cron reenfileira 8, processa ≤ 4; refresh 1)                                    | `claim_tracking_jobs` (migration `20261029120000_tracking_stale_jobs.sql`), `/api/tracking/run`, `processQueuedTrackingJobs` | —: o claim aceita `queued` vencido **ou** `running` com `locked_until < now()` e `attempts < 3`; quem estourou o teto vira `failed` (`stale_timeout`) e o shipment volta a ser enfileirado. O claim escopado por importação (TS) aplica o mesmo critério. |
+| Backoff + `next_check_at` com jitter de 10%                                                                                                   | `nextCheckAtFor`                                                                                                             | — para o cron (24h em `not_found`, 1h→24h em erro); o botão ignora de propósito e agora é limitado pelo cooldown.                                                                                                                                         |
+| **1 alvo consultável por importação** (BL ou 1º container)                                                                                    | `buildTrackingTargets` + reconciliação em `enqueueTrackingForImport`                                                         | — (containers `link` não são consultados nem pelo cron nem pelo botão).                                                                                                                                                                                   |
+| **Fallback único** BL `not_found` → 1º container (1 tentativa, sem recursão)                                                                  | `fallbackToFirstContainer`                                                                                                   | Baixo: falha é logada e engolida; o container promovido continua consultável na cadência.                                                                                                                                                                 |
+| Timeout dos providers: Firecrawl 60s (+5s de abort), MSC/HMM 20–30s, ONE 30s                                                                  | `lib/tracking/firecrawl.ts`, `lib/tracking/providers/*`                                                                      | Baixo: `maxDuration = 120` no refresh cobre o pior caso do Firecrawl (65s) com folga; o cron segue com 60s para 4 jobs de ~13s. Se a function morrer mesmo assim, o claim recupera o job `running` órfão.                                                 |
+| Evento manual com dedupe por `fingerprint`                                                                                                    | `/api/imports/[id]/tracking/events`                                                                                          | Baixo: sem rate limit, mas é escrita barata e idempotente.                                                                                                                                                                                                |
+| Rate limit de análise: **30/h por tenant**                                                                                                    | `app/api/ai/analyze/route.ts`                                                                                                | Baixo: **fail-open** se o RPC do limiter falhar; conta upload (não chamada de modelo). Reenvio do mesmo arquivo é deduplicado (`findReusableUpload`) e não gasta Firecrawl/modelo.                                                                        |
+| Quota mensal de **10M tokens** por tenant (`ai_logs`)                                                                                         | `app/api/ai/analyze/route.ts`                                                                                                | **Real (médio)**: checada só no enqueue e **fail-open**; um job aceito pode ultrapassar a quota. `/api/ai/health` não grava `ai_logs` (não entra na quota), mas tem rate limit próprio.                                                                   |
+| Timeout de **90s** por task + **1 retry só em timeout** (env `AI_TASK_TIMEOUT_MS`/`AI_TASK_RETRIES`, máx. 3)                                  | `lib/ai/task-timeout.ts` + tasks                                                                                             | Baixo: o SDK de IA não tem `maxRetries` fixado no projeto (usa o default), então 429/5xx podem multiplicar tentativas dentro de cada retry da task.                                                                                                       |
+| Fila `ai_jobs`: claim atômico, **attempts ≤ 3**, recuperação de `running` travado há **15 min**; `failed` é terminal                          | `ai-jobs.ts`, `ai-worker.ts`, RPC `claim_next_ai_job`                                                                        | — (sem loop de retry infinito).                                                                                                                                                                                                                           |
+| Dreno da fila: **3 jobs/execução**, teto de **240s** (função 300s)                                                                            | `app/api/ai/jobs/run/route.ts`                                                                                               | —                                                                                                                                                                                                                                                         |
+| Polling do cliente: **170 × 2s (340s)** e para em sucesso/falha                                                                               | `components/analise/upload-dropzone.tsx`                                                                                     | Baixo: `GET /api/ai/jobs/[id]` é leitura por RLS, sem rate limit (barato).                                                                                                                                                                                |
+| Smoke de IA autenticado                                                                                                                       | `app/api/ai/health/route.ts`                                                                                                 | —: **20/h por tenant** (`ai:health:<tenant>`, `consumeRateLimit`, 429 + `Retry-After`, fail-open no limiter); `401` sem sessão e `503` sem chave continuam antes do bucket. Não grava `ai_logs` (diagnóstico não consome quota).                          |
+| Cache de parse por `(tenant, sha256)`                                                                                                         | `lib/documents/document-parses.ts`                                                                                           | Baixo: uploads simultâneos do mesmo arquivo podem passar os dois antes do cache (parse duplicado).                                                                                                                                                        |
+| Orçamento de parse por tenant (`DOCUMENT_PARSE_MONTHLY_CREDITS`, `0` = sem teto)                                                              | `lib/ai/document-parse.ts`                                                                                                   | **Real (baixo)**: pré-checagem seguida de `consumeDocumentParseCredits`; quando o consumo falha o documento é processado mesmo assim (overshoot de 1 documento). Não há teto global de parse.                                                             |
+| Parse: timeout de **90s**, **30 páginas**, sem retry, e falha cai para imagens/PDF                                                            | `lib/ai/document-parse.ts` + `prepareDocument`                                                                               | — (parse é acessório: nunca derruba a análise).                                                                                                                                                                                                           |
 
 **Gaps priorizados**
 

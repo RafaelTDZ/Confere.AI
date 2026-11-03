@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createLogger } from "@/lib/observability/logger";
 import { Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -28,6 +29,8 @@ import { EmpresaRowActions } from "@/components/empresas/empresa-row-actions";
 import { ListFilters } from "@/components/ui/list-filters";
 import { Pagination } from "@/components/ui/pagination";
 
+const log = createLogger("page/empresas");
+
 export default async function EmpresasPage({
   searchParams,
 }: {
@@ -50,7 +53,10 @@ export default async function EmpresasPage({
       search: params.q,
     });
   } catch (err) {
-    console.error("[empresas] falha ao listar empresas:", err);
+    log.warn("parties_list_failed", {
+      search: params.q,
+      error: err,
+    });
     loadFailed = true;
   }
 

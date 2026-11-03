@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { generateText } from "ai";
 import {
   AiConfigError,
@@ -22,6 +23,8 @@ const HEALTH_RATE_WINDOW_SECONDS = 60 * 60;
  * Não grava `ai_logs` (endpoint de diagnóstico não entra na quota mensal de
  * tokens); o consumo é limitado pelo rate limit por tenant.
  */
+const log = createLogger("api/ai/health");
+
 export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
@@ -70,7 +73,7 @@ export async function GET() {
       }
     } catch (error) {
       // Fail-open: indisponibilidade do rate limiter não derruba o diagnóstico.
-      console.error("[api/ai/health] rate limit indisponível", error);
+      log.error("rate_limit_unavailable", { error });
     }
 
     const started = Date.now();
@@ -99,7 +102,7 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }
 
-    console.error("[api/ai/health] AI error:", error);
+    log.error("provider_failed", { error });
     const message =
       error instanceof Error ? error.message : "Falha ao chamar o provider de IA";
     return NextResponse.json({ error: message }, { status: 502 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCarrierDeepLink,
   CARRIERS,
+  carrierFromContainerPrefix,
   carrierSupportsContainer,
   detectCarrier,
   inferCarrier,
@@ -45,9 +46,34 @@ describe("detectCarrier", () => {
     ).toBe("cma");
     expect(inferCarrier(null, [], "ONE PREMIUM")).toBe("one");
     expect(inferCarrier(null, [], "SAN NICOLAS MAERSK")).toBe("maersk");
+    expect(inferCarrier("YQN", ["HLBU9334723"], "NAVEGANTES EXPRESS")).toBe(
+      "hapag",
+    );
+  });
+
+  it("infere MSC pelos containers quando o navio não traz a marca", () => {
+    // OYH142: BL de casa da LX Pantos e navio `LE HAVRE` (MSC sem o prefixo
+    // no nome) — só os containers MSGU identificam o armador.
     expect(
-      inferCarrier("YQN", ["HLBU9334723"], "NAVEGANTES EXPRESS"),
-    ).toBe("hapag");
+      inferCarrier(
+        "LX PANTOS LOGISTICS (QINGDAO) CO.,LTD.",
+        ["TXTU4077041", "MSGU6161889", "MSGU6163536"],
+        "LE HAVRE",
+      ),
+    ).toBe("msc");
+  });
+
+  it("ignora containers de locadora na inferência por prefixo", () => {
+    // TXTU (Textainer), TGHU (Triton) e SEGU (Seacastle) são do dono do
+    // equipamento, não do armador: sem outra pista o armador segue `unknown`.
+    expect(
+      inferCarrier(
+        "LX Pantos Logistics",
+        ["TXTU4077041", "TGHU6251317", "SEGU9104520"],
+        "LE HAVRE",
+      ),
+    ).toBe("unknown");
+    expect(carrierFromContainerPrefix("TXTU4077041")).toBeNull();
   });
 });
 
@@ -74,7 +100,8 @@ describe("CARRIERS", () => {
   });
 });
 
-describe("buildCarrierDeepLink", () => {  it("monta a URL de cada armador", () => {
+describe("buildCarrierDeepLink", () => {
+  it("monta a URL de cada armador", () => {
     expect(
       buildCarrierDeepLink({
         carrier: "maersk",
@@ -173,7 +200,8 @@ describe("buildCarrierDeepLink", () => {  it("monta a URL de cada armador", () =
     ).toBeNull();
   });
 
-  it("monta a URL nova da COSCO com o tipo de busca", () => {    expect(
+  it("monta a URL nova da COSCO com o tipo de busca", () => {
+    expect(
       buildCarrierDeepLink({
         carrier: "cosco",
         queryType: "bl",

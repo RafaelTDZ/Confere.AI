@@ -9,8 +9,8 @@ import type {
   ConsigneeSnapshot,
 } from "@/lib/documents/consignee-check";
 import {
+  isArrivedTrackingStatus,
   isInTransitTrackingStatus,
-  isTerminalTrackingStatus,
 } from "@/lib/tracking/shared";
 
 export type ImportStatus =
@@ -96,15 +96,6 @@ export const IMPORT_SHIPMENT_STAGE_LABELS: Record<ImportShipmentStage, string> =
     in_transit: "Em trânsito",
     arrived: "Chegada confirmada",
   };
-
-/** Status de rastreio de chegada: final (entregue/devolvido) ou já descarregado no porto. */
-function isArrivedTrackingStatus(status: string): boolean {
-  return (
-    isTerminalTrackingStatus(status) ||
-    status === "arrived" ||
-    status === "discharged"
-  );
-}
 
 /** Prioridade do status ao escolher o mais relevante: chegada > em trânsito > demais. */
 export function trackingStatusPriority(status: string): number {

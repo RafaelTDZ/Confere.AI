@@ -4,8 +4,8 @@ import { displayImportReference } from "@/lib/documents/imports-shared";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { carrierLabelFor } from "@/lib/tracking/carriers";
 import {
+  isArrivedTrackingStatus,
   isInTransitTrackingStatus,
-  isTerminalTrackingStatus,
   normalizeTrackingListFilter,
   trackingDaysUntilEta,
   trackingStatusLabel,
@@ -146,9 +146,10 @@ type TrackingFilterInput = Pick<
 >;
 
 /**
- * Regras dos filtros da tela. "Chegando" ignora status finais (um entregue com
- * ETA no passado não está chegando) e "sem consulta" também sinaliza shipment
- * não terminal sem próxima consulta agendada.
+ * Regras dos filtros da tela. "Chegando" ignora a chegada confirmada (um
+ * embarque já chegou/entregue com ETA no passado não está chegando) e "sem
+ * consulta" também sinaliza shipment que ainda espera consulta sem próxima
+ * data agendada — depois da chegada não há mais consulta a fazer.
  */
 export function matchesTrackingFilter(
   row: TrackingFilterInput,
@@ -159,7 +160,7 @@ export function matchesTrackingFilter(
     case "transito":
       return isInTransitTrackingStatus(row.status);
     case "chegando": {
-      if (isTerminalTrackingStatus(row.status)) return false;
+      if (isArrivedTrackingStatus(row.status)) return false;
       const days = trackingDaysUntilEta(row.eta, now);
       return days !== null && days <= ARRIVING_WINDOW_DAYS;
     }
@@ -168,7 +169,7 @@ export function matchesTrackingFilter(
     case "sem_consulta":
       return (
         !row.fetchedAt ||
-        (!row.nextCheckAt && !isTerminalTrackingStatus(row.status))
+        (!row.nextCheckAt && !isArrivedTrackingStatus(row.status))
       );
     default:
       return true;

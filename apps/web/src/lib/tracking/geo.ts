@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+const log = createLogger("tracking-geo");
 
 /**
  * Geocodificação dos portos do rastreio (POL/POD) para o mapa da rota.
@@ -131,20 +134,14 @@ async function readCachedGeocode(query: string): Promise<GeocodedPort | null> {
       .maybeSingle();
 
     if (error) {
-      console.warn(
-        "[tracking] falha ao ler o cache de geocodificação:",
-        error.message,
-      );
+      log.warn("geocode_cache_read_failed", { query, error: error.message });
       return null;
     }
     if (!data) return null;
 
     return toGeocodedPort(data.lat, data.lng, data.display_name, query);
   } catch (error) {
-    console.warn(
-      "[tracking] falha inesperada ao ler o cache de geocodificação:",
-      error instanceof Error ? error.message : "erro desconhecido",
-    );
+    log.warn("geocode_cache_read_failed", { query, error });
     return null;
   }
 }
@@ -168,16 +165,10 @@ async function saveGeocode(query: string, point: GeocodedPort): Promise<void> {
     );
 
     if (error) {
-      console.warn(
-        "[tracking] falha ao salvar a geocodificação do porto:",
-        error.message,
-      );
+      log.warn("geocode_cache_write_failed", { query, error: error.message });
     }
   } catch (error) {
-    console.warn(
-      "[tracking] falha inesperada ao salvar a geocodificação do porto:",
-      error instanceof Error ? error.message : "erro desconhecido",
-    );
+    log.warn("geocode_cache_write_failed", { query, error });
   }
 }
 
@@ -239,9 +230,10 @@ async function fetchFromNominatim(query: string): Promise<GeocodedPort | null> {
     });
 
     if (!response.ok) {
-      console.warn(
-        `[tracking] Nominatim respondeu ${response.status}; sem coordenadas.`,
-      );
+      log.warn("nominatim_http_error", {
+        query,
+        status: response.status,
+      });
       return null;
     }
 
@@ -273,10 +265,7 @@ async function geocodeNormalized(query: string): Promise<GeocodedPort | null> {
     await saveGeocode(query, fetched);
     return fetched;
   } catch (error) {
-    console.warn(
-      "[tracking] falha ao geocodificar o porto:",
-      error instanceof Error ? error.message : "erro desconhecido",
-    );
+    log.warn("geocode_failed", { query, error });
     return null;
   }
 }

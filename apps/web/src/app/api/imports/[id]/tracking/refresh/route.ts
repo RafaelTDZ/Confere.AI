@@ -6,6 +6,9 @@ import {
   getTrackingForImport,
   refreshTrackingForImport,
 } from "@/lib/tracking/service";
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger("api/tracking/refresh");
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -23,9 +26,15 @@ const REFRESH_LIMIT = 10;
 const REFRESH_WINDOW_SECONDS = 60 * 60;
 
 export async function POST(_request: Request, context: RouteContext) {
+  let importIdForLog: string | undefined;
   try {
     const auth = await getAuthContext();
     if (auth.role === "viewer") {
+      log.warn("request_rejected", {
+        tenantId: auth.tenantId,
+        reason: "viewer_role",
+        status: 403,
+      });
       return NextResponse.json(
         { error: "Perfil viewer não pode atualizar rastreios" },
         { status: 403 },
@@ -39,6 +48,12 @@ export async function POST(_request: Request, context: RouteContext) {
     });
 
     if (!limit.allowed) {
+      log.warn("rate_limit_exceeded", {
+        tenantId: auth.tenantId,
+        limit: REFRESH_LIMIT,
+        windowSeconds: REFRESH_WINDOW_SECONDS,
+        retryAfterSeconds: limit.retryAfterSeconds,
+      });
       return NextResponse.json(
         {
           error: "Muitas atualizações de rastreio. Tente novamente em instantes.",
@@ -49,6 +64,7 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    importIdForLog = id;
     const result = await refreshTrackingForImport({
       tenantId: auth.tenantId,
       importId: id,
@@ -56,8 +72,18 @@ export async function POST(_request: Request, context: RouteContext) {
     });
     const tracking = await getTrackingForImport(auth.tenantId, id);
 
-    // `skipped: "cooldown"` + `retryAfterSeconds` são resposta normal (200):
-    // o refresh recente foi reaproveitado e nenhum crédito foi gasto.
+    log.info("refresh_finished", {
+      tenantId: auth.tenantId,
+      importId: id,
+      ...result,
+      shipments: tracking.shipments.length,
+      events: tracking.events.length,
+      creditsUsedThisMonth: tracking.creditsUsedThisMonth,
+    });
+
+    // `skipped: "cooldown"` + `retryAfterSeconds` e `skipped: "arrived"` são
+    // respostas normais (200): nenhum crédito foi gasto (consulta recente
+    // reaproveitada / embarque já chegou e o rastreio automático acabou).
     return NextResponse.json({ ok: true, ...result, tracking });
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -69,7 +95,10 @@ export async function POST(_request: Request, context: RouteContext) {
     if (error instanceof ImportNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/imports/tracking/refresh POST]", error);
+    log.error("refresh_failed", {
+      importId: importIdForLog,
+      error,
+    });
     return NextResponse.json(
       {
         error:

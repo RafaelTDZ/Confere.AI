@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   getNcmById,
@@ -27,6 +28,8 @@ function parseNcmPatch(body: unknown): { code: string; description: string } {
   return { code: row.code, description: row.description };
 }
 
+const log = createLogger("api/ncms/[id]");
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const auth = await getAuthContext();
@@ -43,7 +46,7 @@ export async function GET(_request: Request, context: RouteContext) {
     if (error instanceof NcmNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/ncms GET id]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Falha ao carregar NCM",
@@ -82,7 +85,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error instanceof NcmValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    console.error("[api/ncms PATCH]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:

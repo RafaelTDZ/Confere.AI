@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   getImportDetail,
@@ -145,6 +146,8 @@ function parseImportPatch(body: unknown): {
   return patch;
 }
 
+const log = createLogger("api/imports");
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const auth = await getAuthContext();
@@ -161,7 +164,7 @@ export async function GET(_request: Request, context: RouteContext) {
     if (error instanceof ImportNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/imports GET id]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:
@@ -224,7 +227,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error instanceof ImportConflictError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
-    console.error("[api/imports PATCH]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:
@@ -260,7 +263,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     if (error instanceof ImportNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/imports DELETE id]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:

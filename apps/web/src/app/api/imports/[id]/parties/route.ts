@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   getImportPartiesState,
@@ -45,6 +46,8 @@ function parsePendingParties(body: unknown): PendingParty[] {
   });
 }
 
+const log = createLogger("api/imports/parties");
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const auth = await getAuthContext();
@@ -61,7 +64,7 @@ export async function GET(_request: Request, context: RouteContext) {
     if (error instanceof ImportNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/imports/parties GET]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Falha ao carregar partes" },
       { status: 500 },
@@ -103,7 +106,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (error instanceof PartyValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    console.error("[api/imports/parties POST]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Falha ao cadastrar partes" },
       { status: 500 },

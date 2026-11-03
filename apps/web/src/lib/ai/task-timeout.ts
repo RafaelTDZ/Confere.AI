@@ -1,5 +1,9 @@
 import "server-only";
 
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger("ai-task");
+
 /**
  * Orçamento por chamada de IA.
  *
@@ -89,9 +93,12 @@ export async function runAiTask<T>(
     } catch (error) {
       if (!controller.signal.aborted) throw error;
 
-      console.warn(
-        `[ai-task] ${label} excedeu ${timeoutMs}ms (tentativa ${attempt}/${attempts})`,
-      );
+      log.warn("task_timeout", {
+        task: label,
+        timeoutMs,
+        attempt,
+        attempts,
+      });
       if (attempt === attempts) {
         throw new AiTaskTimeoutError(label, timeoutMs, attempts, {
           cause: error,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
   createNcm,
@@ -22,6 +23,8 @@ function parseNcmBody(body: unknown): { code: string; description: string } {
   return { code: row.code, description: row.description };
 }
 
+const log = createLogger("api/ncms");
+
 export async function GET() {
   try {
     const auth = await getAuthContext();
@@ -39,7 +42,7 @@ export async function GET() {
         { status: 401 },
       );
     }
-    console.error("[api/ncms GET]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Falha ao listar NCMs",
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
     if (error instanceof NcmValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    console.error("[api/ncms POST]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:

@@ -36,11 +36,21 @@ async function requestTrackingRefresh(importId: string): Promise<RefreshOutcome>
     });
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
-      skipped?: "cooldown";
+      skipped?: "cooldown" | "arrived";
       retryAfterSeconds?: number;
     };
     if (!res.ok) {
       throw new Error(data.error || "Falha ao atualizar rastreio");
+    }
+    if (data.skipped === "arrived") {
+      return {
+        feedback: {
+          type: "success",
+          message:
+            "Chegada confirmada — o rastreio automático foi concluído e não há mais consultas.",
+        },
+        refreshed: false,
+      };
     }
     if (data.skipped === "cooldown") {
       const minutes = Math.max(1, Math.ceil((data.retryAfterSeconds ?? 0) / 60));

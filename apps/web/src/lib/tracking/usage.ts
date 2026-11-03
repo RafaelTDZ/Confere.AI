@@ -1,10 +1,13 @@
 import "server-only";
 
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   trackingGlobalCreditBudget,
   trackingMonthlyCreditBudget,
 } from "@/lib/tracking/config";
+
+const log = createLogger("tracking-usage");
 
 /** Período contábil do orçamento: YYYY-MM em UTC. */
 function trackingPeriod(now = new Date()): string {
@@ -21,7 +24,11 @@ export async function getTrackingCreditsUsed(tenantId: string): Promise<number> 
     .maybeSingle();
 
   if (error) {
-    console.error("[tracking] falha ao ler consumo de créditos:", error.message);
+    log.error("credits_read_failed", {
+      tenantId,
+      period: trackingPeriod(),
+      error: error.message,
+    });
     return 0;
   }
   return data?.credits_used ?? 0;
@@ -35,7 +42,10 @@ async function getGlobalCreditsUsed(): Promise<number> {
     .eq("period", trackingPeriod());
 
   if (error) {
-    console.error("[tracking] falha ao ler consumo global:", error.message);
+    log.error("global_credits_read_failed", {
+      period: trackingPeriod(),
+      error: error.message,
+    });
     return 0;
   }
   return (data ?? []).reduce(
@@ -55,13 +65,31 @@ export async function consumeTrackingCredits(params: {
   const tenantBudget = trackingMonthlyCreditBudget();
   if (tenantBudget > 0) {
     const used = await getTrackingCreditsUsed(params.tenantId);
-    if (used + params.credits > tenantBudget) return false;
+    if (used + params.credits > tenantBudget) {
+      log.warn("tenant_budget_exhausted", {
+        tenantId: params.tenantId,
+        period: trackingPeriod(),
+        credits: params.credits,
+        used,
+        budget: tenantBudget,
+      });
+      return false;
+    }
   }
 
   const globalBudget = trackingGlobalCreditBudget();
   if (globalBudget > 0) {
     const used = await getGlobalCreditsUsed();
-    if (used + params.credits > globalBudget) return false;
+    if (used + params.credits > globalBudget) {
+      log.warn("global_budget_exhausted", {
+        tenantId: params.tenantId,
+        period: trackingPeriod(),
+        credits: params.credits,
+        used,
+        budget: globalBudget,
+      });
+      return false;
+    }
   }
 
   const admin = createSupabaseAdminClient();
@@ -73,8 +101,22 @@ export async function consumeTrackingCredits(params: {
   });
 
   if (error) {
-    console.error("[tracking] falha ao registrar créditos:", error.message);
+    log.error("credits_consume_failed", {
+      tenantId: params.tenantId,
+      period: trackingPeriod(),
+      credits: params.credits,
+      error: error.message,
+    });
     return false;
   }
+
+  if (data !== true) {
+    log.warn("tenant_budget_race", {
+      tenantId: params.tenantId,
+      period: trackingPeriod(),
+      credits: params.credits,
+    });
+  }
+
   return data === true;
 }

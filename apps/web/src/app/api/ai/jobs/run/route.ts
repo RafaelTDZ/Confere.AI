@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { createLogger, createTimer } from "@/lib/observability/logger";
 import { processNextAiJob } from "@/lib/documents/ai-worker";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+const log = createLogger("api/ai/jobs/run");
 const MAX_JOBS_PER_RUN = 3;
 /** Deixa margem para fechar a response antes do teto de 300s da função. */
 const MAX_RUN_MS = 240_000;
@@ -30,22 +32,32 @@ async function drainQueue(request: Request) {
   }
 
   let processed = 0;
-  const startedAt = Date.now();
+  const timer = createTimer();
   try {
     while (
       processed < MAX_JOBS_PER_RUN &&
-      Date.now() - startedAt < MAX_RUN_MS &&
+      Date.now() - timer.startedAt < MAX_RUN_MS &&
       (await processNextAiJob())
     ) {
       processed += 1;
     }
   } catch (error) {
-    console.error("[api/ai/jobs/run]", error);
+    log.error("drain_failed", {
+      processed,
+      elapsedMs: timer.elapsedMs(),
+      error,
+    });
     return NextResponse.json(
       { error: "Falha ao processar a fila", processed },
       { status: 500 },
     );
   }
+
+  log.info("drain_finished", {
+    processed,
+    elapsedMs: timer.elapsedMs(),
+    drainedAll: processed < MAX_JOBS_PER_RUN,
+  });
 
   return NextResponse.json({ processed });
 }

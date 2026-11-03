@@ -343,19 +343,29 @@ describe("matchesTrackingFilter", () => {
     ).toBe(false);
   });
 
-  it("'chegando' inclui ETA atrasado e exclui terminal", () => {
+  it("'chegando' inclui ETA atrasado e exclui chegada confirmada", () => {
     expect(
       matchesTrackingFilter({ ...base, eta: "2026-10-20" }, "chegando", NOW),
     ).toBe(true);
     expect(
       matchesTrackingFilter({ ...base, status: "delivered" }, "chegando", NOW),
     ).toBe(false);
+    expect(
+      matchesTrackingFilter({ ...base, status: "arrived" }, "chegando", NOW),
+    ).toBe(false);
+    expect(
+      matchesTrackingFilter(
+        { ...base, status: "discharged" },
+        "chegando",
+        NOW,
+      ),
+    ).toBe(false);
     expect(matchesTrackingFilter({ ...base, eta: null }, "chegando", NOW)).toBe(
       false,
     );
   });
 
-  it("'sem_consulta' aceita fetched_at nulo e shipment não terminal sem próxima consulta", () => {
+  it("'sem_consulta' aceita fetched_at nulo e shipment sem consulta agendada antes da chegada", () => {
     expect(
       matchesTrackingFilter({ ...base, fetchedAt: null }, "sem_consulta", NOW),
     ).toBe(true);
@@ -369,6 +379,13 @@ describe("matchesTrackingFilter", () => {
     expect(
       matchesTrackingFilter(
         { ...base, nextCheckAt: null, status: "delivered" },
+        "sem_consulta",
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      matchesTrackingFilter(
+        { ...base, nextCheckAt: null, status: "arrived" },
         "sem_consulta",
         NOW,
       ),

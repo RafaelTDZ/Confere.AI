@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog, loggedEvents } from "@/test/logs";
 
 import { sha256Hex } from "@/lib/ai/file-utils";
 import type { PreparedDocument } from "@/lib/ai/document-content";
@@ -443,6 +444,7 @@ function setDefaultMocks() {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
   setDefaultMocks();
 });
 
@@ -626,10 +628,11 @@ describe("runAnalyzePipeline", () => {
         logIds: ["log-1", "log-2"],
       },
     ]);
-    expect(console.error).toHaveBeenCalledWith(
-      "[analyze-pipeline] falha ao vincular ai_logs à importação:",
-      new Error("update falhou"),
-    );
+    expectLog(console.warn, "ai_logs_attach_failed", {
+      importId: "import-1",
+      logIds: 2,
+      error: { message: "update falhou" },
+    });
   });
 
   it("vincula apenas os logs que receberam id", async () => {
@@ -1309,7 +1312,10 @@ describe("runAnalyzePipeline", () => {
       ...invoicePending,
       ...blPending,
     ]);
-    expect(console.error).toHaveBeenCalledTimes(2);
+    expect(loggedEvents(console.warn)).toEqual([
+      "parties_resolve_failed",
+      "parties_resolve_failed",
+    ]);
     expect(mocks.classifyDocument).not.toHaveBeenCalled();
   });
 

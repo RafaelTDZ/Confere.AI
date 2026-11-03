@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createLogger } from "@/lib/observability/logger";
 import { Hash } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -26,6 +27,8 @@ import { cn, formatDate } from "@/lib/utils";
 import { ListFilters } from "@/components/ui/list-filters";
 import { Pagination } from "@/components/ui/pagination";
 
+const log = createLogger("page/ncm");
+
 export default async function NcmPage({
   searchParams,
 }: {
@@ -43,7 +46,10 @@ export default async function NcmPage({
       search: params.q,
     });
   } catch (err) {
-    console.error("[ncm] falha ao listar NCMs:", err);
+    log.warn("ncms_list_failed", {
+      search: params.q,
+      error: err,
+    });
     loadFailed = true;
   }
 

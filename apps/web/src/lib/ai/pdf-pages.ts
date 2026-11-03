@@ -7,6 +7,9 @@ import "server-only";
 import "@napi-rs/canvas";
 import type { FilePart } from "ai";
 import { pdf } from "pdf-to-img";
+import { createLogger } from "@/lib/observability/logger";
+
+const log = createLogger("pdf-pages");
 
 /** Máximo de páginas por análise (custo/latência do worker). */
 const MAX_PDF_PAGES = 30;
@@ -114,10 +117,7 @@ export async function renderPdfPages(
     try {
       await doc.destroy();
     } catch (destroyError) {
-      console.error(
-        "[pdf-pages] falha ao liberar o PDF convertido:",
-        destroyError,
-      );
+      log.error("destroy_failed", { filename, error: destroyError });
     }
   }
 }

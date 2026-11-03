@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 import {
   attachAiLogsToImport,
@@ -113,10 +114,11 @@ describe("persistAiLog", () => {
 
     await expect(persistAiLog(baseParams())).resolves.toBeNull();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[ai_logs] falha ao persistir:",
-      failure,
-    );
+    expectLog(errorSpy, "persist_failed", {
+      capability: "extract_invoice",
+      error: { message: "client indisponível" },
+      unexpected: true,
+    });
     expect(logRows()).toHaveLength(0);
   });
 
@@ -128,10 +130,9 @@ describe("persistAiLog", () => {
 
     await expect(persistAiLog(baseParams())).resolves.toBeNull();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[ai_logs] falha ao persistir:",
-      { message: "insert recusado" },
-    );
+    expectLog(errorSpy, "persist_failed", {
+      error: { message: "insert recusado" },
+    });
     expect(logRows()).toHaveLength(0);
   });
 

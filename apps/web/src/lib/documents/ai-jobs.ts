@@ -2,11 +2,13 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { DocumentType } from "@/lib/ai/schemas";
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/lib/supabase/database.types";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { uploadImportFile } from "@/lib/documents/storage";
 
+const log = createLogger("ai-jobs");
 const JOBS_BUCKET = "import-documents";
 const MAX_ERROR_LENGTH = 500;
 
@@ -265,6 +267,6 @@ export async function removeAiJobFile(storagePath: string): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { error } = await admin.storage.from(JOBS_BUCKET).remove([storagePath]);
   if (error) {
-    console.error("[ai-jobs] falha ao remover arquivo do job", error);
+    log.warn("job_file_remove_failed", { storagePath, error });
   }
 }

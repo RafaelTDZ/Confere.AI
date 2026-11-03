@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 import {
   clearAutoReferenceIfNeeded,
@@ -649,7 +650,7 @@ describe("listTenantImports", () => {
   });
 
   it("mantém a listagem e o ETA da coluna quando a leitura de embarque falha", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     admin.rows("imports").push(
       importSeed({
         id: "import-eta-kept",
@@ -671,10 +672,10 @@ describe("listTenantImports", () => {
       eta: "01/05/2026",
       onboardDate: null,
     });
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao carregar data de embarque:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "onboard_dates_load_failed", {
+      tenantId: TENANT_A,
+      error: { message: "BLs indisponíveis" },
+    });
   });
 
   describe("ordenação", () => {
@@ -907,7 +908,7 @@ describe("listTenantImports", () => {
   });
 
   it("mantém a listagem com status nulo quando a consulta ao rastreio falha", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     readClient.failNext(
       { message: "rastreio indisponível" },
       { table: "tracking_shipments", operation: "select" },
@@ -918,14 +919,14 @@ describe("listTenantImports", () => {
     expect(page.total).toBe(11);
     expect(page.rows.map((row) => row.id)).toContain("import-detail");
     expect(page.rows.every((row) => row.trackingStatus === null)).toBe(true);
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao carregar status do rastreio:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "tracking_status_load_failed", {
+      tenantId: TENANT_A,
+      error: { message: "rastreio indisponível" },
+    });
   });
 
   it("mantém a listagem com data de embarque nula quando a leitura do BL falha", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     readClient.failNext(
       { message: "extrações indisponíveis" },
       { table: "extraction_results", operation: "select" },
@@ -935,10 +936,10 @@ describe("listTenantImports", () => {
 
     expect(page.total).toBe(11);
     expect(page.rows.every((row) => row.onboardDate === null)).toBe(true);
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao carregar data de embarque:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "onboard_dates_load_failed", {
+      tenantId: TENANT_A,
+      error: { message: "extrações indisponíveis" },
+    });
   });
 });
 
@@ -1053,7 +1054,7 @@ describe("syncImportEta", () => {
   });
 
   it("tolera falha ao ler a extração do BL e mantém o ETA atual", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     seedSyncImport("2026-01-01");
     seedSyncBl({ eta: "10/11/2026" });
     adminClient.failNext(
@@ -1066,14 +1067,11 @@ describe("syncImportEta", () => {
     ).resolves.toBeUndefined();
 
     expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-01-01");
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao sincronizar ETA:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "eta_sync_failed", { importId: "import-sync" });
   });
 
   it("tolera falha ao gravar imports.eta", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     seedSyncImport("2026-01-01");
     seedSyncBl({ eta: "10/11/2026" });
     adminClient.failNext(
@@ -1086,24 +1084,18 @@ describe("syncImportEta", () => {
     ).resolves.toBeUndefined();
 
     expect(findImport("import-sync", TENANT_A)?.eta).toBe("2026-01-01");
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao sincronizar ETA:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "eta_sync_failed", { importId: "import-sync" });
   });
 
   it("tolera falha ao criar o client admin", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mocks.failAdminClient = true;
 
     await expect(
       syncImportEta({ tenantId: TENANT_A, importId: "import-sync" }),
     ).resolves.toBeUndefined();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[importacoes] falha ao sincronizar ETA:",
-      expect.any(Error),
-    );
+    expectLog(warnSpy, "eta_sync_failed", { importId: "import-sync" });
   });
 });
 
@@ -1158,10 +1150,12 @@ describe("deleteImportRecord", () => {
       deleteImportRecord(TENANT_A, "import-shared"),
     ).resolves.toBeUndefined();
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[imports delete] Falha ao remover arquivos do Storage",
-      { message: "storage offline" },
-    );
+    expectLog(errorSpy, "storage_cleanup_failed", {
+      tenantId: TENANT_A,
+      importId: "import-shared",
+      paths: 1,
+      error: { message: "storage offline" },
+    });
   });
 
   it("propaga erro do banco ao remover", async () => {
@@ -1895,10 +1889,10 @@ describe("fillImportKeysIfEmpty", () => {
 
     expect(findImport("import-by-invoice", TENANT_A)?.bl_number).toBeNull();
     expect(importsUpdates()).toBe(1);
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[imports] chave de consolidação já pertence a outra importação",
-      expect.objectContaining({ importId: "import-by-invoice" }),
-    );
+    expectLog(warnSpy, "consolidation_key_taken", {
+      importId: "import-by-invoice",
+      conflict: null,
+    });
   });
 });
 

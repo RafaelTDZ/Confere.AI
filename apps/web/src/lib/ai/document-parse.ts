@@ -7,7 +7,10 @@ import {
   getDocumentParseCreditsUsed,
   saveDocumentParse,
 } from "@/lib/documents/document-parses";
+import { createLogger } from "@/lib/observability/logger";
 import { withSpan } from "@/lib/observability/tracing";
+
+const log = createLogger("document-parse");
 
 /** PDF convertido em markdown pelo Firecrawl. */
 type ParsedPdfDocument = {
@@ -245,6 +248,12 @@ export async function parsePdfWithFirecrawl(params: {
       if (limit > 0) {
         const used = await getDocumentParseCreditsUsed(params.tenantId);
         if (used >= limit) {
+          log.warn("parse_budget_exhausted", {
+            tenantId: params.tenantId,
+            filename: params.filename,
+            used,
+            limit,
+          });
           return {
             ok: false,
             errorCode: "budget_exhausted",
@@ -352,9 +361,13 @@ export async function parsePdfWithFirecrawl(params: {
         limit,
       });
       if (!consumed) {
-        console.warn(
-          `[document-parse] orçamento de parse excedido em ${credits} créditos (limite ${limit}); documento processado mesmo assim.`,
-        );
+        log.warn("parse_budget_overrun", {
+          tenantId: params.tenantId,
+          filename: params.filename,
+          pages,
+          credits,
+          limit,
+        });
       }
 
       try {
@@ -367,7 +380,12 @@ export async function parsePdfWithFirecrawl(params: {
         });
       } catch (error) {
         // Cache é otimização: uma falha aqui não invalida o markdown obtido.
-        console.warn("[document-parse] falha ao salvar o cache do parse:", error);
+        log.warn("parse_cache_save_failed", {
+          tenantId: params.tenantId,
+          sha256: params.sha256.slice(0, 12),
+          pages,
+          error,
+        });
       }
 
       span.setAttributes({

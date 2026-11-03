@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 const parseStore = vi.hoisted(() => ({
   getCachedDocumentParse: vi.fn(),
@@ -615,9 +616,7 @@ describe("parsePdfWithFirecrawl", () => {
     const result = await parsePdfWithFirecrawl(pdfParams());
 
     expect(result).toMatchObject({ ok: true });
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining("orçamento de parse excedido"),
-    );
+    expectLog(console.warn, "parse_budget_overrun", { pages: 2, credits: 2 });
   });
 });
 

@@ -11,14 +11,33 @@ import {
   removeAiJobFile,
   type AiJobRow,
 } from "@/lib/documents/ai-jobs";
+import {
+  createLogger,
+  createTimer,
+  runWithLogContext,
+} from "@/lib/observability/logger";
 import { withSpan } from "@/lib/observability/tracing";
 import { runWithAdminReads } from "@/lib/supabase/read-client";
 
+const log = createLogger("ai-worker");
+
 /** Executa um job já reservado: baixa o arquivo, roda o pipeline e fecha o estado. */
 async function runClaimedJob(job: AiJobRow): Promise<void> {
+  const timer = createTimer();
+  const jobLog = log.child({
+    jobId: job.id,
+    tenantId: job.tenant_id,
+    importId: job.import_id ?? undefined,
+    attempt: job.attempts,
+    worker: "ai",
+  });
+
+  jobLog.info("job_started", { storagePath: job.storage_path });
+
   let result;
+  let file: File;
   try {
-    const file = await downloadAiJobFile(job);
+    file = await downloadAiJobFile(job);
     result = await withSpan(
       "ai.job",
       {
@@ -28,12 +47,14 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
       },
       () =>
         runWithAdminReads(() =>
-          runAnalyzePipeline({
-            tenantId: job.tenant_id,
-            userId: job.user_id ?? "",
-            file,
-            importId: job.import_id ?? undefined,
-          }),
+          runWithLogContext({ jobId: job.id, tenantId: job.tenant_id }, () =>
+            runAnalyzePipeline({
+              tenantId: job.tenant_id,
+              userId: job.user_id ?? "",
+              file,
+              importId: job.import_id ?? undefined,
+            }),
+          ),
         ),
     );
   } catch (error) {
@@ -41,22 +62,23 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
     // vai direto para `ai_jobs.error_message`, sem prefixo genérico.
     const message =
       error instanceof Error ? error.message : "Falha ao analisar documento";
-    if (error instanceof PdfConversionError) {
-      console.error("[ai-worker] conversão de PDF falhou", {
-        jobId: job.id,
+    jobLog.error(
+      error instanceof PdfConversionError
+        ? "pdf_conversion_failed"
+        : "job_failed",
+      {
+        error,
         message,
-        cause: error.cause,
-      });
-    } else {
-      console.error("[ai-worker] job falhou", { jobId: job.id, message });
-    }
+        elapsedMs: timer.elapsedMs(),
+      },
+    );
 
     try {
       await markAiJobFailed(job.id, message);
     } catch (markError) {
-      console.error("[ai-worker] falha ao registrar erro do job", {
-        jobId: job.id,
-        markError,
+      jobLog.error("job_fail_persist_failed", {
+        error: markError,
+        originalMessage: message,
       });
     }
     return;
@@ -71,11 +93,19 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
     });
     await removeAiJobFile(job.storage_path);
   } catch (error) {
-    console.error("[ai-worker] falha ao concluir job", {
-      jobId: job.id,
-      error,
-    });
+    jobLog.error("job_finish_failed", { error });
+    return;
   }
+
+  jobLog.info("job_succeeded", {
+    importId: result.importId,
+    types: result.types,
+    deduped: result.deduped,
+    model: result.model,
+    latencyMs: result.latencyMs,
+    elapsedMs: timer.elapsedMs(),
+    fileBytes: file.size,
+  });
 }
 
 /**
@@ -84,7 +114,10 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
  */
 export async function processAiJobById(jobId: string): Promise<void> {
   const job = await claimAiJob(jobId);
-  if (!job) return;
+  if (!job) {
+    log.info("claim_skipped", { jobId, reason: "already_claimed" });
+    return;
+  }
   await runClaimedJob(job);
 }
 

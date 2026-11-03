@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import { getAiJobForTenant } from "@/lib/documents/ai-jobs";
+
+const log = createLogger("api/ai/jobs");
 
 export const runtime = "nodejs";
 
@@ -46,7 +49,7 @@ export async function GET(_request: Request, context: RouteContext) {
         { status: 401 },
       );
     }
-    console.error("[api/ai/jobs GET]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: "Falha ao consultar job de análise" },
       { status: 500 },

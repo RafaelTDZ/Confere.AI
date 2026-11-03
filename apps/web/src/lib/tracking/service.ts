@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import type { Database, Json } from "@/lib/supabase/database.types";
+import { createLogger, createTimer } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { getImportDetail, syncImportEta } from "@/lib/documents/imports";
@@ -11,13 +12,19 @@ import {
   carrierSupportsContainer,
   type CarrierCode,
 } from "@/lib/tracking/carriers";
-import { carrierFromBlPrefix, looksLikeCarrierBl } from "@/lib/tracking/bl-prefix";
+import {
+  carrierFromBlPrefix,
+  looksLikeCarrierBl,
+} from "@/lib/tracking/bl-prefix";
 import {
   estimateFirecrawlCredits,
   isFirecrawlConfigured,
   scrapeWithFirecrawl,
 } from "@/lib/tracking/firecrawl";
-import { buildCarrierActions, buildCarrierScrapeUrl } from "@/lib/tracking/carrier-actions";
+import {
+  buildCarrierActions,
+  buildCarrierScrapeUrl,
+} from "@/lib/tracking/carrier-actions";
 import { fetchMscTracking } from "@/lib/tracking/providers/msc";
 import { fetchHmmTracking } from "@/lib/tracking/providers/hmm";
 import { fetchOneTracking } from "@/lib/tracking/providers/one";
@@ -32,7 +39,7 @@ import {
   type NormalizedTrackingSnapshot,
 } from "@/lib/tracking/normalize";
 import {
-  isTerminalTrackingStatus,
+  isTrackingQueryableStatus,
   TRACKING_STATUSES,
   type ImportTracking,
   type TrackingEvent,
@@ -55,8 +62,9 @@ import {
   validContainerNumbers,
 } from "@/lib/tracking/validate";
 
-type ShipmentRow =
-  Database["public"]["Tables"]["tracking_shipments"]["Row"];
+const log = createLogger("tracking");
+
+type ShipmentRow = Database["public"]["Tables"]["tracking_shipments"]["Row"];
 type EventRow = Database["public"]["Tables"]["tracking_events"]["Row"];
 type JobRow = Database["public"]["Tables"]["tracking_jobs"]["Row"];
 
@@ -80,13 +88,12 @@ const HOUR_MS = 60 * 60 * 1000;
 const DEFAULT_DUE_ENQUEUE_LIMIT = 8;
 
 /**
- * Status que ainda aceitam consulta automática. `delivered`/`empty_returned`
- * são terminais e ficam com `next_check_at` nulo — sem este filtro, o
- * reenfileiramento por vencimento os pegaria para sempre.
+ * Status que ainda aceitam consulta automática. Com a chegada confirmada
+ * (`arrived`/`discharged`) — e nos finais (`delivered`/`empty_returned`) — o
+ * shipment fica com `next_check_at` nulo e sai da fila: sem este filtro, o
+ * reenfileiramento por vencimento o pegaria para sempre.
  */
-const NON_TERMINAL_STATUSES = TRACKING_STATUSES.filter(
-  (status) => !isTerminalTrackingStatus(status),
-);
+const QUERYABLE_STATUSES = TRACKING_STATUSES.filter(isTrackingQueryableStatus);
 
 function mapShipment(row: ShipmentRow): TrackingShipment {
   return {
@@ -185,7 +192,9 @@ export function buildTrackingTargets(
   const effectiveCarrier =
     carrier && carrier !== "unknown"
       ? carrier
-      : (carrierFromBlPrefix(blPayload?.masterBlNumber) ?? carrier ?? "unknown");
+      : (carrierFromBlPrefix(blPayload?.masterBlNumber) ??
+        carrier ??
+        "unknown");
   const carrierStrategy = trackingStrategyForCarrier(effectiveCarrier);
   const queryBl = pickTrackingBlNumber({
     blNumber: blNumber ?? blPayload?.number ?? null,
@@ -203,9 +212,7 @@ export function buildTrackingTargets(
   } else {
     // BL de casa sem master rastreável: o shipment continua visível (link),
     // mas quem consulta é o primeiro container.
-    const houseBl = normalizeBlNumber(
-      blNumber ?? blPayload?.number ?? null,
-    );
+    const houseBl = normalizeBlNumber(blNumber ?? blPayload?.number ?? null);
     if (houseBl) {
       targets.push({
         queryType: "bl",
@@ -229,8 +236,7 @@ export function buildTrackingTargets(
   // válido assume a consulta — e apenas se o portal aceitar container.
   const blConsultable = Boolean(queryBl) && carrierStrategy !== "link";
   const canQueryContainer =
-    carrierStrategy !== "link" &&
-    carrierSupportsContainer(effectiveCarrier);
+    carrierStrategy !== "link" && carrierSupportsContainer(effectiveCarrier);
   const containerTarget =
     blConsultable || !canQueryContainer ? null : (containers[0] ?? null);
 
@@ -274,7 +280,8 @@ function nextCheckAtFor(params: {
   eta: string | null;
   attempts: number;
 }): string | null {
-  if (isTerminalTrackingStatus(params.status)) return null;
+  // Chegada confirmada encerra o rastreio automático: não agenda nova consulta.
+  if (!isTrackingQueryableStatus(params.status)) return null;
 
   let delay =
     params.status === "not_found"
@@ -297,6 +304,93 @@ function daysUntil(date: string): number {
   const target = new Date(`${date}T00:00:00.000Z`).getTime();
   if (Number.isNaN(target)) return Number.POSITIVE_INFINITY;
   return Math.ceil((target - Date.now()) / (24 * HOUR_MS));
+}
+
+/**
+ * Adota as linhas criadas quando o armador ainda não era identificado.
+ *
+ * `carrier_code` faz parte da chave do upsert (`import_id, carrier_code,
+ * query_type, query_value`): sem esta reconciliação, resolver o armador depois
+ * — BL de forwarder sem a marca no texto/navio, inferido pelos containers —
+ * criaria um shipment **duplicado** para o mesmo BL/container. As linhas antigas
+ * passam a apontar para o armador resolvido e voltam a `pending`: o `blocked`
+ * anterior (`carrier_unsupported`) foi consequência do armador errado e não deve
+ * virar histórico do embarque.
+ */
+async function adoptUnknownCarrierRows(params: {
+  admin: AdminClient;
+  tenantId: string;
+  importId: string;
+  carrier: CarrierCode;
+  targets: TrackingTarget[];
+}): Promise<string[]> {
+  // Sem armador resolvido não há o que adotar: as linhas continuam como estão.
+  if (params.carrier === "unknown") return [];
+
+  const { data, error } = await params.admin
+    .from("tracking_shipments")
+    .select("id, carrier_code, query_type, query_value")
+    .eq("tenant_id", params.tenantId)
+    .eq("import_id", params.importId);
+
+  if (error) {
+    throw new Error(`Falha ao listar rastreios: ${error.message}`);
+  }
+
+  const rows = data ?? [];
+  const isTarget = (row: (typeof rows)[number]) =>
+    params.targets.some(
+      (target) =>
+        target.queryType === row.query_type &&
+        target.queryValue === row.query_value,
+    );
+  // Nunca duplica: se já existe linha com o armador certo para o mesmo alvo, a
+  // antiga fica como histórico (`link`) e o upsert não insere de novo.
+  const alreadyAdopted = (row: (typeof rows)[number]) =>
+    rows.some(
+      (other) =>
+        other.id !== row.id &&
+        other.carrier_code === params.carrier &&
+        other.query_type === row.query_type &&
+        other.query_value === row.query_value,
+    );
+
+  const staleIds = rows
+    .filter(
+      (row) =>
+        row.carrier_code === "unknown" && isTarget(row) && !alreadyAdopted(row),
+    )
+    .map((row) => row.id);
+
+  if (staleIds.length === 0) return [];
+
+  const { error: updateError } = await params.admin
+    .from("tracking_shipments")
+    .update({
+      carrier_code: params.carrier,
+      status: "pending",
+      attempts: 0,
+      next_check_at: null,
+      fetched_at: null,
+      last_http_status: null,
+      error_code: null,
+      error_message: null,
+    })
+    .in("id", staleIds)
+    .eq("tenant_id", params.tenantId);
+
+  if (updateError) {
+    throw new Error(`Falha ao atualizar rastreios: ${updateError.message}`);
+  }
+
+  log.info("stale_carrier_adopted", {
+    tenantId: params.tenantId,
+    importId: params.importId,
+    carrier: params.carrier,
+    shipments: staleIds.length,
+  });
+
+  return staleIds;
 }
 
 /**
@@ -323,11 +417,27 @@ export async function enqueueTrackingForImport(params: {
   );
 
   if (targets.length === 0) {
+    log.info("enqueue_no_targets", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      carrier,
+      blNumber: detail.bl_number,
+    });
     return { shipments: 0, queued: 0 };
   }
 
   const admin = createSupabaseAdminClient();
   const strategy = trackingStrategyForCarrier(carrier);
+
+  // Antes do upsert: corrige o `carrier_code` das linhas gravadas quando o
+  // armador não era identificado (senão a chave do upsert cria duplicatas).
+  await adoptUnknownCarrierRows({
+    admin,
+    tenantId: params.tenantId,
+    importId: params.importId,
+    carrier,
+    targets,
+  });
 
   const rows = targets.map((target) => ({
     tenant_id: params.tenantId,
@@ -358,7 +468,9 @@ export async function enqueueTrackingForImport(params: {
 
   const { data: shipments, error: listError } = await admin
     .from("tracking_shipments")
-    .select("id, carrier_code, strategy, next_check_at, query_type, query_value")
+    .select(
+      "id, carrier_code, strategy, status, next_check_at, query_type, query_value",
+    )
     .eq("tenant_id", params.tenantId)
     .eq("import_id", params.importId);
 
@@ -458,7 +570,9 @@ export async function enqueueTrackingForImport(params: {
       (row) =>
         !busy.has(row.id) &&
         row.strategy !== "link" &&
-        row.strategy !== "manual",
+        row.strategy !== "manual" &&
+        // Chegada confirmada: o embarque acabou, não gasta crédito de novo.
+        isTrackingQueryableStatus(row.status),
     )
     .map((row) => ({
       tenant_id: params.tenantId,
@@ -476,6 +590,22 @@ export async function enqueueTrackingForImport(params: {
       throw new Error(`Falha ao enfileirar rastreio: ${insertError.message}`);
     }
   }
+
+  log.info("tracking_enqueued", {
+    tenantId: params.tenantId,
+    importId: params.importId,
+    carrier,
+    strategy,
+    shipments: shipmentIds.length,
+    queued: jobRows.length,
+    downgraded: downgradedIds.length,
+    consultableQuery: consultableTarget
+      ? {
+          type: consultableTarget.queryType,
+          value: consultableTarget.queryValue,
+        }
+      : null,
+  });
 
   return { shipments: shipmentIds.length, queued: jobRows.length };
 }
@@ -504,7 +634,7 @@ export async function enqueueDueTrackingShipments(
     .from("tracking_shipments")
     .select("id, tenant_id, strategy, next_check_at")
     .in("strategy", ["http", "firecrawl"])
-    .in("status", NON_TERMINAL_STATUSES)
+    .in("status", QUERYABLE_STATUSES)
     .or(`next_check_at.is.null,next_check_at.lte.${nowIso}`)
     .order("next_check_at", { ascending: true, nullsFirst: true })
     .limit(limit);
@@ -513,7 +643,10 @@ export async function enqueueDueTrackingShipments(
     throw new Error(`Falha ao listar rastreios vencidos: ${error.message}`);
   }
 
-  if (!shipments || shipments.length === 0) return { queued: 0 };
+  if (!shipments || shipments.length === 0) {
+    log.info("due_enqueue_empty", { limit });
+    return { queued: 0 };
+  }
 
   const shipmentIds = shipments.map((row) => row.id);
   const { data: activeJobs, error: jobsError } = await admin
@@ -550,6 +683,13 @@ export async function enqueueDueTrackingShipments(
     throw new Error(`Falha ao reenfileirar rastreio: ${insertError.message}`);
   }
 
+  log.info("due_enqueue_finished", {
+    candidates: shipments.length,
+    busy: busy.size,
+    queued: jobRows.length,
+    limit,
+  });
+
   return { queued: jobRows.length };
 }
 
@@ -568,9 +708,7 @@ type ScrapeOutcome =
       credits: number;
     };
 
-async function scrapeShipment(
-  shipment: ShipmentRow,
-): Promise<ScrapeOutcome> {
+async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
   if (!isFirecrawlConfigured()) {
     return {
       ok: false,
@@ -958,7 +1096,9 @@ function trackingMilestonePatch(params: {
       }))
       .filter(
         (event): event is { day: string; time: number } =>
-          Boolean(event.day) && Number.isFinite(event.time) && event.time <= now,
+          Boolean(event.day) &&
+          Number.isFinite(event.time) &&
+          event.time <= now,
       )
       .sort((a, b) => b.time - a.time);
 
@@ -1023,10 +1163,12 @@ async function persistSnapshot(params: {
       snapshot: params.snapshot,
     });
   } catch (error) {
-    console.error(
-      "[tracking] falha ao gravar marcos do embarque:",
-      error instanceof Error ? error.message : error,
-    );
+    log.warn("milestones_persist_failed", {
+      tenantId: shipment.tenant_id,
+      importId: shipment.import_id,
+      shipmentId: shipment.id,
+      error,
+    });
   }
 
   const { error: updateError } = await admin
@@ -1079,10 +1221,13 @@ async function persistSnapshot(params: {
         eta: params.snapshot.eta,
       });
     } catch (error) {
-      console.error(
-        "[tracking] falha ao preencher ETA do BL:",
-        error instanceof Error ? error.message : error,
-      );
+      log.warn("bl_eta_fill_failed", {
+        tenantId: shipment.tenant_id,
+        importId: shipment.import_id,
+        shipmentId: shipment.id,
+        eta: params.snapshot.eta,
+        error,
+      });
     }
   }
 
@@ -1110,7 +1255,9 @@ async function persistSnapshot(params: {
     });
 
   if (insertError) {
-    throw new Error(`Falha ao salvar eventos de rastreio: ${insertError.message}`);
+    throw new Error(
+      `Falha ao salvar eventos de rastreio: ${insertError.message}`,
+    );
   }
 }
 
@@ -1318,6 +1465,16 @@ async function fallbackToFirstContainer(shipment: ShipmentRow): Promise<void> {
     }
   }
 
+  log.info("fallback_container_promoted", {
+    tenantId: shipment.tenant_id,
+    importId: shipment.import_id,
+    blShipmentId: shipment.id,
+    containerShipmentId: container.id,
+    carrier,
+    strategy,
+    demotedShipments: demotedIds.length,
+  });
+
   // Consulta única do container promovido; `fillBlEta` já é o padrão de
   // `processShipment`, então o ETA dele preenche o formulário do BL.
   await processShipment(promoted as ShipmentRow);
@@ -1325,6 +1482,17 @@ async function fallbackToFirstContainer(shipment: ShipmentRow): Promise<void> {
 
 async function processShipment(shipment: ShipmentRow): Promise<boolean> {
   const admin = createSupabaseAdminClient();
+  const timer = createTimer();
+  const shipmentLog = log.child({
+    tenantId: shipment.tenant_id,
+    importId: shipment.import_id,
+    shipmentId: shipment.id,
+    carrier: shipment.carrier_code,
+    strategy: shipment.strategy,
+    queryType: shipment.query_type,
+    queryValue: shipment.query_value,
+    attempt: shipment.attempts + 1,
+  });
 
   // Lock otimista: cron e botão manual podem disputar o mesmo shipment.
   const now = new Date().toISOString();
@@ -1339,10 +1507,20 @@ async function processShipment(shipment: ShipmentRow): Promise<boolean> {
     .select("id")
     .maybeSingle();
 
-  if (!claimed) return true;
+  if (!claimed) {
+    shipmentLog.info("shipment_locked_skip");
+    return true;
+  }
 
   const outcome = await scrapeShipment(shipment);
   if (!outcome.ok) {
+    shipmentLog.warn("shipment_failed", {
+      status: outcome.status,
+      errorCode: outcome.errorCode,
+      errorMessage: outcome.errorMessage,
+      credits: outcome.credits,
+      elapsedMs: timer.elapsedMs(),
+    });
     await markShipmentFailure({
       shipment,
       status: outcome.status,
@@ -1363,6 +1541,23 @@ async function processShipment(shipment: ShipmentRow): Promise<boolean> {
     fillBlEta: true,
   });
 
+  shipmentLog.info("shipment_succeeded", {
+    status: outcome.snapshot.status,
+    eta: outcome.snapshot.eta,
+    vessel: outcome.snapshot.vessel,
+    events: outcome.snapshot.events.length,
+    containers: outcome.snapshot.containers.length,
+    credits: outcome.credits,
+    httpStatus: outcome.httpStatus,
+    vesselMismatch: outcome.snapshot.vesselMismatch
+      ? {
+          expected: outcome.snapshot.vesselMismatch.expected,
+          found: outcome.snapshot.vesselMismatch.found,
+        }
+      : undefined,
+    elapsedMs: timer.elapsedMs(),
+  });
+
   // BLs de alguns armadores (Evergreen) já retornam todos os containers:
   // replica o resultado para as linhas de container e evita scrapes extras.
   if (shipment.query_type === "bl" && outcome.snapshot.containers.length > 0) {
@@ -1376,17 +1571,17 @@ async function processShipment(shipment: ShipmentRow): Promise<boolean> {
   // Fallback aprovado: o BL existe no documento, mas o armador não o conhece
   // (BL de casa). O primeiro container assume a consulta por uma única
   // tentativa. Falha aqui nunca derruba o BL, que já foi persistido.
-  if (
-    shipment.query_type === "bl" &&
-    outcome.snapshot.status === "not_found"
-  ) {
+  if (shipment.query_type === "bl" && outcome.snapshot.status === "not_found") {
     try {
       await fallbackToFirstContainer(shipment);
     } catch (error) {
-      console.error(
-        "[tracking] fallback de container falhou:",
-        error instanceof Error ? error.message : error,
-      );
+      log.error("fallback_container_failed", {
+        tenantId: shipment.tenant_id,
+        importId: shipment.import_id,
+        shipmentId: shipment.id,
+        carrier: shipment.carrier_code,
+        error,
+      });
     }
   }
 
@@ -1540,9 +1735,11 @@ export async function processQueuedTrackingJobs(params: {
   importId?: string;
 }): Promise<{ processed: number; failed: number }> {
   const admin = createSupabaseAdminClient();
+  const worker = params.worker ?? "cron";
+  const timer = createTimer();
   const jobs = await claimTrackingJobs({
     admin,
-    worker: params.worker ?? "cron",
+    worker,
     limit: params.limit ?? 3,
     importId: params.importId,
   });
@@ -1551,6 +1748,14 @@ export async function processQueuedTrackingJobs(params: {
   let failed = 0;
 
   for (const job of jobs) {
+    const jobLog = log.child({
+      jobId: job.id,
+      shipmentId: job.shipment_id,
+      tenantId: job.tenant_id,
+      importId: params.importId,
+      worker,
+    });
+
     const { data: shipment } = await admin
       .from("tracking_shipments")
       .select("*")
@@ -1563,6 +1768,7 @@ export async function processQueuedTrackingJobs(params: {
         .from("tracking_jobs")
         .update({ status: "failed", last_error: "shipment_not_found" })
         .eq("id", job.id);
+      jobLog.warn("job_shipment_missing");
       failed += 1;
       continue;
     }
@@ -1572,6 +1778,19 @@ export async function processQueuedTrackingJobs(params: {
         .from("tracking_jobs")
         .update({ status: "done", last_error: "covered_by_bl" })
         .eq("id", job.id);
+      jobLog.debug("job_skipped_link", { carrier: shipment.carrier_code });
+      processed += 1;
+      continue;
+    }
+
+    // Chegada confirmada: job que sobrou na fila (enfileirado antes do status
+    // virar `arrived`) é encerrado sem scrape — não gasta crédito à toa.
+    if (!isTrackingQueryableStatus(shipment.status)) {
+      await admin
+        .from("tracking_jobs")
+        .update({ status: "done", last_error: "arrived" })
+        .eq("id", job.id);
+      jobLog.info("job_skipped_arrived", { status: shipment.status });
       processed += 1;
       continue;
     }
@@ -1589,16 +1808,32 @@ export async function processQueuedTrackingJobs(params: {
       else failed += 1;
     } catch (error) {
       failed += 1;
+      jobLog.error("job_failed", {
+        carrier: shipment.carrier_code,
+        strategy: shipment.strategy,
+        error,
+      });
       await admin
         .from("tracking_jobs")
         .update({
           status: "failed",
           last_error:
-            error instanceof Error ? error.message.slice(0, 500) : String(error),
+            error instanceof Error
+              ? error.message.slice(0, 500)
+              : String(error),
         })
         .eq("id", job.id);
     }
   }
+
+  log.info("batch_finished", {
+    worker,
+    importId: params.importId,
+    claimed: jobs.length,
+    processed,
+    failed,
+    elapsedMs: timer.elapsedMs(),
+  });
 
   return { processed, failed };
 }
@@ -1613,11 +1848,13 @@ export async function processQueuedTrackingJobs(params: {
  * consultável, mesmo fora da cadência); sem `force`, só age quando há alvo
  * vencido — e aí nem enfileira, para não deixar job esperando o cron.
  *
- * Antes de qualquer enfileiramento, aplica o **cache curto** do botão
- * (`TRACKING_REFRESH_COOLDOWN_MINUTES`): se o alvo consultável já foi buscado
- * há menos de N minutos — inclusive quando a última busca falhou — devolve
- * `skipped: "cooldown"` sem gastar crédito. `force` não fura o cooldown; `0`
- * desativa. Cron e a primeira consulta da análise não usam este caminho.
+ * Antes de qualquer enfileiramento, encerra o rastreio quando o alvo
+ * consultável já tem **chegada confirmada** (`skipped: "arrived"`) e aplica o
+ * **cache curto** do botão (`TRACKING_REFRESH_COOLDOWN_MINUTES`): se o alvo
+ * consultável já foi buscado há menos de N minutos — inclusive quando a última
+ * busca falhou — devolve `skipped: "cooldown"` sem gastar crédito. `force` não
+ * fura nenhum dos dois; `0` desativa o cooldown. Cron e a primeira consulta da
+ * análise não usam este caminho.
  */
 export async function refreshTrackingForImport(params: {
   tenantId: string;
@@ -1626,13 +1863,13 @@ export async function refreshTrackingForImport(params: {
 }): Promise<{
   processed: number;
   failed: number;
-  skipped?: "cooldown";
+  skipped?: "cooldown" | "arrived";
   retryAfterSeconds?: number;
 }> {
   const admin = createSupabaseAdminClient();
   const { data: shipments, error } = await admin
     .from("tracking_shipments")
-    .select("id, strategy, next_check_at, fetched_at")
+    .select("id, strategy, status, next_check_at, fetched_at")
     .eq("tenant_id", params.tenantId)
     .eq("import_id", params.importId)
     .in("strategy", ["http", "firecrawl"]);
@@ -1642,6 +1879,21 @@ export async function refreshTrackingForImport(params: {
   }
 
   const current = shipments ?? [];
+
+  // Chegada confirmada: a carga chegou ao destino, o ciclo terminou. Mesmo
+  // `force` não faz sentido aqui — consultar de novo só gastaria crédito.
+  if (
+    current.length > 0 &&
+    current.every((row) => !isTrackingQueryableStatus(row.status))
+  ) {
+    log.info("refresh_skipped_arrived", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      targets: current.length,
+      statuses: current.map((row) => row.status),
+    });
+    return { processed: 0, failed: 0, skipped: "arrived" };
+  }
 
   const cooldownMinutes = trackingRefreshCooldownMinutes();
   if (cooldownMinutes > 0) {
@@ -1658,6 +1910,12 @@ export async function refreshTrackingForImport(params: {
       const retryAfterMs =
         lastFetchedAt + cooldownMinutes * 60_000 - Date.now();
       if (retryAfterMs > 0) {
+        log.info("refresh_skipped_cooldown", {
+          tenantId: params.tenantId,
+          importId: params.importId,
+          cooldownMinutes,
+          retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
+        });
         return {
           processed: 0,
           failed: 0,
@@ -1677,8 +1935,20 @@ export async function refreshTrackingForImport(params: {
   );
 
   if (!params.force && current.length > 0 && due.length === 0) {
+    log.info("refresh_skipped_not_due", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      targets: current.length,
+    });
     return { processed: 0, failed: 0 };
   }
+
+  log.info("refresh_started", {
+    tenantId: params.tenantId,
+    importId: params.importId,
+    force: Boolean(params.force),
+    dueTargets: due.length,
+  });
 
   await enqueueTrackingForImport({
     tenantId: params.tenantId,
@@ -1759,9 +2029,7 @@ export async function getTrackingForImport(
     .order("created_at", { ascending: true });
 
   if (shipmentsError) {
-    throw new Error(
-      `Falha ao carregar rastreios: ${shipmentsError.message}`,
-    );
+    throw new Error(`Falha ao carregar rastreios: ${shipmentsError.message}`);
   }
 
   const shipmentIds = (shipments ?? []).map((row) => row.id);
@@ -1853,7 +2121,9 @@ export async function addManualTrackingEvent(params: {
       normalizeBlNumber(detail.bl_number) ??
       normalizeBlNumber(detail.bl?.number ?? null);
     if (!queryValue) {
-      throw new Error("Importação sem BL: informe o número do BL antes do rastreio manual");
+      throw new Error(
+        "Importação sem BL: informe o número do BL antes do rastreio manual",
+      );
     }
 
     const { data: created, error: createError } = await admin
@@ -1883,7 +2153,8 @@ export async function addManualTrackingEvent(params: {
     normalizeTrackingNumber(params.event.containerNumber) ??
     shipment.container_number;
 
-  const status = inferTrackingStatus(params.event.status) ??
+  const status =
+    inferTrackingStatus(params.event.status) ??
     inferTrackingStatus(description) ??
     "in_transit";
 
@@ -1896,7 +2167,11 @@ export async function addManualTrackingEvent(params: {
     description,
     container_number: containerNumber,
     source: "manual",
-    fingerprint: fingerprint([containerNumber, eventAt, description.toLowerCase()]),
+    fingerprint: fingerprint([
+      containerNumber,
+      eventAt,
+      description.toLowerCase(),
+    ]),
     created_by: params.userId,
   });
 

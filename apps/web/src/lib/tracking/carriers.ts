@@ -168,12 +168,49 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Prefixos de containers próprios da Hapag-Lloyd (HLBU/HLXU/HLKU). */
-const HAPAG_CONTAINER_RE = /^HL[BXK]U\d{7}$/;
+/**
+ * Prefixos (owner code BIC) dos containers do **próprio armador**. Containers
+ * de locadora — TXTU, TGHU, SEGU, TCNU, TXGU… — pertencem ao dono do
+ * equipamento e não identificam o armador, então não entram aqui.
+ *
+ * É o último recurso da inferência: vale quando o BL é emitido por forwarder, o
+ * texto não cita o armador e o nome do navio não tem a marca (ex.: `LE HAVRE`,
+ * da MSC, com containers MSGU/MSCU/MEDU).
+ */
+const CARRIER_CONTAINER_PREFIXES: ReadonlyArray<
+  readonly [CarrierCode, readonly string[]]
+> = [
+  ["maersk", ["MAEU", "MRKU", "MRSU", "SUDU"]],
+  ["msc", ["MSCU", "MEDU", "MSGU", "MSDU", "MSBU"]],
+  ["cma", ["CMDU", "CMAU", "CGMU"]],
+  ["hapag", ["HLBU", "HLXU", "HLKU"]],
+  ["cosco", ["COSU", "CSNU", "CBHU"]],
+  ["evergreen", ["EGLV", "EGHU", "EGSU", "EMCU"]],
+  ["hmm", ["HMMU", "HDMU"]],
+  ["one", ["ONEU"]],
+  ["oocl", ["OOLU", "OOCU"]],
+];
+
+const CONTAINER_PREFIX_RE = /^([A-Z]{4})\d{7}$/;
+
+/** Armador dono do prefixo do container (ISO 6346), se mapeado. */
+export function carrierFromContainerPrefix(
+  value: string | null | undefined,
+): CarrierCode | null {
+  const normalized = normalizeTrackingNumber(value);
+  const prefix = normalized ? CONTAINER_PREFIX_RE.exec(normalized)?.[1] : null;
+  if (!prefix) return null;
+
+  for (const [carrier, prefixes] of CARRIER_CONTAINER_PREFIXES) {
+    if (prefixes.includes(prefix)) return carrier;
+  }
+  return null;
+}
 
 /**
  * Detecta o armador pelo texto do BL, pelo navio e, quando o BL é de
- * forwarder (carrier desconhecido), pelos containers HLBU/HLXU/HLKU.
+ * forwarder (carrier desconhecido), pelos containers do próprio armador
+ * (Hapag `HLBU`, MSC `MSGU`, Maersk `MRKU`, ...).
  */
 export function inferCarrier(
   carrierText: string | null | undefined,
@@ -202,8 +239,8 @@ export function inferCarrier(
   }
 
   for (const value of containers) {
-    const normalized = normalizeTrackingNumber(value);
-    if (normalized && HAPAG_CONTAINER_RE.test(normalized)) return "hapag";
+    const carrier = carrierFromContainerPrefix(value);
+    if (carrier) return carrier;
   }
   return "unknown";
 }

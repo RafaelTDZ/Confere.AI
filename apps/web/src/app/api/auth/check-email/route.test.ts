@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 import { POST } from "@/app/api/auth/check-email/route";
 
@@ -160,10 +161,9 @@ describe("POST /api/auth/check-email", () => {
     expect(status).toBe(200);
     expect(body).toEqual({ exists: true });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledWith(
-      "[auth/check-email] rate limit indisponível",
-      failure,
-    );
+    expectLog(consoleError, "rate_limit_unavailable", {
+      error: { message: "banco indisponível" },
+    });
   });
 
   it("usa o primeiro IP de x-forwarded-for no bucket com hash, sem IP cru", async () => {

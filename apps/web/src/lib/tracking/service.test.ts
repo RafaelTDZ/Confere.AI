@@ -8,10 +8,12 @@ import {
   refreshTrackingForImport,
 } from "@/lib/tracking/service";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
+import { expectLog } from "@/test/logs";
 
 const mocks = vi.hoisted(() => ({
   admin: undefined as unknown,
   scrape: vi.fn(),
+  msc: vi.fn(),
   getImportDetail: vi.fn(),
   syncImportEta: vi.fn(),
 }));
@@ -33,6 +35,10 @@ vi.mock("@/lib/tracking/firecrawl", () => ({
   isFirecrawlConfigured: () => true,
   estimateFirecrawlCredits: () => 5,
   scrapeWithFirecrawl: mocks.scrape,
+}));
+
+vi.mock("@/lib/tracking/providers/msc", () => ({
+  fetchMscTracking: mocks.msc,
 }));
 
 vi.mock("@/lib/tracking/usage", () => ({
@@ -442,7 +448,10 @@ describe("prioritizeBlShipments", () => {
       { id: "container-2", query_type: "container" },
     ]);
 
-    expect(ordered.map((row) => row.id)).toEqual(["container-1", "container-2"]);
+    expect(ordered.map((row) => row.id)).toEqual([
+      "container-1",
+      "container-2",
+    ]);
   });
 
   it("nÃ£o muta a lista recebida", () => {
@@ -513,7 +522,11 @@ describe("enqueueDueTrackingShipments", () => {
   it("cria o job `queued` com run_after = now e a estratÃ©gia do shipment", async () => {
     db.rows("tracking_shipments").push(
       shipmentRow({ id: "http", tenant_id: "tenant-a", strategy: "http" }),
-      shipmentRow({ id: "firecrawl", tenant_id: "tenant-b", strategy: "firecrawl" }),
+      shipmentRow({
+        id: "firecrawl",
+        tenant_id: "tenant-b",
+        strategy: "firecrawl",
+      }),
     );
 
     await enqueueDueTrackingShipments({ now: NOW });
@@ -545,7 +558,7 @@ describe("enqueueDueTrackingShipments", () => {
     ]);
   });
 
-  it("ignora alvos link/manual e status terminais", async () => {
+  it("ignora alvos link/manual e embarques com chegada confirmada", async () => {
     db.rows("tracking_shipments").push(
       shipmentRow({ id: "link", strategy: "link", next_check_at: null }),
       shipmentRow({ id: "manual", strategy: "manual", next_check_at: null }),
@@ -553,6 +566,12 @@ describe("enqueueDueTrackingShipments", () => {
       shipmentRow({
         id: "vazio-devolvido",
         status: "empty_returned",
+        next_check_at: null,
+      }),
+      shipmentRow({ id: "chegou", status: "arrived", next_check_at: null }),
+      shipmentRow({
+        id: "descarregado",
+        status: "discharged",
         next_check_at: null,
       }),
     );
@@ -700,6 +719,7 @@ describe("refreshTrackingForImport", () => {
     mocks.admin = db;
     mocks.scrape.mockReset();
     mocks.scrape.mockResolvedValue(firecrawlResult());
+    mocks.msc.mockReset();
     mocks.getImportDetail.mockReset();
     mocks.getImportDetail.mockResolvedValue({
       bl_number: "276430227",
@@ -769,6 +789,33 @@ describe("refreshTrackingForImport", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it("não consulta o armador quando a chegada já foi confirmada", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({ id: "bl", status: "arrived", next_check_at: null }),
+      shipmentRow({
+        id: "container-1",
+        strategy: "link",
+        query_type: "container",
+        query_value: "MMAU1421499",
+        container_number: "MMAU1421499",
+        status: "arrived",
+        next_check_at: null,
+      }),
+    );
+
+    const result = await refreshTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+      // Nem com force: o embarque já chegou ao destino.
+      force: true,
+    });
+
+    expect(result).toEqual({ processed: 0, failed: 0, skipped: "arrived" });
+    expect(mocks.scrape).not.toHaveBeenCalled();
+    expect(db.rows("tracking_jobs")).toHaveLength(0);
+    expect(mocks.getImportDetail).not.toHaveBeenCalled();
   });
 
   it("consulta o primeiro container quando o BL Ã© link (CMA/MSC)", async () => {
@@ -886,6 +933,104 @@ describe("refreshTrackingForImport", () => {
     ).toHaveLength(0);
   });
 
+  it("resolve o armador inferido pelos containers e reaproveita as linhas do armador desconhecido", async () => {
+    // OYH142: BL de casa da LX Pantos, navio `LE HAVRE` sem a marca da MSC.
+    // A primeira análise gravou tudo como `unknown` (BL em `blocked`); ao
+    // identificar o armador, as linhas antigas são adotadas — não duplicadas —
+    // e o primeiro container assume a consulta pela API da MSC.
+    mocks.getImportDetail.mockResolvedValue({
+      bl_number: "PLIQD4H08324",
+      bl: {
+        number: "PLIQD4H08324",
+        carrier: null,
+        vessel: "LE HAVRE",
+        containerNumbers: ["TXTU4077041", "MSGU6161889"],
+      },
+    });
+    mocks.msc.mockResolvedValue({
+      ok: true,
+      httpStatus: 200,
+      snapshot: {
+        found: true,
+        status: "in_transit",
+        vessel: "LE HAVRE",
+        voyage: "QI640A",
+        eta: "2026-11-24",
+        containers: ["TXTU4077041"],
+        events: [],
+        notes: null,
+      },
+    });
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        id: "bl",
+        carrier_code: "unknown",
+        strategy: "firecrawl",
+        query_value: "PLIQD4H08324",
+        status: "blocked",
+        error_code: "carrier_unsupported",
+        error_message: "Armador sem portal de rastreio suportado",
+        next_check_at: null,
+        fetched_at: "2020-01-01T00:00:00.000Z",
+      }),
+      shipmentRow({
+        id: "container-1",
+        carrier_code: "unknown",
+        strategy: "link",
+        query_type: "container",
+        query_value: "TXTU4077041",
+        container_number: "TXTU4077041",
+        status: "pending",
+        next_check_at: null,
+      }),
+      shipmentRow({
+        id: "container-2",
+        carrier_code: "unknown",
+        strategy: "link",
+        query_type: "container",
+        query_value: "MSGU6161889",
+        container_number: "MSGU6161889",
+        status: "pending",
+        next_check_at: null,
+      }),
+    );
+
+    const result = await refreshTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+      force: true,
+    });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    const shipments = db.rows("tracking_shipments");
+    // Uma linha por BL/container: o armador foi corrigido, não duplicado.
+    expect(shipments).toHaveLength(3);
+    expect(shipments.map((row) => row.carrier_code)).toEqual([
+      "msc",
+      "msc",
+      "msc",
+    ]);
+    // O `blocked` anterior era consequência do armador errado.
+    expect(shipments.find((row) => row.id === "bl")).toMatchObject({
+      strategy: "link",
+      status: "pending",
+      error_code: null,
+    });
+    expect(shipments.find((row) => row.id === "container-1")).toMatchObject({
+      strategy: "http",
+      query_value: "TXTU4077041",
+      eta: "2026-11-24",
+    });
+    expect(shipments.find((row) => row.id === "container-2")).toMatchObject({
+      strategy: "link",
+    });
+    expect(mocks.msc).toHaveBeenCalledWith({
+      queryType: "container",
+      queryValue: "TXTU4077041",
+    });
+    expect(mocks.scrape).not.toHaveBeenCalled();
+  });
+
   it("rebaixa containers antigos e encerra os jobs Ã³rfÃ£os antes de consultar", async () => {
     db.rows("tracking_shipments").push(
       shipmentRow({ id: "bl", next_check_at: null }),
@@ -914,7 +1059,9 @@ describe("refreshTrackingForImport", () => {
     expect(result).toEqual({ processed: 1, failed: 0 });
     expect(mocks.scrape).toHaveBeenCalledTimes(1);
     expect(
-      db.rows("tracking_shipments").find((row) => row.id === "legacy-container"),
+      db
+        .rows("tracking_shipments")
+        .find((row) => row.id === "legacy-container"),
     ).toMatchObject({ strategy: "link", next_check_at: null });
     expect(
       db.rows("tracking_jobs").find((job) => job.id === "job-legacy"),
@@ -940,7 +1087,11 @@ describe("refreshTrackingForImport", () => {
       force: true,
     });
 
-    expect(result).toMatchObject({ processed: 0, failed: 0, skipped: "cooldown" });
+    expect(result).toMatchObject({
+      processed: 0,
+      failed: 0,
+      skipped: "cooldown",
+    });
     // Faltam ~25 min dos 30: o retry acompanha o relÃ³gio do servidor.
     expect(result.retryAfterSeconds).toBeGreaterThan(24 * 60);
     expect(result.retryAfterSeconds).toBeLessThanOrEqual(25 * 60);
@@ -1149,6 +1300,7 @@ describe("processQueuedTrackingJobs â€” recuperaÃ§Ã£o de job `running` 
 describe("processQueuedTrackingJobs â€” ETA do BL", () => {
   let db: FakeSupabase;
   let consoleError: ReturnType<typeof vi.spyOn>;
+  let consoleWarn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     db = new FakeSupabase({
@@ -1161,10 +1313,12 @@ describe("processQueuedTrackingJobs â€” ETA do BL", () => {
     mocks.scrape.mockReset();
     mocks.scrape.mockResolvedValue(firecrawlResult());
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleError.mockRestore();
+    consoleWarn.mockRestore();
   });
 
   it("preenche o eta do payload do BL quando estÃ¡ vazio", async () => {
@@ -1274,10 +1428,36 @@ describe("processQueuedTrackingJobs â€” ETA do BL", () => {
     expect(db.rows("extraction_results")[0]?.payload).toMatchObject({
       eta: null,
     });
-    expect(consoleError).toHaveBeenCalledWith(
-      "[tracking] falha ao preencher ETA do BL:",
-      "Falha ao salvar ETA do BL: banco fora",
+    expectLog(consoleWarn, "bl_eta_fill_failed", {
+      error: { message: "Falha ao salvar ETA do BL: banco fora" },
+    });
+  });
+});
+
+describe("processQueuedTrackingJobs — chegada confirmada", () => {
+  let db: FakeSupabase;
+
+  beforeEach(() => {
+    db = new FakeSupabase({ tracking_shipments: [], tracking_jobs: [] });
+    mocks.admin = db;
+    mocks.scrape.mockReset();
+    mocks.scrape.mockResolvedValue(firecrawlResult());
+  });
+
+  it("encerra o job sem consultar o armador", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({ status: "discharged", next_check_at: null }),
     );
+    seedQueuedJob(db);
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(mocks.scrape).not.toHaveBeenCalled();
+    expect(db.rows("tracking_jobs")[0]).toMatchObject({
+      status: "done",
+      last_error: "arrived",
+    });
   });
 });
 
@@ -1379,6 +1559,7 @@ describe("processQueuedTrackingJobs â€” divergÃªncia de navio", () => {
 describe("processQueuedTrackingJobs â€” fallback BL not_found â†’ 1Âº container", () => {
   let db: FakeSupabase;
   let consoleError: ReturnType<typeof vi.spyOn>;
+  let consoleWarn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     db = new FakeSupabase({
@@ -1390,10 +1571,12 @@ describe("processQueuedTrackingJobs â€” fallback BL not_found â†’ 1Â�
     mocks.admin = db;
     mocks.scrape.mockReset();
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleError.mockRestore();
+    consoleWarn.mockRestore();
   });
 
   function seedBlJob(shipmentId: string): void {
@@ -1586,17 +1769,20 @@ describe("processQueuedTrackingJobs â€” fallback BL not_found â†’ 1Â�
     expect(bl?.fetched_at).toBeTruthy();
     expect(bl?.error_code).toBeNull();
     expect(db.rows("tracking_jobs")[0]?.status).toBe("done");
-    expect(consoleError).toHaveBeenCalledWith(
-      "[tracking] fallback de container falhou:",
-      "portal fora",
-    );
+    expectLog(consoleError, "fallback_container_failed", {
+      error: { message: "portal fora" },
+    });
   });
 });
 
 /** Resposta do Firecrawl com eventos de container (base dos marcos). */
 function firecrawlEventsResult(params: {
   eta?: string | null;
-  events?: Array<{ date: string; description: string; location?: string | null }>;
+  events?: Array<{
+    date: string;
+    description: string;
+    location?: string | null;
+  }>;
 }) {
   return {
     ok: true,
@@ -1630,6 +1816,7 @@ function firecrawlEventsResult(params: {
 describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
   let db: FakeSupabase;
   let consoleError: ReturnType<typeof vi.spyOn>;
+  let consoleWarn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     db = new FakeSupabase({
@@ -1641,10 +1828,12 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     mocks.admin = db;
     mocks.scrape.mockReset();
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleError.mockRestore();
+    consoleWarn.mockRestore();
   });
 
   function seedJob(id: string): void {
@@ -1667,7 +1856,9 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
         raw: {},
       }),
     );
-    mocks.scrape.mockResolvedValue(firecrawlEventsResult({ eta: "2026-11-14" }));
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({ eta: "2026-11-14" }),
+    );
     seedJob("job-1");
 
     const first = await processQueuedTrackingJobs({ limit: 1 });
@@ -1676,7 +1867,9 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     expect(db.rows("tracking_shipments")[0]?.eta_original).toBe("2026-11-14");
 
     // O armador mudou o ETA: o marco original nÃ£o pode ser sobrescrito.
-    mocks.scrape.mockResolvedValue(firecrawlEventsResult({ eta: "2026-11-20" }));
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({ eta: "2026-11-20" }),
+    );
     seedJob("job-2");
 
     const second = await processQueuedTrackingJobs({ limit: 1 });
@@ -1723,6 +1916,38 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     const shipment = db.rows("tracking_shipments")[0];
     expect(shipment?.ata).toBe(arrival.slice(0, 10));
     expect(shipment?.eta_original).toBe("2026-11-10");
+  });
+
+  it("não agenda nova consulta quando o snapshot confirma a chegada", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        status: "in_transit",
+        eta: "2026-11-12",
+        ata: null,
+        raw: {},
+      }),
+    );
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({
+        eta: "2026-11-12",
+        events: [
+          {
+            date: daysAgo(1),
+            location: "Santos",
+            description: "Discharged at Santos",
+          },
+        ],
+      }),
+    );
+    seedJob("job-arrived");
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    const shipment = db.rows("tracking_shipments")[0];
+    expect(shipment?.status).toBe("discharged");
+    // Chegada confirmada encerra o rastreio automático.
+    expect(shipment?.next_check_at).toBeNull();
   });
 
   it("nÃ£o sobrescreve marcos jÃ¡ gravados", async () => {
@@ -1865,7 +2090,9 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
         raw: {},
       }),
     );
-    mocks.scrape.mockResolvedValue(firecrawlEventsResult({ eta: "2026-11-14" }));
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({ eta: "2026-11-14" }),
+    );
     seedJob("job-falha");
     db.failNext(
       { message: "banco fora" },
@@ -1892,18 +2119,14 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     expect(shipment?.eta_original).toBeNull();
     expect(shipment?.fetched_at).toBeTruthy();
     expect(db.rows("tracking_jobs")[0]?.status).toBe("done");
-    expect(consoleError).toHaveBeenCalledWith(
-      "[tracking] falha ao gravar marcos do embarque:",
-      "Falha ao salvar marcos do embarque: banco fora",
-    );
+    expectLog(consoleWarn, "milestones_persist_failed", {
+      error: { message: "Falha ao salvar marcos do embarque: banco fora" },
+    });
   });
 });
 
 describe("getPrimaryTrackingShipmentId", () => {
-  function primaryRow(
-    id: string,
-    overrides: FakeRow = {},
-  ): FakeRow {
+  function primaryRow(id: string, overrides: FakeRow = {}): FakeRow {
     return {
       id,
       tenant_id: "tenant-1",
@@ -1999,4 +2222,3 @@ describe("getPrimaryTrackingShipmentId", () => {
     ).resolves.toBe("outra-importacao");
   });
 });
-

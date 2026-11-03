@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { AiConfigError } from "@/lib/ai";
 import { AI_PROVIDER_CATALOG } from "@/lib/ai/catalog";
 import type { AiProviderId } from "@/lib/ai/provider";
@@ -29,6 +30,8 @@ function payload() {
   }));
 }
 
+const log = createLogger("api/settings/ai");
+
 /** Config global de IA (apenas super-admin). */
 export async function GET() {
   try {
@@ -47,7 +50,7 @@ export async function GET() {
     if (error instanceof AiConfigError) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }
-    console.error("[api/settings/ai] GET error:", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: "Falha ao carregar configurações de IA" },
       { status: 500 },
@@ -89,7 +92,7 @@ export async function PUT(request: Request) {
         { status: 401 },
       );
     }
-    console.error("[api/settings/ai] PUT error:", error);
+    log.error("request_failed", { error });
     const message =
       error instanceof Error ? error.message : "Falha ao salvar configurações";
     const status = /obrigatório|inválid|longo|pertence/i.test(message)
@@ -115,7 +118,7 @@ export async function DELETE() {
         { status: 401 },
       );
     }
-    console.error("[api/settings/ai] DELETE error:", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: "Falha ao redefinir configurações" },
       { status: 500 },

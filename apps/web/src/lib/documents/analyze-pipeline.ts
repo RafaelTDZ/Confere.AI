@@ -80,6 +80,13 @@ import {
   uploadImportFile,
 } from "@/lib/documents/storage";
 import { recordAiCall, withSpan } from "@/lib/observability/tracing";
+import {
+  createLogger,
+  createTimer,
+  runWithLogContext,
+} from "@/lib/observability/logger";
+
+const log = createLogger("analyze-pipeline");
 
 export type AnalyzePipelineResult = {
   importId: string;
@@ -383,10 +390,12 @@ async function buildReusableResult(
         skipConsignee: Boolean(defaultConsignee),
       });
     } catch (partyErr) {
-      console.error(
-        "[analyze-pipeline] falha ao resolver consignee/notify (cache):",
-        partyErr,
-      );
+      log.warn("parties_resolve_failed", {
+        importId,
+        docType: "invoice",
+        recycled: true,
+        error: partyErr,
+      });
       const fallback = pendingPartiesFromInvoice(invoice);
       pendingParties = defaultConsignee
         ? withoutConsigneeRoles(fallback)
@@ -407,10 +416,12 @@ async function buildReusableResult(
         ...blPendingParties,
       ]);
     } catch (partyErr) {
-      console.error(
-        "[analyze-pipeline] falha ao resolver consignee/notify do BL (cache):",
-        partyErr,
-      );
+      log.warn("parties_resolve_failed", {
+        importId,
+        docType: "bill_of_lading",
+        recycled: true,
+        error: partyErr,
+      });
       const fallback = pendingPartiesFromBl(bl);
       pendingParties = combinePendingParties([
         ...pendingParties,
@@ -418,6 +429,14 @@ async function buildReusableResult(
       ]);
     }
   }
+
+  log.info("pipeline_deduped", {
+    tenantId: params.tenantId,
+    importId,
+    types,
+    documents: documents.length,
+    latencyMs: Date.now() - started,
+  });
 
   return {
     importId,
@@ -443,41 +462,73 @@ export async function runAnalyzePipeline(params: {
   startedAt?: number;
   importId?: string;
 }): Promise<AnalyzePipelineResult> {
-  return withSpan(
-    "ai.analyze",
-    params.importId
-      ? { "tenant.id": params.tenantId, "import.id": params.importId }
-      : { "tenant.id": params.tenantId },
-    async (span) => {
-      const tracker: PipelineTracker = {};
-
-      try {
-        const result = await executeAnalyzePipeline(params, tracker);
-        span.setAttributes({
-          "import.id": result.importId,
-          "ai.deduped": result.deduped,
-          "ai.types": result.types.join(","),
-          "ai.latency_ms": result.latencyMs,
-        });
-        return result;
-      } catch (error) {
-        if (tracker.importId) {
-          try {
-            await updateImportStatus({
-              tenantId: params.tenantId,
-              importId: tracker.importId,
-              status: "failed",
-            });
-          } catch (statusError) {
-            console.error(
-              "[analyze-pipeline] falha ao marcar importação como failed:",
-              statusError,
-            );
-          }
-        }
-        throw error;
-      }
+  return runWithLogContext(
+    {
+      tenantId: params.tenantId,
+      userId: params.userId,
+      importId: params.importId,
+      filename: params.file.name,
     },
+    () =>
+      withSpan(
+        "ai.analyze",
+        params.importId
+          ? { "tenant.id": params.tenantId, "import.id": params.importId }
+          : { "tenant.id": params.tenantId },
+        async (span) => {
+          const tracker: PipelineTracker = {};
+          const timer = createTimer();
+          log.info("pipeline_started", {
+            filename: params.file.name,
+            mediaType: params.file.type,
+            bytes: params.file.size,
+            existingImportId: params.importId,
+          });
+
+          try {
+            const result = await executeAnalyzePipeline(params, tracker);
+            span.setAttributes({
+              "import.id": result.importId,
+              "ai.deduped": result.deduped,
+              "ai.types": result.types.join(","),
+              "ai.latency_ms": result.latencyMs,
+            });
+            log.info("pipeline_succeeded", {
+              importId: result.importId,
+              types: result.types,
+              documents: result.documents.length,
+              model: result.model,
+              deduped: result.deduped,
+              latencyMs: result.latencyMs,
+              elapsedMs: timer.elapsedMs(),
+            });
+            return result;
+          } catch (error) {
+            log.error("pipeline_failed", {
+              importId: tracker.importId,
+              filename: params.file.name,
+              elapsedMs: timer.elapsedMs(),
+              error,
+            });
+            if (tracker.importId) {
+              try {
+                await updateImportStatus({
+                  tenantId: params.tenantId,
+                  importId: tracker.importId,
+                  status: "failed",
+                });
+              } catch (statusError) {
+                log.error("import_status_failed", {
+                  importId: tracker.importId,
+                  status: "failed",
+                  error: statusError,
+                });
+              }
+            }
+            throw error;
+          }
+        },
+      ),
   );
 }
 
@@ -500,6 +551,13 @@ async function executeAnalyzePipeline(
   const digest = sha256Hex(buffer);
   const fileInput: AnalyzeFileInput = { bytes: buffer, mediaType, filename };
 
+  log.info("document_received", {
+    filename,
+    mediaType,
+    bytes: buffer.byteLength,
+    sha256: digest.slice(0, 12),
+  });
+
   const reusable = await findReusableUpload(params.tenantId, digest);
   if (reusable) {
     return buildReusableResult(
@@ -516,7 +574,7 @@ async function executeAnalyzePipeline(
   try {
     overrides = await getAiOverrides();
   } catch (overridesError) {
-    console.error("[analyze-pipeline] falha ao ler ai_overrides:", overridesError);
+    log.warn("ai_overrides_unavailable", { error: overridesError });
   }
   const modelId = (() => {
     try {
@@ -609,6 +667,15 @@ async function executeAnalyzePipeline(
     );
     prepared = classified.prepared;
     classifyResult = classified.result;
+    log.info("document_classified", {
+      source: classified.source,
+      types: classifyResult.classification.types,
+      model: classifyResult.model,
+      latencyMs: classifyResult.latencyMs,
+      tokensIn: classifyResult.tokensIn,
+      tokensOut: classifyResult.tokensOut,
+      parse: classified.prepared.parse ?? null,
+    });
     await logAi({
       tenantId: params.tenantId,
       capability: "classify",
@@ -667,6 +734,13 @@ async function executeAnalyzePipeline(
       invoice = extracted.invoice;
       invoiceModel = extracted.model;
       invoiceTokensUsed = extracted.tokensIn + extracted.tokensOut;
+      log.info("document_extracted", {
+        docType: "invoice",
+        model: extracted.model,
+        latencyMs: extracted.latencyMs,
+        tokens: { in: extracted.tokensIn, out: extracted.tokensOut },
+        invoiceNumber: extracted.invoice.number,
+      });
       await logAi({
         tenantId: params.tenantId,
         capability: "extract_invoice",
@@ -712,6 +786,13 @@ async function executeAnalyzePipeline(
       packingList = extracted.packingList;
       packingListModel = extracted.model;
       packingListTokensUsed = extracted.tokensIn + extracted.tokensOut;
+      log.info("document_extracted", {
+        docType: "packing_list",
+        model: extracted.model,
+        latencyMs: extracted.latencyMs,
+        tokens: { in: extracted.tokensIn, out: extracted.tokensOut },
+        invoiceNumber: extracted.packingList.invoiceNumber,
+      });
       await logAi({
         tenantId: params.tenantId,
         capability: "extract_packing_list",
@@ -736,7 +817,11 @@ async function executeAnalyzePipeline(
       });
       extractionErrors.packing_list =
         err instanceof Error ? err.message : String(err);
-      console.error("[analyze-pipeline] falha ao extrair Packing List:", err);
+      log.error("extraction_failed", {
+        docType: "packing_list",
+        model: modelId,
+        error: err,
+      });
     }
   }
 
@@ -759,6 +844,15 @@ async function executeAnalyzePipeline(
       bl = extracted.bl;
       blModel = extracted.model;
       blTokensUsed = extracted.tokensIn + extracted.tokensOut;
+      log.info("document_extracted", {
+        docType: "bill_of_lading",
+        model: extracted.model,
+        latencyMs: extracted.latencyMs,
+        tokens: { in: extracted.tokensIn, out: extracted.tokensOut },
+        blNumber: extracted.bl.number,
+        masterBlNumber: extracted.bl.masterBlNumber,
+        carrier: extracted.bl.carrier,
+      });
       await logAi({
         tenantId: params.tenantId,
         capability: "extract_bl",
@@ -783,6 +877,12 @@ async function executeAnalyzePipeline(
       });
       extractionErrors.bill_of_lading =
         err instanceof Error ? err.message : String(err);
+      log.error("extraction_failed", {
+        docType: "bill_of_lading",
+        model: modelId,
+        fatal: !invoice,
+        error: err,
+      });
       if (!invoice) throw err;
     }
   }
@@ -822,6 +922,15 @@ async function executeAnalyzePipeline(
 
   tracker.importId = importId;
 
+  log.info("import_resolved", {
+    importId,
+    created: !params.importId,
+    invoiceNumber,
+    blNumber,
+    supplierName,
+    types,
+  });
+
   // Referência da importação vinda do próprio arquivo (campo do documento ou
   // código do nome do arquivo). Nunca sobrescreve o que o usuário digitou.
   try {
@@ -839,10 +948,11 @@ async function executeAnalyzePipeline(
       });
     }
   } catch (referenceError) {
-    console.error(
-      "[analyze-pipeline] falha ao salvar a referência da importação:",
-      referenceError,
-    );
+    log.warn("import_reference_failed", {
+      tenantId: params.tenantId,
+      importId,
+      error: referenceError,
+    });
   }
 
   try {
@@ -852,10 +962,12 @@ async function executeAnalyzePipeline(
       logIds: aiLogIds,
     });
   } catch (logErr) {
-    console.error(
-      "[analyze-pipeline] falha ao vincular ai_logs à importação:",
-      logErr,
-    );
+    log.warn("ai_logs_attach_failed", {
+      tenantId: params.tenantId,
+      importId,
+      logIds: aiLogIds.length,
+      error: logErr,
+    });
   }
 
   const existingByHash = await findDocumentsBySha256({
@@ -918,16 +1030,24 @@ async function executeAnalyzePipeline(
             status: "extracted",
           });
         } catch (statusErr) {
-          console.error(
-            "[analyze-pipeline] extração da invoice salva, mas falha ao atualizar status:",
-            statusErr,
-          );
+          log.warn("document_status_failed", {
+            tenantId: params.tenantId,
+            importId,
+            documentId: invoiceDoc.id,
+            docType: "invoice",
+            status: "extracted",
+            extractionSaved: true,
+            error: statusErr,
+          });
         }
       } catch (persistErr) {
-        console.error(
-          "[analyze-pipeline] falha ao salvar extração da invoice:",
-          persistErr,
-        );
+        log.error("extraction_persist_failed", {
+          tenantId: params.tenantId,
+          importId,
+          documentId: invoiceDoc.id,
+          docType: "invoice",
+          error: persistErr,
+        });
         try {
           await updateDocumentStatus({
             tenantId: params.tenantId,
@@ -935,10 +1055,14 @@ async function executeAnalyzePipeline(
             status: "failed",
           });
         } catch (failedErr) {
-          console.error(
-            "[analyze-pipeline] falha ao marcar invoice failed:",
-            failedErr,
-          );
+          log.error("document_status_failed", {
+            tenantId: params.tenantId,
+            importId,
+            documentId: invoiceDoc.id,
+            docType: "invoice",
+            status: "failed",
+            error: failedErr,
+          });
         }
       }
     }
@@ -958,10 +1082,13 @@ async function executeAnalyzePipeline(
           status: "extracted",
         });
       } catch (persistErr) {
-        console.error(
-          "[analyze-pipeline] falha ao salvar extração do Packing List:",
-          persistErr,
-        );
+        log.error("extraction_persist_failed", {
+          tenantId: params.tenantId,
+          importId,
+          documentId: packingListDoc.id,
+          docType: "packing_list",
+          error: persistErr,
+        });
         try {
           await updateDocumentStatus({
             tenantId: params.tenantId,
@@ -969,10 +1096,14 @@ async function executeAnalyzePipeline(
             status: "failed",
           });
         } catch (failedErr) {
-          console.error(
-            "[analyze-pipeline] falha ao marcar Packing List failed:",
-            failedErr,
-          );
+          log.error("document_status_failed", {
+            tenantId: params.tenantId,
+            importId,
+            documentId: packingListDoc.id,
+            docType: "packing_list",
+            status: "failed",
+            error: failedErr,
+          });
         }
       }
     }
@@ -994,16 +1125,24 @@ async function executeAnalyzePipeline(
             status: "extracted",
           });
         } catch (statusErr) {
-          console.error(
-            "[analyze-pipeline] extração do BL salva, mas falha ao atualizar status:",
-            statusErr,
-          );
+          log.warn("document_status_failed", {
+            tenantId: params.tenantId,
+            importId,
+            documentId: blDoc.id,
+            docType: "bill_of_lading",
+            status: "extracted",
+            extractionSaved: true,
+            error: statusErr,
+          });
         }
       } catch (persistErr) {
-        console.error(
-          "[analyze-pipeline] falha ao salvar extração do BL:",
-          persistErr,
-        );
+        log.error("extraction_persist_failed", {
+          tenantId: params.tenantId,
+          importId,
+          documentId: blDoc.id,
+          docType: "bill_of_lading",
+          error: persistErr,
+        });
         try {
           await updateDocumentStatus({
             tenantId: params.tenantId,
@@ -1011,10 +1150,14 @@ async function executeAnalyzePipeline(
             status: "failed",
           });
         } catch (failedErr) {
-          console.error(
-            "[analyze-pipeline] falha ao marcar BL failed:",
-            failedErr,
-          );
+          log.error("document_status_failed", {
+            tenantId: params.tenantId,
+            importId,
+            documentId: blDoc.id,
+            docType: "bill_of_lading",
+            status: "failed",
+            error: failedErr,
+          });
         }
       }
     }
@@ -1041,11 +1184,14 @@ async function executeAnalyzePipeline(
           status: "failed",
         });
       } catch (statusError) {
-        console.error(
-          "[analyze-pipeline] falha ao marcar documento como failed:",
-          document.docType,
-          statusError,
-        );
+        log.error("document_status_failed", {
+          tenantId: params.tenantId,
+          importId,
+          documentId: document.id,
+          docType: document.docType,
+          status: "failed",
+          error: statusError,
+        });
       }
     }
   }
@@ -1074,10 +1220,12 @@ async function executeAnalyzePipeline(
       status: "awaiting_review",
     });
   } catch (statusErr) {
-    console.error(
-      "[analyze-pipeline] falha ao atualizar status da importação:",
-      statusErr,
-    );
+    log.error("import_status_failed", {
+      tenantId: params.tenantId,
+      importId,
+      status: "awaiting_review",
+      error: statusErr,
+    });
   }
 
   let pendingParties: PendingParty[] = [];
@@ -1090,10 +1238,11 @@ async function executeAnalyzePipeline(
         skipConsignee: Boolean(defaultConsignee),
       });
     } catch (partyErr) {
-      console.error(
-        "[analyze-pipeline] falha ao resolver consignee/notify:",
-        partyErr,
-      );
+      log.warn("parties_resolve_failed", {
+        importId,
+        docType: "invoice",
+        error: partyErr,
+      });
       const fallback = pendingPartiesFromInvoice(invoice);
       pendingParties = defaultConsignee
         ? withoutConsigneeRoles(fallback)
@@ -1114,10 +1263,11 @@ async function executeAnalyzePipeline(
         ...blPendingParties,
       ]);
     } catch (partyErr) {
-      console.error(
-        "[analyze-pipeline] falha ao resolver consignee/notify do BL:",
-        partyErr,
-      );
+      log.warn("parties_resolve_failed", {
+        importId,
+        docType: "bill_of_lading",
+        error: partyErr,
+      });
       const fallback = pendingPartiesFromBl(bl);
       pendingParties = combinePendingParties([
         ...pendingParties,
@@ -1134,10 +1284,11 @@ async function executeAnalyzePipeline(
       });
     } catch (trackingErr) {
       // Rastreio é acessório: nunca derruba a análise.
-      console.error(
-        "[analyze-pipeline] falha ao enfileirar rastreio do BL:",
-        trackingErr,
-      );
+      log.error("tracking_enqueue_failed", {
+        tenantId: params.tenantId,
+        importId,
+        error: trackingErr,
+      });
     }
 
     try {
@@ -1150,10 +1301,11 @@ async function executeAnalyzePipeline(
       });
     } catch (trackingErr) {
       // Sem chave/orçamento o próprio processamento marca `blocked`.
-      console.error(
-        "[analyze-pipeline] falha na primeira consulta de rastreio do BL:",
-        trackingErr,
-      );
+      log.error("tracking_first_query_failed", {
+        tenantId: params.tenantId,
+        importId,
+        error: trackingErr,
+      });
     }
   }
 

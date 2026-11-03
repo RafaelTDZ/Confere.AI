@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatTrackingDate,
   formatTrackingMoment,
+  isArrivedTrackingStatus,
   isInTransitTrackingStatus,
   isTerminalTrackingStatus,
+  isTrackingQueryableStatus,
   normalizeTrackingListFilter,
   trackingDaysUntilEta,
   trackingEtaRelative,
@@ -37,6 +39,31 @@ describe("isTerminalTrackingStatus", () => {
   });
 });
 
+describe("isArrivedTrackingStatus", () => {
+  it("considera chegada confirmada a partir de arrived, inclusive os finais", () => {
+    expect(isArrivedTrackingStatus("arrived")).toBe(true);
+    expect(isArrivedTrackingStatus("discharged")).toBe(true);
+    expect(isArrivedTrackingStatus("delivered")).toBe(true);
+    expect(isArrivedTrackingStatus("empty_returned")).toBe(true);
+    expect(isArrivedTrackingStatus("in_transit")).toBe(false);
+    expect(isArrivedTrackingStatus("transshipment")).toBe(false);
+    expect(isArrivedTrackingStatus("not_found")).toBe(false);
+  });
+});
+
+describe("isTrackingQueryableStatus", () => {
+  it("só segue consultando o armador antes da chegada", () => {
+    expect(isTrackingQueryableStatus("pending")).toBe(true);
+    expect(isTrackingQueryableStatus("in_transit")).toBe(true);
+    expect(isTrackingQueryableStatus("transshipment")).toBe(true);
+    expect(isTrackingQueryableStatus("blocked")).toBe(true);
+    expect(isTrackingQueryableStatus("arrived")).toBe(false);
+    expect(isTrackingQueryableStatus("discharged")).toBe(false);
+    expect(isTrackingQueryableStatus("delivered")).toBe(false);
+    expect(isTrackingQueryableStatus("empty_returned")).toBe(false);
+  });
+});
+
 describe("isInTransitTrackingStatus", () => {
   it("considera em trânsito e transbordo", () => {
     expect(isInTransitTrackingStatus("in_transit")).toBe(true);
@@ -53,9 +80,11 @@ describe("trackingNextCheckLabel", () => {
     );
   });
 
-  it("só usa 'Concluído' em status final", () => {
+  it("usa 'Concluído' da chegada confirmada ao status final", () => {
     expect(trackingNextCheckLabel("delivered", null)).toBe("Concluído");
     expect(trackingNextCheckLabel("empty_returned", null)).toBe("Concluído");
+    expect(trackingNextCheckLabel("arrived", null)).toBe("Concluído");
+    expect(trackingNextCheckLabel("discharged", null)).toBe("Concluído");
     expect(trackingNextCheckLabel("in_transit", null)).toBe(
       "Aguardando consulta",
     );

@@ -130,6 +130,25 @@ export function isTerminalTrackingStatus(status: string): boolean {
   return status === "delivered" || status === "empty_returned";
 }
 
+/**
+ * Chegada confirmada: a carga já chegou ao porto de destino — ou além dele
+ * (descarregada, entregue, vazio devolvido). A partir daqui o rastreio
+ * automático encerra: não há mais marco a acompanhar e cada consulta ao
+ * armador custa crédito do orçamento.
+ */
+export function isArrivedTrackingStatus(status: string): boolean {
+  return (
+    isTerminalTrackingStatus(status) ||
+    status === "arrived" ||
+    status === "discharged"
+  );
+}
+
+/** `true` enquanto ainda vale a pena consultar o armador. */
+export function isTrackingQueryableStatus(status: string): boolean {
+  return !isArrivedTrackingStatus(status);
+}
+
 /** Status considerados "em trânsito" na tela de rastreio. */
 export function isInTransitTrackingStatus(status: string): boolean {
   return status === "in_transit" || status === "transshipment";
@@ -137,8 +156,8 @@ export function isInTransitTrackingStatus(status: string): boolean {
 
 /**
  * Texto da "próxima consulta": a data agendada quando existe; "Concluído" só
- * em status final. Sem agenda e ainda ativo, o cron vai reagendar — mostrar
- * "Concluído" ali daria a impressão de que o rastreio parou.
+ * com a chegada confirmada. Sem agenda e ainda ativo, o cron vai reagendar —
+ * mostrar "Concluído" ali daria a impressão de que o rastreio parou.
  */
 export function trackingNextCheckLabel(
   status: string,
@@ -146,7 +165,7 @@ export function trackingNextCheckLabel(
 ): string {
   const moment = formatTrackingMoment(nextCheckAt);
   if (moment) return moment;
-  return isTerminalTrackingStatus(status) ? "Concluído" : "Aguardando consulta";
+  return isArrivedTrackingStatus(status) ? "Concluído" : "Aguardando consulta";
 }
 
 /**

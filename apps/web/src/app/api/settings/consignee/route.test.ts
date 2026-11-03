@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectLog } from "@/test/logs";
 
 import { PUT } from "@/app/api/settings/consignee/route";
 
@@ -175,9 +176,8 @@ describe("PUT /api/settings/consignee", () => {
 
     expect(status).toBe(500);
     expect(body).toEqual({ error: "Falha ao salvar consignee padrão" });
-    expect(consoleError).toHaveBeenCalledWith(
-      "[api/settings/consignee] PUT",
-      failure,
-    );
+    expectLog(consoleError, "request_failed", {
+      error: { message: "banco indisponível" },
+    });
   });
 });

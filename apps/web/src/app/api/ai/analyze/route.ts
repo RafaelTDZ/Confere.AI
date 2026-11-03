@@ -20,11 +20,14 @@ import {
   getAnalyzeRateWindowSeconds,
   getMonthlyTokenQuota,
 } from "@/lib/security/rate-limit";
+import { createLogger, runWithLogContext } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 // Hobby com Fluid compute permite até 300s; o worker roda no `after()` da
 // própria request e já medimos análises de ~290s (invoice + packing list).
 export const maxDuration = 300;
+
+const log = createLogger("api/ai/analyze");
 
 const IMPORT_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,14 +57,23 @@ function parseOptionalImportId(
 export async function POST(request: Request) {
   const started = Date.now();
   let tenantIdForLog: string | null = null;
+  let userIdForLog: string | null = null;
   let importIdForLog: string | undefined;
+  let jobIdForLog: string | undefined;
   const modelId = "unknown";
 
   try {
     const auth = await getAuthContext();
     tenantIdForLog = auth.tenantId;
+    userIdForLog = auth.userId;
 
     if (auth.role === "viewer") {
+      log.warn("request_rejected", {
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        reason: "viewer_role",
+        status: 403,
+      });
       return NextResponse.json(
         { error: "Perfil viewer não pode enviar documentos" },
         { status: 403 },
@@ -76,6 +88,13 @@ export async function POST(request: Request) {
       });
 
       if (!rateLimit.allowed) {
+        log.warn("rate_limit_exceeded", {
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          limit: getAnalyzeRateLimit(),
+          windowSeconds: getAnalyzeRateWindowSeconds(),
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+        });
         return NextResponse.json(
           {
             error: "Muitas análises em pouco tempo. Tente novamente mais tarde.",
@@ -88,7 +107,10 @@ export async function POST(request: Request) {
       }
     } catch (error) {
       // Fail-open: indisponibilidade do rate limiter não bloqueia a análise.
-      console.error("[api/ai/analyze] rate limit indisponível", error);
+      log.warn("rate_limit_unavailable", {
+        tenantId: auth.tenantId,
+        error,
+      });
     }
 
     try {
@@ -96,6 +118,13 @@ export async function POST(request: Request) {
       const quota = getMonthlyTokenQuota();
 
       if (usage >= quota) {
+        log.warn("monthly_quota_exceeded", {
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          usage,
+          quota,
+          retryAfterSeconds: getSecondsUntilNextMonthUtc(),
+        });
         return NextResponse.json(
           {
             error:
@@ -111,12 +140,21 @@ export async function POST(request: Request) {
       }
     } catch (error) {
       // Fail-open: falha ao calcular o uso não bloqueia a análise.
-      console.error("[api/ai/analyze] quota indisponível", error);
+      log.warn("quota_check_unavailable", {
+        tenantId: auth.tenantId,
+        error,
+      });
     }
 
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
+      log.warn("request_rejected", {
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        reason: "missing_file",
+        status: 400,
+      });
       return NextResponse.json(
         { error: "Campo file é obrigatório" },
         { status: 400 },
@@ -138,13 +176,39 @@ export async function POST(request: Request) {
       importId,
       file: { bytes, filename, mediaType, digest },
     });
+    jobIdForLog = job.id;
+
+    log.info("job_enqueued", {
+      tenantId: auth.tenantId,
+      userId: auth.userId,
+      jobId: job.id,
+      importId: job.import_id ?? undefined,
+      filename,
+      mediaType,
+      bytes: bytes.byteLength,
+      sha256: digest.slice(0, 12),
+      elapsedMs: Date.now() - started,
+    });
 
     // Responde 202 imediatamente; o pipeline continua após a resposta.
     after(async () => {
+      const workerContext = {
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        jobId: job.id,
+        importId: job.import_id ?? undefined,
+        source: "analyze_after",
+      };
       try {
-        await processAiJobById(job.id);
+        await runWithLogContext(workerContext, () =>
+          processAiJobById(job.id),
+        );
       } catch (error) {
-        console.error("[api/ai/analyze] worker falhou", error);
+        log.error("worker_failed", {
+          ...workerContext,
+          elapsedMs: Date.now() - started,
+          error,
+        });
       }
     });
 
@@ -197,7 +261,14 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("[api/ai/analyze]", error);
+    log.error("request_failed", {
+      tenantId: tenantIdForLog,
+      userId: userIdForLog,
+      jobId: jobIdForLog,
+      importId: importIdForLog,
+      elapsedMs: Date.now() - started,
+      error,
+    });
     if (tenantIdForLog) {
       await persistAiLog({
         tenantId: tenantIdForLog,

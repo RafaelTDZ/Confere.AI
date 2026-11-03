@@ -5,6 +5,7 @@ import type {
   DocumentType,
   InvoiceExtraction,
 } from "@/lib/ai/schemas";
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getReadClient } from "@/lib/supabase/read-client";
 import { ImportNotFoundError } from "@/lib/documents/parties";
@@ -41,6 +42,8 @@ import {
   type ListOptions,
   type Page,
 } from "@/lib/pagination";
+
+const log = createLogger("imports");
 
 export type {
   ImportDetail,
@@ -237,7 +240,11 @@ async function loadBlOnboardDates(
       if (onboardDate) onboardDates.set(importId, onboardDate);
     }
   } catch (error) {
-    console.error("[importacoes] falha ao carregar data de embarque:", error);
+    log.warn("onboard_dates_load_failed", {
+      tenantId,
+      importCount: importIds.length,
+      error,
+    });
   }
 
   return onboardDates;
@@ -283,7 +290,11 @@ async function loadTrackingStatuses(
       if (!statuses.has(row.importId)) statuses.set(row.importId, row.status);
     }
   } catch (error) {
-    console.error("[importacoes] falha ao carregar status do rastreio:", error);
+    log.warn("tracking_status_load_failed", {
+      tenantId,
+      importCount: importIds.length,
+      error,
+    });
   }
 
   return statuses;
@@ -380,10 +391,12 @@ export async function deleteImportRecord(
       .from("import-documents")
       .remove(storagePaths);
     if (storageError) {
-      console.error(
-        "[imports delete] Falha ao remover arquivos do Storage",
-        storageError,
-      );
+      log.error("storage_cleanup_failed", {
+        tenantId,
+        importId,
+        paths: storagePaths.length,
+        error: storageError,
+      });
     }
   }
 }
@@ -440,8 +453,8 @@ function conflictingKeyColumn(
  *
  * Em `23505`, descarta a coluna conflitante (a chave já pertence a outra
  * importação) e tenta de novo uma única vez. Se ainda falhar — ou se o índice
- * não for reconhecido — apenas registra `console.warn`: uma chave disputada não
- * pode interromper a análise.
+ * não for reconhecido — apenas registra o log (`consolidation_key_taken`): uma
+ * chave disputada não pode interromper a análise.
  */
 type ImportKeysPatch = {
   invoice_number?: string | null;
@@ -476,29 +489,24 @@ async function updateImportKeys(params: {
     const column: "bl_number" | "invoice_number" | null =
       conflict === null ? conflictingKeyColumn(error.message) : null;
     if (!column) {
-      console.warn(
-        "[imports] chave de consolidação já pertence a outra importação",
-        {
-          importId: params.importId,
-          tenantId: params.tenantId,
-          conflict,
-          error: error.message,
-        },
-      );
+      log.warn("consolidation_key_taken", {
+        tenantId: params.tenantId,
+        importId: params.importId,
+        conflict,
+        patch: Object.keys(patch),
+        error: error.message,
+      });
       return;
     }
     conflict = column;
     delete patch[column];
   }
 
-  console.warn(
-    "[imports] chave de consolidação já pertence a outra importação",
-    {
-      importId: params.importId,
-      tenantId: params.tenantId,
-      conflict,
-    },
-  );
+  log.warn("consolidation_key_taken", {
+    tenantId: params.tenantId,
+    importId: params.importId,
+    conflict,
+  });
 }
 
 /**
@@ -972,7 +980,11 @@ export async function syncImportEta(params: {
       throw new Error(error.message || "Falha ao salvar ETA da importação");
     }
   } catch (error) {
-    console.error("[importacoes] falha ao sincronizar ETA:", error);
+    log.warn("eta_sync_failed", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      error,
+    });
   }
 }
 

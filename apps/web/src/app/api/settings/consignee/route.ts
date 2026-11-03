@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import { getPartyById, PartyNotFoundError } from "@/lib/documents";
 import { setDefaultConsignee } from "@/lib/documents/consignee-settings";
@@ -21,6 +22,8 @@ function parsePartyId(body: unknown): string | null | undefined {
 }
 
 /** Define (ou remove, com `partyId: null`) o consignee padrão do tenant. */
+const log = createLogger("api/settings/consignee");
+
 export async function PUT(request: Request) {
   try {
     const auth = await getAuthContext();
@@ -61,7 +64,7 @@ export async function PUT(request: Request) {
         { status: 401 },
       );
     }
-    console.error("[api/settings/consignee] PUT", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       { error: "Falha ao salvar consignee padrão" },
       { status: 500 },

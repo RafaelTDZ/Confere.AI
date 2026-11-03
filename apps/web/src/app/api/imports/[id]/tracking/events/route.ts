@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import { ImportNotFoundError } from "@/lib/documents";
 import {
@@ -13,6 +14,8 @@ type RouteContext = {
 function readString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
+
+const log = createLogger("api/tracking/events");
 
 export async function POST(request: Request, context: RouteContext) {
   try {
@@ -67,7 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (error instanceof ImportNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("[api/imports/tracking/events POST]", error);
+    log.error("request_failed", { error });
     return NextResponse.json(
       {
         error:

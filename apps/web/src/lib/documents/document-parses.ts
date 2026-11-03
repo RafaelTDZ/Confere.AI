@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createLogger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+const log = createLogger("document-parses");
 
 /**
  * Cache e orçamento do parse de PDF (Firecrawl `/v2/parse`).
@@ -90,7 +93,11 @@ export async function getCachedDocumentParse(
       .maybeSingle();
 
     if (error) {
-      console.error("[document-parses] falha ao ler o cache:", error.message);
+      log.error("cache_read_failed", {
+        tenantId,
+        sha256: sha256.slice(0, 12),
+        error: error.message,
+      });
       return null;
     }
     if (!data) return null;
@@ -101,7 +108,12 @@ export async function getCachedDocumentParse(
       credits: data.credits,
     };
   } catch (error) {
-    console.error("[document-parses] falha inesperada ao ler o cache:", error);
+    log.error("cache_read_failed", {
+      tenantId,
+      sha256: sha256.slice(0, 12),
+      error,
+      unexpected: true,
+    });
     return null;
   }
 }
@@ -132,13 +144,21 @@ export async function saveDocumentParse(params: {
     );
 
     if (error) {
-      console.warn(
-        "[document-parses] falha ao salvar o cache do parse:",
-        error.message,
-      );
+      log.warn("cache_write_failed", {
+        tenantId: params.tenantId,
+        sha256: params.sha256.slice(0, 12),
+        pages: params.pages,
+        credits: params.credits,
+        error: error.message,
+      });
     }
   } catch (error) {
-    console.warn("[document-parses] falha inesperada ao salvar o cache:", error);
+    log.warn("cache_write_failed", {
+      tenantId: params.tenantId,
+      sha256: params.sha256.slice(0, 12),
+      error,
+      unexpected: true,
+    });
   }
 }
 
@@ -156,15 +176,21 @@ export async function getDocumentParseCreditsUsed(
       .maybeSingle();
 
     if (error) {
-      console.error("[document-parses] falha ao ler o consumo:", error.message);
+      log.error("usage_read_failed", {
+        tenantId,
+        period: documentParsePeriod(),
+        error: error.message,
+      });
       return 0;
     }
     return data?.credits_used ?? 0;
   } catch (error) {
-    console.error(
-      "[document-parses] falha inesperada ao ler o consumo:",
+    log.error("usage_read_failed", {
+      tenantId,
+      period: documentParsePeriod(),
       error,
-    );
+      unexpected: true,
+    });
     return 0;
   }
 }
@@ -190,18 +216,25 @@ export async function consumeDocumentParseCredits(params: {
     });
 
     if (error) {
-      console.error(
-        "[document-parses] falha ao registrar créditos:",
-        error.message,
-      );
+      log.error("credits_consume_failed", {
+        tenantId: params.tenantId,
+        period: documentParsePeriod(),
+        credits: params.credits,
+        limit: params.limit,
+        error: error.message,
+      });
       return true;
     }
     return data === true;
   } catch (error) {
-    console.error(
-      "[document-parses] falha inesperada ao registrar créditos:",
+    log.error("credits_consume_failed", {
+      tenantId: params.tenantId,
+      period: documentParsePeriod(),
+      credits: params.credits,
+      limit: params.limit,
       error,
-    );
+      unexpected: true,
+    });
     return true;
   }
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createLogger } from "@/lib/observability/logger";
 import {
   CalendarClock,
   Hourglass,
@@ -194,6 +195,8 @@ function TrackingRow({ row }: { row: TenantTrackingRow }) {
   );
 }
 
+const log = createLogger("page/rastreio");
+
 export default async function RastreioPage({
   searchParams,
 }: {
@@ -217,7 +220,10 @@ export default async function RastreioPage({
       filter,
     });
   } catch (err) {
-    console.error("[rastreio] falha ao listar rastreios:", err);
+    log.warn("tracking_list_failed", {
+      filter,
+      error: err,
+    });
     loadFailed = true;
   }
 
