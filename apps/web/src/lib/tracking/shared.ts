@@ -144,6 +144,26 @@ export function isArrivedTrackingStatus(status: string): boolean {
   );
 }
 
+/**
+ * Rótulo do status de um evento da timeline. `pending` aqui significa "sem
+ * status próprio" (o armador só devolveu a descrição, ex. "Export received at
+ * CY"); usar o rótulo do shipment ("Aguardando rastreio") diria que o evento
+ * ainda não foi processado, o que é falso.
+ */
+export function trackingEventStatusLabel(status: string): {
+  label: string;
+  variant:
+    | "default"
+    | "secondary"
+    | "destructive"
+    | "success"
+    | "warning"
+    | "outline";
+} {
+  if (status === "pending") return { label: "Sem status", variant: "outline" };
+  return trackingStatusLabel(status);
+}
+
 /** `true` enquanto ainda vale a pena consultar o armador. */
 export function isTrackingQueryableStatus(status: string): boolean {
   return !isArrivedTrackingStatus(status);

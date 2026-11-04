@@ -1,13 +1,6 @@
 import Link from "next/link";
 import { createLogger } from "@/lib/observability/logger";
-import {
-  CalendarClock,
-  Hourglass,
-  Package,
-  Radar,
-  Ship,
-  type LucideIcon,
-} from "lucide-react";
+import { Radar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -80,45 +73,6 @@ const QUERY_TAGS: Record<TrackingQueryType, string> = {
   booking: "BOOKING",
 };
 
-const SUMMARY_ICONS: Record<
-  "total" | "inTransit" | "arriving" | "withoutEta",
-  LucideIcon
-> = {
-  total: Package,
-  inTransit: Ship,
-  arriving: CalendarClock,
-  withoutEta: Hourglass,
-};
-
-function SummaryCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  label: string;
-  value: number;
-  hint?: string;
-  icon: LucideIcon;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-[0.04em] text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-2xl font-semibold tabular-nums">{value}</p>
-          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-        </div>
-        <span className="shrink-0 rounded-md bg-muted p-2 text-muted-foreground">
-          <Icon aria-hidden="true" className="h-4 w-4" />
-        </span>
-      </CardContent>
-    </Card>
-  );
-}
-
 function TrackingRow({ row }: { row: TenantTrackingRow }) {
   const eta = formatTrackingDate(row.eta);
   const etaRelative = trackingEtaRelative(row.eta, row.status);
@@ -140,8 +94,8 @@ function TrackingRow({ row }: { row: TenantTrackingRow }) {
           </p>
         ) : null}
       </TableCell>
-      <TableCell className="hidden text-muted-foreground xl:table-cell">
-        {row.carrier}
+      <TableCell className="hidden text-muted-foreground lg:table-cell">
+        <span className="whitespace-nowrap">{row.carrier}</span>
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-2">
@@ -188,7 +142,7 @@ function TrackingRow({ row }: { row: TenantTrackingRow }) {
           </p>
         ) : null}
       </TableCell>
-      <TableCell className="hidden text-muted-foreground xl:table-cell">
+      <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
         {nextCheck}
       </TableCell>
     </TableRow>
@@ -227,7 +181,6 @@ export default async function RastreioPage({
     loadFailed = true;
   }
 
-  const hasFilter = filter !== "todos";
   const scopeLabel = data.scope?.reference ?? data.scope?.importId ?? null;
 
   return (
@@ -254,33 +207,6 @@ export default async function RastreioPage({
         </Notice>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard
-              label="Rastreios"
-              value={data.summary.total}
-              hint="BLs e containers monitorados"
-              icon={SUMMARY_ICONS.total}
-            />
-            <SummaryCard
-              label="Em trânsito"
-              value={data.summary.inTransit}
-              hint="Em trânsito ou transbordo"
-              icon={SUMMARY_ICONS.inTransit}
-            />
-            <SummaryCard
-              label="Chegando"
-              value={data.summary.arriving}
-              hint="ETA em até 7 dias"
-              icon={SUMMARY_ICONS.arriving}
-            />
-            <SummaryCard
-              label="Sem ETA"
-              value={data.summary.withoutEta}
-              hint="Armador ainda não informou"
-              icon={SUMMARY_ICONS.withoutEta}
-            />
-          </div>
-
           {importId ? (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="secondary">Importação: {scopeLabel}</Badge>
@@ -397,13 +323,10 @@ export default async function RastreioPage({
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">
-                  {data.rows.length}{" "}
-                  {data.rows.length === 1 ? "rastreio" : "rastreios"}
-                </CardTitle>
+                <CardTitle className="text-base">Embarques</CardTitle>
                 <CardDescription>
-                  Ordenados pelo evento mais recente. A próxima consulta é
-                  agendada pelo rastreio automático.
+                  Ordenados pelo evento mais recente. A próxima consulta ao
+                  armador é agendada automaticamente.
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-hidden p-0">
@@ -411,12 +334,12 @@ export default async function RastreioPage({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Importação</TableHead>
-                      <TableHead className="hidden xl:table-cell">Armador</TableHead>
+                      <TableHead className="hidden lg:table-cell">Armador</TableHead>
                       <TableHead>BL / container</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>ETA</TableHead>
                       <TableHead>Último evento</TableHead>
-                      <TableHead className="hidden xl:table-cell">Próxima consulta</TableHead>
+                      <TableHead className="hidden lg:table-cell">Próxima consulta</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -429,17 +352,6 @@ export default async function RastreioPage({
             </Card>
           )}
 
-          {hasFilter && data.rows.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Filtro ativo.{" "}
-              <Link
-                href={trackingListHref({ importId })}
-                className="underline underline-offset-4 hover:text-foreground"
-              >
-                Mostrar todos
-              </Link>
-            </p>
-          ) : null}
         </>
       )}
     </div>

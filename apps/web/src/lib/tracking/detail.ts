@@ -5,6 +5,7 @@ import { getReadClient } from "@/lib/supabase/read-client";
 import { carrierLabelFor } from "@/lib/tracking/carriers";
 import { normalizeBlNumber } from "@/lib/tracking/validate";
 import {
+  trackingEventStatusLabel,
   trackingNextCheckLabel,
   trackingStatusLabel,
   type TrackingQueryType,
@@ -539,7 +540,7 @@ export async function getTrackingShipmentDetail(params: {
   });
 
   const mappedEvents: TrackingDetailEvent[] = eventRows.map((row) => {
-    const eventStatus = trackingStatusLabel(row.status);
+    const eventStatus = trackingEventStatusLabel(row.status);
     return {
       id: row.id,
       dateIso: row.event_at,
