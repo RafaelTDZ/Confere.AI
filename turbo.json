@@ -45,6 +45,21 @@
     "DOCUMENT_PARSE_TIMEOUT_MS",
     "OTEL_EXPORTER_OTLP_ENDPOINT"
   ],
+  // Injetadas pela integração Supabase da Vercel; o app não as lê (usa NEXT_PUBLIC_*).
+  // Ficam aqui só para o Turbo não avisar "missing from turbo.json" em cada build.
+  "globalPassThroughEnv": [
+    "POSTGRES_DATABASE",
+    "POSTGRES_HOST",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_PRISMA_URL",
+    "POSTGRES_URL",
+    "POSTGRES_URL_NON_POOLING",
+    "POSTGRES_USER",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_JWT_SECRET",
+    "SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
