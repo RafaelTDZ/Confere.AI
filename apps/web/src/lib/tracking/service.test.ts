@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTrackingTargets,
   enqueueDueTrackingShipments,
@@ -463,6 +463,15 @@ describe("prioritizeBlShipments", () => {
 });
 
 const NOW = new Date("2026-10-28T12:00:00.000Z");
+
+/**
+ * `next_check_at` futuros usados como "não vencido": precisam ser relativos ao
+ * relógio real, senão o teste apodrece na data fixa (o alvo vira vencido e o
+ * refresh passa a enfileirar).
+ */
+function futureIso(days = 7): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
 const TENANT = "tenant-a";
 
 function shipmentRow(overrides: Partial<FakeRow> = {}): FakeRow {
@@ -505,7 +514,7 @@ describe("enqueueDueTrackingShipments", () => {
       shipmentRow({ id: "nulo", next_check_at: null }),
       shipmentRow({ id: "passado", next_check_at: "2026-10-27T12:00:00.000Z" }),
       shipmentRow({ id: "agora", next_check_at: NOW.toISOString() }),
-      shipmentRow({ id: "futuro", next_check_at: "2026-11-04T12:00:00.000Z" }),
+      shipmentRow({ id: "futuro", next_check_at: futureIso() }),
     );
 
     const result = await enqueueDueTrackingShipments({ now: NOW });
@@ -643,7 +652,7 @@ describe("enqueueDueTrackingShipments", () => {
 
   it("devolve zero quando nada venceu", async () => {
     db.rows("tracking_shipments").push(
-      shipmentRow({ next_check_at: "2026-11-04T12:00:00.000Z" }),
+      shipmentRow({ next_check_at: futureIso() }),
     );
 
     const result = await enqueueDueTrackingShipments({ now: NOW });
@@ -736,7 +745,7 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
       }),
       shipmentRow({
         id: "container-1",
@@ -773,7 +782,7 @@ describe("refreshTrackingForImport", () => {
 
   it("sem force nÃ£o enfileira quando o alvo nÃ£o estÃ¡ vencido", async () => {
     db.rows("tracking_shipments").push(
-      shipmentRow({ next_check_at: "2026-11-04T12:00:00.000Z" }),
+      shipmentRow({ next_check_at: futureIso() }),
     );
 
     const result = await refreshTrackingForImport({
@@ -1145,7 +1154,7 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
         fetched_at: new Date(Date.now() - 5 * 60_000).toISOString(),
       }),
     );
@@ -1199,7 +1208,7 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
         fetched_at: new Date(Date.now() - 31 * 60_000).toISOString(),
       }),
     );
@@ -1219,7 +1228,7 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
         fetched_at: null,
       }),
     );
@@ -1239,7 +1248,7 @@ describe("refreshTrackingForImport", () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
         id: "bl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
         fetched_at: new Date(Date.now() - 60_000).toISOString(),
       }),
     );
@@ -1767,7 +1776,7 @@ describe("processQueuedTrackingJobs â€” fallback BL not_found â†’ 1Â�
       blRow(),
       containerRow("container-1", "GAOU7393528", {
         strategy: "firecrawl",
-        next_check_at: "2026-11-04T12:00:00.000Z",
+        next_check_at: futureIso(),
         created_at: "2026-10-20T10:01:00.000Z",
       }),
       containerRow("container-2", "GAOU7393529", {
