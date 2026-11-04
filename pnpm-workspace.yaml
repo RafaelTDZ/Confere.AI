@@ -1,7 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Única fonte de verdade para scripts de build de dependências.
+# pnpm 10.33+: `allowBuilds` (o antigo `pnpm.onlyBuiltDependencies` no package.json foi removido).
 allowBuilds:
   esbuild: true
   sharp: true
+  supabase: true
   unrs-resolver: true
