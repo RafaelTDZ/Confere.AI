@@ -8,14 +8,17 @@ import { cn } from "@/lib/utils";
 export function BackButton({
   fallbackHref,
   className,
+  alwaysPush = false,
 }: {
   fallbackHref: string;
   className?: string;
+  /** Ignora o histórico e sempre navega para `fallbackHref` (ex.: "subir" para o processo). */
+  alwaysPush?: boolean;
 }) {
   const router = useRouter();
 
   function goBack() {
-    if (window.history.length > 1) {
+    if (!alwaysPush && window.history.length > 1) {
       router.back();
       return;
     }

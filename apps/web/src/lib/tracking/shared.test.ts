@@ -9,6 +9,7 @@ import {
   normalizeTrackingListFilter,
   trackingDaysUntilEta,
   trackingEtaRelative,
+  trackingEventStatusLabel,
   trackingListHref,
   trackingNextCheckLabel,
   trackingStatusLabel,
@@ -28,6 +29,20 @@ describe("trackingStatusLabel", () => {
       label: "custom_status",
       variant: "outline",
     });
+  });
+});
+
+describe("trackingEventStatusLabel", () => {
+  it("não usa o rótulo do shipment para evento sem status próprio", () => {
+    expect(trackingEventStatusLabel("pending")).toEqual({
+      label: "Sem status",
+      variant: "outline",
+    });
+  });
+
+  it("mantém os demais status iguais aos do shipment", () => {
+    expect(trackingEventStatusLabel("in_transit").label).toBe("Em trânsito");
+    expect(trackingEventStatusLabel("discharged").label).toBe("Descarregado");
   });
 });
 

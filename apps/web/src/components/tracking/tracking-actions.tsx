@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CircleAlert,
@@ -9,11 +10,8 @@ import {
   Plus,
   RefreshCw,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { validateManualTrackingEvent } from "@/lib/tracking/manual-event";
 import { cn } from "@/lib/utils";
 
 type Feedback = { type: "success" | "error"; message: string } | null;
@@ -99,7 +97,7 @@ function FeedbackMessage({ feedback }: { feedback: Feedback }) {
   );
 }
 
-/** CTA de atualização para estados vazios (ex.: timeline sem ETA). */
+/** CTA de atualização para estados vazios (ex.: card de prazos sem ETA). */
 export function TrackingRefreshButton({
   importId,
   canEdit,
@@ -150,37 +148,25 @@ export function TrackingRefreshButton({
 
 type TrackingActionsProps = {
   importId: string;
+  /** Página do formulário de evento manual (`/rastreio/<id>/evento`). */
+  eventHref: string;
   canEdit: boolean;
 };
 
 /**
  * Ações do rastreio no cabeçalho do detalhe: atualizar a consulta no armador e
- * lançar evento manual. Retorna o grupo de botões e, quando aberto, um painel
- * em largura total — pensado como filho direto de um container `flex-wrap`.
- * A importação mantém apenas o botão "Rastrear".
+ * abrir a tela de evento manual. O formulário vive na rota `eventHref` — aqui
+ * fica só o link. Retorna o grupo de botões e, quando há feedback da
+ * atualização, um painel em largura total (filho de um container `flex-wrap`).
  */
 export function TrackingActions({
   importId,
+  eventHref,
   canEdit,
 }: TrackingActionsProps): ReactElement {
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isManualOpen, setIsManualOpen] = useState(false);
-  const [isSavingEvent, setIsSavingEvent] = useState(false);
-  const [eventAt, setEventAt] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [containerNumber, setContainerNumber] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(null);
-
-  const fieldsDisabled = !canEdit || isSavingEvent;
-
-  function resetManualForm() {
-    setEventAt("");
-    setDescription("");
-    setLocation("");
-    setContainerNumber("");
-  }
 
   async function handleRefresh() {
     if (!canEdit || isRefreshing) return;
@@ -190,52 +176,6 @@ export function TrackingActions({
     setFeedback(outcome.feedback);
     setIsRefreshing(false);
     if (outcome.refreshed) router.refresh();
-  }
-
-  async function handleManualSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canEdit || isSavingEvent) return;
-
-    const validation = validateManualTrackingEvent({
-      eventAt,
-      description,
-      location,
-      containerNumber,
-    });
-    if (!validation.ok) {
-      setFeedback({ type: "error", message: validation.error });
-      return;
-    }
-
-    setFeedback(null);
-    setIsSavingEvent(true);
-    try {
-      const res = await fetch(`/api/imports/${importId}/tracking/events`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(validation.payload),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error || "Falha ao salvar evento");
-      }
-      resetManualForm();
-      setIsManualOpen(false);
-      setFeedback({ type: "success", message: "Evento manual registrado." });
-      router.refresh();
-    } catch (error) {
-      setFeedback({
-        type: "error",
-        message: errorMessage(error, "Erro inesperado"),
-      });
-    } finally {
-      setIsSavingEvent(false);
-    }
-  }
-
-  function handleCloseManualForm() {
-    resetManualForm();
-    setIsManualOpen(false);
   }
 
   return (
@@ -259,121 +199,26 @@ export function TrackingActions({
           )}
           {isRefreshing ? "Atualizando..." : "Atualizar"}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="min-h-11 sm:min-h-8"
-          aria-expanded={isManualOpen}
-          aria-controls="tracking-manual-event-form"
-          onClick={() => setIsManualOpen((previous) => !previous)}
-          disabled={!canEdit}
-        >
-          <Plus aria-hidden="true" className="h-4 w-4" />
-          Lançar evento manual
-        </Button>
+        {canEdit ? (
+          <Link
+            href={eventHref}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "min-h-11 sm:min-h-8",
+            )}
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            Lançar evento manual
+          </Link>
+        ) : null}
       </div>
 
-      {feedback || isManualOpen ? (
+      {feedback ? (
         <Card className="basis-full">
-          <CardContent className="space-y-4 p-4">
+          <CardContent className="p-4">
             <div aria-live="polite" role="status">
               <FeedbackMessage feedback={feedback} />
             </div>
-
-            {isManualOpen ? (
-              <form
-                id="tracking-manual-event-form"
-                onSubmit={handleManualSubmit}
-                className="space-y-4"
-              >
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Novo evento manual</p>
-                  <p className="text-xs text-muted-foreground">
-                    Use quando o portal do armador não liberar o rastreio.
-                  </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="tracking-event-date">Data do evento</Label>
-                    <Input
-                      id="tracking-event-date"
-                      type="date"
-                      value={eventAt}
-                      onChange={(event) => setEventAt(event.target.value)}
-                      disabled={fieldsDisabled}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="tracking-event-container">
-                      Container (opcional)
-                    </Label>
-                    <Input
-                      id="tracking-event-container"
-                      value={containerNumber}
-                      onChange={(event) =>
-                        setContainerNumber(event.target.value)
-                      }
-                      disabled={fieldsDisabled}
-                      placeholder="—"
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="tracking-event-description">
-                      Descrição
-                      <span className="ml-1 text-destructive-text" aria-hidden="true">
-                        *
-                      </span>
-                    </Label>
-                    <Input
-                      id="tracking-event-description"
-                      value={description}
-                      onChange={(event) => setDescription(event.target.value)}
-                      disabled={fieldsDisabled}
-                      required
-                      placeholder="Ex.: Container descarregado no porto de Santos"
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="tracking-event-location">
-                      Local (opcional)
-                    </Label>
-                    <Input
-                      id="tracking-event-location"
-                      value={location}
-                      onChange={(event) => setLocation(event.target.value)}
-                      disabled={fieldsDisabled}
-                      placeholder="Ex.: Porto de Santos - SP"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCloseManualForm}
-                    disabled={isSavingEvent}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button type="submit" size="sm" disabled={fieldsDisabled}>
-                    {isSavingEvent ? (
-                      <>
-                        <LoaderCircle
-                          aria-hidden="true"
-                          className="h-4 w-4 animate-spin motion-reduce:animate-none"
-                        />
-                        Salvando...
-                      </>
-                    ) : (
-                      "Salvar evento"
-                    )}
-                  </Button>
-                </div>
-              </form>
-            ) : null}
           </CardContent>
         </Card>
       ) : null}
