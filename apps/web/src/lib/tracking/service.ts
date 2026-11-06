@@ -950,6 +950,9 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
             : carrier === "hapag"
               ? 12_000
               : 8_000,
+      // A página do CMA abre em ~25s (medido no OYH103) e a extração JSON soma
+      // mais alguns segundos: o teto de 60s estourava com frequência.
+      timeoutMs: carrier === "cma" ? 90_000 : undefined,
       proxy: carrier === "maersk" ? "stealth" : undefined,
       actions: buildCarrierActions({
         carrier,
