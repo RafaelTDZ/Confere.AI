@@ -37,6 +37,7 @@ import {
   inferTrackingStatus,
   normalizeFirecrawlResult,
   parseTrackingDate,
+  type NormalizedTrackingEvent,
   type NormalizedTrackingSnapshot,
 } from "@/lib/tracking/normalize";
 import {
@@ -49,7 +50,7 @@ import {
   type TrackingStatus,
 } from "@/lib/tracking/shared";
 import {
-  trackingContainerFallbackLimit,
+  trackingContainerLimit,
   trackingFarEtaIntervalMs,
   trackingFirecrawlMode,
   trackingInTransitIntervalMs,
@@ -179,13 +180,13 @@ function pickTrackingBlNumber(params: {
  * - Armador sem suporte a container (ou estratégia `link`, ex.: OOCL): tudo
  *   fica `link` e o rastreio é manual pelo portal.
  *
- * As regras por armador continuam: a Evergreen mantém até 8 containers para
- * exibição e a OOCL fica toda em `link` (captcha).
+ * As regras por armador continuam: a Evergreen mantém um piso de 8 containers e
+ * a OOCL fica toda em `link` (captcha).
  */
 export function buildTrackingTargets(
   blNumber: string | null,
   blPayload: TrackingBlPayload | null,
-  containerLimit = trackingContainerFallbackLimit(),
+  containerLimit = trackingContainerLimit(),
   carrier?: CarrierCode,
 ): TrackingTarget[] {
   const targets: TrackingTarget[] = [];
@@ -1015,20 +1016,25 @@ function formatEtaBr(value: string | null | undefined): string | null {
 }
 
 /**
- * Preenche o campo `eta` do payload do BL (`extraction_results`) com a previsão
- * de chegada devolvida pelo armador. Roda sem sessão (cron/worker), então usa o
- * client admin e o `tenant_id` do shipment.
+ * Grava campos vazios no payload do BL mais recente (`extraction_results`) com
+ * os dados do rastreio do armador/agente. Roda sem sessão (cron/worker), então
+ * usa o client admin e o `tenant_id` do shipment.
  *
- * Só preenche quando o campo está vazio: um ETA extraído do documento ou
+ * Só preenche quando o campo está vazio: um valor extraído do documento ou
  * digitado pelo usuário nunca é sobrescrito. Devolve `true` quando gravou.
  */
-async function fillBlEtaFromTracking(params: {
+async function fillBlFieldsFromTracking(params: {
   tenantId: string;
   importId: string;
-  eta: string | null | undefined;
+  fields: Record<string, string>;
+  /** Nome do campo no erro logado (ex.: "ETA do BL"). */
+  errorLabel: string;
+  syncEta?: boolean;
 }): Promise<boolean> {
-  const eta = formatEtaBr(params.eta);
-  if (!eta) return false;
+  const entries = Object.entries(params.fields).filter(
+    ([, value]) => value.trim().length > 0,
+  );
+  if (entries.length === 0) return false;
 
   const admin = createSupabaseAdminClient();
 
@@ -1070,22 +1076,124 @@ async function fillBlEtaFromTracking(params: {
   }
 
   const record = payload as Record<string, unknown>;
-  const current = record.eta;
-  if (current != null && String(current).trim().length > 0) return false;
+  const patch: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    const current = record[key];
+    if (current != null && String(current).trim().length > 0) continue;
+    patch[key] = value;
+  }
+  if (Object.keys(patch).length === 0) return false;
 
   const { error: updateError } = await admin
     .from("extraction_results")
-    .update({ payload: { ...record, eta } as unknown as Json })
+    .update({ payload: { ...record, ...patch } as unknown as Json })
     .eq("id", extraction.id)
     .eq("tenant_id", params.tenantId);
 
   if (updateError) {
-    throw new Error(`Falha ao salvar ETA do BL: ${updateError.message}`);
+    throw new Error(
+      `Falha ao salvar ${params.errorLabel}: ${updateError.message}`,
+    );
   }
 
-  await syncImportEta({ tenantId: params.tenantId, importId: params.importId });
+  if (params.syncEta) {
+    await syncImportEta({ tenantId: params.tenantId, importId: params.importId });
+  }
 
   return true;
+}
+
+/**
+ * Preenche o campo `eta` do payload do BL com a previsão de chegada devolvida
+ * pelo armador. Só preenche quando o campo está vazio.
+ */
+async function fillBlEtaFromTracking(params: {
+  tenantId: string;
+  importId: string;
+  eta: string | null | undefined;
+}): Promise<boolean> {
+  const eta = formatEtaBr(params.eta);
+  if (!eta) return false;
+
+  return fillBlFieldsFromTracking({
+    tenantId: params.tenantId,
+    importId: params.importId,
+    fields: { eta },
+    errorLabel: "ETA do BL",
+    syncEta: true,
+  });
+}
+
+/** "Laden on board" do BL = saída do porto de origem. */
+const ONBOARD_DEPARTURE_RE =
+  /(?:departure|depart(?:ed)?|sailed|left)[^.]*\b(?:port of loading|pol)\b|\b(?:port of loading|pol)\b[^.]*(?:departure|depart(?:ed)?|sailed)/i;
+
+/** Carregamento no navio, quando o portal não publica a saída do POL. */
+const ONBOARD_LOADED_RE =
+  /\bloaded\b|laden on board|shipped on board|carga embarcada|embarcad[oa]|carregad[oa]/i;
+
+/**
+ * Data de embarque a partir do rastreio do armador/agente: a **saída do porto
+ * de origem** (o "laden on board" do BL) ou, na falta dela, o carregamento no
+ * navio. Previsão (data futura) e transbordo são ignorados.
+ *
+ * É a fonte preferida quando o parse do documento perde o quadro
+ * "DATE LADEN ON BOARD" — caso do BL cujo markdown não traz o bloco.
+ */
+export function onboardDateFromTrackingEvents(
+  events: ReadonlyArray<NormalizedTrackingEvent>,
+  now = Date.now(),
+): string | null {
+  const actual = events.filter((event) => {
+    const time = Date.parse(event.eventAt);
+    return (
+      Number.isFinite(time) &&
+      time <= now &&
+      !/transship|transbordo|\bt\/s\b/i.test(event.description)
+    );
+  });
+  const earliest = (pattern: RegExp) =>
+    actual
+      .filter((event) => pattern.test(event.description))
+      .sort((a, b) => a.eventAt.localeCompare(b.eventAt))[0];
+  const event = earliest(ONBOARD_DEPARTURE_RE) ?? earliest(ONBOARD_LOADED_RE);
+  return event ? formatEtaBr(event.eventAt) : null;
+}
+
+/**
+ * Preenche o campo `onboardDate` do payload do BL com a data de embarque do
+ * rastreio. Só preenche quando o campo está vazio.
+ */
+async function fillBlOnboardDateFromTracking(params: {
+  tenantId: string;
+  importId: string;
+  onboardDate: string | null | undefined;
+}): Promise<boolean> {
+  const onboardDate = formatEtaBr(params.onboardDate);
+  if (!onboardDate) return false;
+
+  return fillBlFieldsFromTracking({
+    tenantId: params.tenantId,
+    importId: params.importId,
+    fields: { onboardDate },
+    errorLabel: "data de embarque do BL",
+  });
+}
+
+/**
+ * Tolerância para evento do dia cujo horário local pode estar à frente do UTC.
+ * Previsão de verdade (chegada, gate out, vazio devolvido) fica dias/meses à
+ * frente.
+ */
+const FUTURE_EVENT_TOLERANCE_MS = 12 * 60 * 60 * 1000;
+
+/** Histórico só tem o que já aconteceu: previsão (data futura) não vira evento. */
+function isActualTrackingEvent(
+  event: NormalizedTrackingEvent,
+  now = Date.now(),
+): boolean {
+  const time = Date.parse(event.eventAt);
+  return Number.isFinite(time) && time <= now + FUTURE_EVENT_TOLERANCE_MS;
 }
 
 /** Eventos que marcam previsão (não chegada concluída). */
@@ -1212,7 +1320,12 @@ async function persistSnapshot(params: {
 }): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { shipment } = params;
-  const latest = params.snapshot.events[0];
+  const now = Date.now();
+  // Timeline = histórico: previsões (chegada, gate out, vazio) não entram.
+  const actualEvents = params.snapshot.events.filter((event) =>
+    isActualTrackingEvent(event, now),
+  );
+  const latest = actualEvents[0];
 
   try {
     await persistTrackingMilestones({
@@ -1286,11 +1399,33 @@ async function persistSnapshot(params: {
         error,
       });
     }
+
+    // O parse do PDF perde o quadro "DATE LADEN ON BOARD" em alguns BLs; o
+    // rastreio do armador/agente é a fonte mais confiável para a data de
+    // embarque. Só preenche o campo vazio (extração/edição manual vence).
+    const onboardDate = onboardDateFromTrackingEvents(params.snapshot.events);
+    if (onboardDate) {
+      try {
+        await fillBlOnboardDateFromTracking({
+          tenantId: shipment.tenant_id,
+          importId: shipment.import_id,
+          onboardDate,
+        });
+      } catch (error) {
+        log.warn("bl_onboard_date_fill_failed", {
+          tenantId: shipment.tenant_id,
+          importId: shipment.import_id,
+          shipmentId: shipment.id,
+          onboardDate,
+          error,
+        });
+      }
+    }
   }
 
-  if (params.snapshot.events.length === 0) return;
+  if (actualEvents.length === 0) return;
 
-  const eventRows = params.snapshot.events.map((event) => ({
+  const eventRows = actualEvents.map((event) => ({
     tenant_id: shipment.tenant_id,
     shipment_id: shipment.id,
     event_at: event.eventAt,
@@ -1351,7 +1486,8 @@ async function fanOutBlSnapshot(params: {
     );
     if (events.length === 0) continue;
 
-    const latest = events[0];
+    const latest =
+      events.find((event) => isActualTrackingEvent(event)) ?? events[0];
     let status = latest?.status ?? params.snapshot.status;
     // Chegada/descarga com data futura é previsão, não evento concluído.
     if (

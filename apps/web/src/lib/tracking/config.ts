@@ -49,12 +49,12 @@ export function trackingStrategyForCarrier(
   return CARRIERS[carrier]?.strategy ?? "firecrawl";
 }
 
-/** Quantos containers consultar quando o BL não retorna dados. */
-export function trackingContainerFallbackLimit(): number {
-  return readPositiveInt(
-    process.env.TRACKING_CONTAINER_FALLBACK_LIMIT,
-    3,
-  );
+/**
+ * Teto de containers criados por importação (exibição e evento manual). Todos
+ * os containers do BL viram shipment; o teto só protege contra listas absurdas.
+ */
+export function trackingContainerLimit(): number {
+  return readPositiveInt(process.env.TRACKING_CONTAINER_FALLBACK_LIMIT, 50);
 }
 
 /**

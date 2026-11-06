@@ -3,10 +3,12 @@ import {
   buildTrackingTargets,
   enqueueDueTrackingShipments,
   getPrimaryTrackingShipmentId,
+  onboardDateFromTrackingEvents,
   prioritizeBlShipments,
   processQueuedTrackingJobs,
   refreshTrackingForImport,
 } from "@/lib/tracking/service";
+import type { NormalizedTrackingEvent } from "@/lib/tracking/normalize";
 import { FakeSupabase, type FakeRow } from "@/test/fake-supabase";
 import { expectLog } from "@/test/logs";
 
@@ -746,6 +748,89 @@ function seedQueuedJob(db: FakeSupabase): void {
   db.rows("tracking_jobs").push(job);
   db.onRpc("claim_tracking_jobs", { data: [job] });
 }
+
+function trackingEvent(
+  eventAt: string,
+  description: string,
+): NormalizedTrackingEvent {
+  return {
+    eventAt,
+    status: "in_transit",
+    location: null,
+    description,
+    containerNumber: null,
+    vessel: null,
+    voyage: null,
+    fingerprint: description,
+  };
+}
+
+describe("onboardDateFromTrackingEvents", () => {
+  const now = Date.parse("2026-11-06T12:00:00.000Z");
+
+  it("usa a saÃ­da do porto de origem (laden on board)", () => {
+    expect(
+      onboardDateFromTrackingEvents(
+        [
+          trackingEvent(
+            "2026-10-12T14:30:00.000Z",
+            "Loaded on Vessel at Port of Loading",
+          ),
+          trackingEvent(
+            "2026-10-13T15:05:00.000Z",
+            "Vessel Departure from Port of Loading",
+          ),
+        ],
+        now,
+      ),
+    ).toBe("13/10/2026");
+  });
+
+  it("cai para o carregamento quando nÃ£o hÃ¡ saÃ­da do POL", () => {
+    expect(
+      onboardDateFromTrackingEvents(
+        [
+          trackingEvent(
+            "2026-10-12T14:30:00.000Z",
+            "Loaded on Vessel at Port of Loading",
+          ),
+        ],
+        now,
+      ),
+    ).toBe("12/10/2026");
+  });
+
+  it("ignora transbordo, previsÃ£o e eventos futuros", () => {
+    expect(
+      onboardDateFromTrackingEvents(
+        [
+          trackingEvent(
+            "2026-10-24T13:20:00.000Z",
+            "Departure from Transshipment Port",
+          ),
+          trackingEvent(
+            "2026-10-20T10:00:00.000Z",
+            "Loaded on Vessel at Port of Loading",
+          ),
+          trackingEvent(
+            "2026-12-16T07:00:00.000Z",
+            "Loaded on Vessel at Port of Loading",
+          ),
+        ],
+        now,
+      ),
+    ).toBe("20/10/2026");
+  });
+
+  it("devolve null sem evento de embarque", () => {
+    expect(
+      onboardDateFromTrackingEvents(
+        [trackingEvent("2026-10-10T10:00:00.000Z", "Gate In to Outbound Terminal")],
+        now,
+      ),
+    ).toBeNull();
+  });
+});
 
 describe("refreshTrackingForImport", () => {
   let db: FakeSupabase;
@@ -1604,6 +1689,114 @@ describe("processQueuedTrackingJobs â€” ETA do BL", () => {
     expectLog(consoleWarn, "bl_eta_fill_failed", {
       error: { message: "Falha ao salvar ETA do BL: banco fora" },
     });
+  });
+
+  it("preenche a data de embarque do BL pela saída do porto de origem", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({ status: "pending", eta: null, raw: {} }),
+    );
+    seedBlExtraction(db, null);
+    seedQueuedJob(db);
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({
+        eta: "2026-12-15",
+        events: [
+          {
+            date: "2026-10-12T14:30:00.000Z",
+            description: "Loaded on Vessel at Port of Loading",
+            location: "QINGDAO",
+          },
+          {
+            date: "2026-10-13T15:05:00.000Z",
+            description: "Vessel Departure from Port of Loading",
+            location: "QINGDAO",
+          },
+        ],
+      }),
+    );
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(db.rows("extraction_results")[0]?.payload).toMatchObject({
+      eta: "15/12/2026",
+      onboardDate: "13/10/2026",
+    });
+  });
+
+  it("não sobrescreve a data de embarque já extraída", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({ status: "pending", eta: null, raw: {} }),
+    );
+    seedBlExtraction(db, null);
+    db.rows("extraction_results")[0]!.payload = {
+      number: "276430227",
+      eta: null,
+      onboardDate: "01/10/2026",
+    };
+    seedQueuedJob(db);
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({
+        eta: "2026-12-15",
+        events: [
+          {
+            date: "2026-10-13T15:05:00.000Z",
+            description: "Vessel Departure from Port of Loading",
+            location: "QINGDAO",
+          },
+        ],
+      }),
+    );
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(db.rows("extraction_results")[0]?.payload).toMatchObject({
+      onboardDate: "01/10/2026",
+    });
+  });
+
+  it("não grava previsão futura na timeline do embarque", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({ status: "pending", eta: null, raw: {} }),
+    );
+    seedBlExtraction(db, null);
+    seedQueuedJob(db);
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({
+        eta: "2099-12-15",
+        events: [
+          {
+            date: "2099-12-16T07:00:00.000Z",
+            description: "Empty Container Returned from Customer",
+            location: "ITAPOA",
+          },
+          {
+            date: "2099-12-15T19:00:00.000Z",
+            description: "Vessel Arrival at Port of Discharge",
+            location: "ITAPOA",
+          },
+          {
+            date: "2020-10-13T15:05:00.000Z",
+            description: "Vessel Departure from Port of Loading",
+            location: "QINGDAO",
+          },
+        ],
+      }),
+    );
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    const events = db.rows("tracking_events");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.description).toBe(
+      "Vessel Departure from Port of Loading",
+    );
+    expect(db.rows("tracking_shipments")[0]?.last_event_description).toBe(
+      "Vessel Departure from Port of Loading",
+    );
+    expect(db.rows("tracking_shipments")[0]?.status).toBe("in_transit");
   });
 });
 

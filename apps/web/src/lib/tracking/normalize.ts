@@ -2,9 +2,10 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type {
-  TrackingStatus,
-  TrackingVesselMismatch,
+import {
+  isArrivedTrackingStatus,
+  type TrackingStatus,
+  type TrackingVesselMismatch,
 } from "@/lib/tracking/shared";
 import {
   isValidContainerNumber,
@@ -393,10 +394,12 @@ export function normalizeFirecrawlResult(
       ? inferTrackingStatus(data.containers[0]?.status ?? null) ?? "pending"
       : "not_found";
 
-  // Chegada/descarga com data futura é previsão, não evento concluído.
+  // Chegada/descarga com data futura é previsão, não evento concluído. Vale
+  // para todos os status de chegada (inclusive `delivered`/`empty_returned`):
+  // um "Empty Container Returned" previsto não pode encerrar o rastreio.
   if (
     latest &&
-    (status === "arrived" || status === "discharged") &&
+    isArrivedTrackingStatus(status) &&
     Date.parse(latest.eventAt) > Date.now()
   ) {
     status = "in_transit";

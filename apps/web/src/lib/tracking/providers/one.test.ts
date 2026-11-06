@@ -278,6 +278,8 @@ describe("oneEventStatus", () => {
       "in_transit",
     );
     expect(oneEventStatus("Vessel Arrival at T/S Port")).toBe("transshipment");
+    expect(oneEventStatus("T/S Truck Terminal Arrival")).toBe("transshipment");
+    expect(oneEventStatus("T/S Truck Terminal Departure")).toBe("in_transit");
     expect(oneEventStatus("Unloaded from Vessel at Transshipment Port")).toBe(
       "transshipment",
     );

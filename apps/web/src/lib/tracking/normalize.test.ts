@@ -164,6 +164,36 @@ describe("normalizeFirecrawlResult", () => {
     expect(result.status).toBe("in_transit");
   });
 
+  it("não encerra o rastreio com vazio devolvido futuro (previsão)", () => {
+    const result = normalizeFirecrawlResult(
+      {
+        found: true,
+        eta: "15 Dec 2099",
+        containers: [
+          {
+            number: "MMAU1421499",
+            events: [
+              {
+                date: "2099-12-16T07:00:00",
+                location: "ITAPOA",
+                description: "Empty Container Returned from Customer",
+              },
+              {
+                date: "2020-10-13T15:05:00",
+                location: "QINGDAO",
+                description: "Vessel departure",
+              },
+            ],
+          },
+        ],
+      },
+      null,
+    );
+
+    // Previsão futura não pode virar `empty_returned` (encerraria o rastreio).
+    expect(result.status).toBe("in_transit");
+  });
+
   it("aceita navio divergente (rollover/transbordo) e sinaliza a divergência", () => {
     const result = normalizeFirecrawlResult(
       {

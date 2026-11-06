@@ -169,8 +169,8 @@ export function oneEventStatus(
   }
   if (/empty container release/.test(text)) return "pending";
   if (/gate in to outbound/.test(text)) return "pending";
-  if (/t\/s port|transship/.test(text)) {
-    return /depart/.test(text) ? "in_transit" : "transshipment";
+  if (/t\/s\b|transship|transbordo/.test(text)) {
+    return /depart|left|sa[ií]da/.test(text) ? "in_transit" : "transshipment";
   }
   if (/arriv|berth/.test(text)) return "arrived";
   if (/unload|discharg/.test(text)) return "discharged";
