@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { carrierFromBlPrefix, looksLikeCarrierBl } from "@/lib/tracking/bl-prefix";
+import {
+  carrierFromBlPrefix,
+  looksLikeCarrierBl,
+} from "@/lib/tracking/bl-prefix";
 
 describe("looksLikeCarrierBl", () => {
   it("reconhece os prefixos de BL de cada armador", () => {
@@ -38,6 +41,11 @@ describe("looksLikeCarrierBl", () => {
     expect(looksLikeCarrierBl("unknown", "PLIQD4H06868")).toBe(true);
     expect(looksLikeCarrierBl(undefined, "SASE3388881")).toBe(true);
     expect(looksLikeCarrierBl("unknown", null)).toBe(true);
+  });
+
+  it("mantém o BL de casa da Kuehne + Nagel como consultável", () => {
+    // O myKN rastreia o BL emitido pela própria K+N (NVOCC), sem prefixo.
+    expect(looksLikeCarrierBl("kuehne", "SK#606N000455SZ1")).toBe(true);
   });
 
   it("devolve false para valor vazio de armador conhecido", () => {

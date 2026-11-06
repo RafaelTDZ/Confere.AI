@@ -23,6 +23,10 @@ describe("detectCarrier", () => {
     expect(detectCarrier("Hyundai Merchant Marine")).toBe("hmm");
     expect(detectCarrier("ONE")).toBe("one");
     expect(detectCarrier("Ocean Network Express")).toBe("one");
+    expect(detectCarrier("Kuehne + Nagel Ltd.")).toBe("kuehne");
+    expect(detectCarrier("KUEHNE-NAGEL")).toBe("kuehne");
+    // Marca NVOCC da K+N (BL de casa da carga consolidada).
+    expect(detectCarrier("Blue Anchor Line")).toBe("kuehne");
   });
 
   it("usa unknown quando não reconhece", () => {
@@ -88,6 +92,11 @@ describe("CARRIERS", () => {
 
   it("usa a API interna da ONE (http, 0 créditos)", () => {
     expect(CARRIERS.one.strategy).toBe("http");
+  });
+
+  it("usa o portal público da Kuehne + Nagel (http, 0 créditos)", () => {
+    expect(CARRIERS.kuehne.strategy).toBe("http");
+    expect(CARRIERS.kuehne.accepts).toContain("container");
   });
 
   it("aceita consulta por container em todos os armadores mapeados", () => {
@@ -180,6 +189,16 @@ describe("buildCarrierDeepLink", () => {
         queryValue: "TCKU7925277",
       }),
     ).toContain("trakNoTpCdParam=C");
+
+    expect(
+      buildCarrierDeepLink({
+        carrier: "kuehne",
+        queryType: "bl",
+        queryValue: "SK#606N000455SZ1",
+      }),
+    ).toBe(
+      "https://mykn.kuehne-nagel.com/public-tracking/shipments?query=SK%23606N000455SZ1",
+    );
   });
 
   it("escapa o valor e devolve null para armador desconhecido", () => {

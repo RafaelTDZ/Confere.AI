@@ -191,6 +191,52 @@ describe("normalizeCarrier", () => {
     );
   });
 
+  it("mantém a Kuehne + Nagel (portal myKN rastreia o BL de casa)", () => {
+    // A K+N é agente de carga, mas o BL emitido por ela é consultável no portal
+    // público; trocar pelo armador oceânico perderia a consulta pelo BL.
+    expect(
+      normalizeCarrier("Kuehne + Nagel Ltd.", "MSC AURORA", ["MSGU6161889"]),
+    ).toBe("KUEHNE + NAGEL LTD.");
+    // O nome com "Logistics" também não cai no FORWARDER_RE.
+    expect(
+      normalizeCarrier("Kuehne + Nagel Logistics", "MSC AURORA", [
+        "MSGU6161889",
+      ]),
+    ).toBe("KUEHNE + NAGEL LOGISTICS");
+  });
+
+  it("reconhece o BL emitido pela Kuehne + Nagel mesmo com navio da Maersk", () => {
+    // BL real 1077603444: título "Blue Anchor Line Bill of Lading" e a K+N como
+    // delivery agent "as agent for Blue Anchor Line", mas o navio é da Maersk.
+    const markdown = [
+      "Blue Anchor Line Bill of Lading for Multimodal and Port to Port Transport",
+      "Delivery Agent KUEHNE+NAGEL SERVICOS LOGISTICOS LTDA. AS AGENT FOR BLUE ANCHOR LINE",
+      "Vessel MAERSK SAN VINCENT",
+    ].join("\n");
+
+    expect(
+      normalizeCarrier(
+        "MAERSK",
+        "MAERSK SAN VINCENT",
+        ["HAMU1578596", "GCXU5197277"],
+        markdown,
+      ),
+    ).toBe("KUEHNE + NAGEL");
+  });
+
+  it("não confunde a K+N citada como agente de entrega com o emitente", () => {
+    // BL da Maersk que só cita a K+N como delivery agent (sem Blue Anchor).
+    const markdown = [
+      "MAERSK BILL OF LADING",
+      "Delivery Agent KUEHNE+NAGEL LTDA",
+      "Vessel MAERSK SAN VINCENT",
+    ].join("\n");
+
+    expect(normalizeCarrier("MAERSK", "MAERSK SAN VINCENT", [], markdown)).toBe(
+      "MAERSK",
+    );
+  });
+
   it("descarta armador que não aparece no documento (palpite do modelo)", () => {
     // OYH142: o modelo repetiu o exemplo do prompt (`CMA CGM`) num BL da MSC,
     // cujo texto só traz o navio `LE HAVRE` e os containers `MSGU...`.
@@ -356,6 +402,14 @@ describe("applyMarkdownFallbacks", () => {
       "MASTER B/L NO.: PLISZ4H14434",
     );
     expect(bl.masterBlNumber).toBeNull();
+  });
+
+  it("reconhece o BL emitido pela Kuehne + Nagel (Blue Anchor Line)", () => {
+    const bl = applyMarkdownFallbacks(
+      { ...blOych120(), carrier: "MAERSK" },
+      "Blue Anchor Line Bill of Lading for Multimodal and Port to Port Transport\nDelivery Agent KUEHNE+NAGEL SERVICOS LOGISTICOS LTDA. AS AGENT FOR BLUE ANCHOR LINE",
+    );
+    expect(bl.carrier).toBe("KUEHNE + NAGEL");
   });
 
   it("ignora a linha de traços antes da descrição (rider)", () => {

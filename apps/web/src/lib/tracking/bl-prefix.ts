@@ -24,8 +24,9 @@ const CARRIER_BL_PATTERNS: Partial<Record<CarrierCode, readonly RegExp[]>> = {
 
 /**
  * `true` quando o número parece ser um BL emitido pelo armador (começa com um
- * prefixo/ formato conhecido). Armador sem prefixo mapeado (`unknown`) devolve
- * `true`: sem informação não dá para classificar o BL como "de casa".
+ * prefixo/ formato conhecido). Armador/agente sem prefixo mapeado (`unknown`,
+ * `kuehne` — o myKN rastreia o BL de casa da própria K+N) devolve `true`: sem
+ * informação não dá para classificar o BL como "de casa".
  */
 export function looksLikeCarrierBl(
   carrier: CarrierCode | null | undefined,

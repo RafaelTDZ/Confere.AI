@@ -28,6 +28,7 @@ import {
 import { fetchMscTracking } from "@/lib/tracking/providers/msc";
 import { fetchHmmTracking } from "@/lib/tracking/providers/hmm";
 import { fetchOneTracking } from "@/lib/tracking/providers/one";
+import { fetchKuehneTracking } from "@/lib/tracking/providers/kuehne";
 import {
   getTrackingCreditsUsed,
   consumeTrackingCredits,
@@ -147,7 +148,8 @@ function mapEvent(row: EventRow): TrackingEvent {
  * 3. nenhum — o BL fica `link` e o primeiro container assume a consulta.
  *
  * Armador `unknown` não permite decidir (`looksLikeCarrierBl` devolve `true`),
- * então o BL do documento continua sendo a primeira escolha.
+ * então o BL do documento continua sendo a primeira escolha. O mesmo vale para
+ * o agente de carga com portal próprio (`kuehne`): o myKN rastreia o BL de casa.
  */
 function pickTrackingBlNumber(params: {
   blNumber: string | null;
@@ -803,6 +805,30 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
     const result = await fetchOneTracking({ queryType, queryValue });
     if (!result.ok) {
       const blocked = /^one_http_40[13]$/.test(result.errorCode);
+      return {
+        ok: false,
+        status: blocked ? "blocked" : "error",
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        credits: 0,
+      };
+    }
+    return {
+      ok: true,
+      snapshot: result.snapshot,
+      credits: 0,
+      httpStatus: result.httpStatus,
+    };
+  }
+
+  // Kuehne + Nagel (agente de carga) tem portal público com API interna
+  // (0 créditos). Cobre o BL de casa emitido pela K+N.
+  if (carrier === "kuehne") {
+    const result = await fetchKuehneTracking({ queryType, queryValue });
+    if (!result.ok) {
+      const blocked = /^kuehne_http_40[13]$|^kuehne_http_429$/.test(
+        result.errorCode,
+      );
       return {
         ok: false,
         status: blocked ? "blocked" : "error",

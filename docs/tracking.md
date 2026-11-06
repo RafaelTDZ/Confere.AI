@@ -367,17 +367,18 @@ embarque`) e **não** derruba o rastreio: o snapshot principal segue
 
 ## Armadores
 
-| Armador     | Código      | Portal                                                                | Observação                                                                                                                                                                                                 |
-| ----------- | ----------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Maersk      | `maersk`    | `/tracking/{número}`                                                  | SPA atrás do Akamai: exige `proxy: stealth` e ~18s. O BL retorna os containers; o retry (`attempts = 2`) vale só para `not_found` real, nunca para divergência de navio.                                   |
-| MSC         | `msc`       | `/api/feature/tools/TrackingInfo`                                     | **API JSON gratuita** (0 créditos) com cookie de sessão. BL de casa (forwarder) não existe na MSC → `link`; só o primeiro container é consultado (os demais `link`).                                       |
-| CMA CGM     | `cma`       | `/ebusiness/tracking`                                                 | Formulário POST: o scraping abre a página base e preenche `#Reference` (`actions`). BL de casa (forwarder) não é reconhecido — o rastreio efetivo é pelo primeiro container (os demais `link`).            |
-| Hapag-Lloyd | `hapag`     | `track-by-container-solution.html` / `track-by-booking-solution.html` | Formulário AEM (`hl12`/`hl16` + `hl25`/`hl18`) via Firecrawl `actions`, ~12s. Em 28/10/2026 o portal estava **em manutenção**; BL de casa (não `HLCU`) fica `link` e só o primeiro container é consultado. |
-| COSCO       | `cosco`     | `/scct/public/ct/base`                                                | SPA nova: `trackingType=blNumber\|containerNumber\|bookingNumber` + `number` na URL, ~14s. O BL devolve os containers; o fan-out evita consultas individuais.                                              |
-| OOCL        | `oocl`      | `oocl.com/.../cargotracking.aspx`                                     | Portal com **captcha da CargoSmart**: v1 usa `link` + evento manual (sem rastreio automático).                                                                                                             |
-| HMM         | `hmm`       | `hmm21.com/e-service/general/trackNTrace`                             | **API interna** (0 créditos) com sessão + CSRF. BL com prefixo `HMMU` é a fonte autoritativa (container `link`); BL de casa sem master cai para o primeiro container, porque a API aceita `cntr`.          |
-| ONE         | `one`       | `one-line.com/one-ecom/manage-shipment/cargo-tracking`                | **API interna** `ecomm.one-line.com/api` (0 créditos, sem captcha). BL `ONEY` é autoritativo e o container fica `link` (recarga); BL de casa sem master cai para o primeiro container (`CNTR_NO`).         |
-| Evergreen   | `evergreen` | `ct.shipmentlink.com/servlet/TDB1_CargoTracking.do`                   | Formulário POST (`#s_bl`/`#s_cntr` + `#NO`). O BL retorna todos os containers; o serviço replica o resultado e não consulta container por container.                                                       |
+| Armador        | Código      | Portal                                                                | Observação                                                                                                                                                                                                                                            |
+| -------------- | ----------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Maersk         | `maersk`    | `/tracking/{número}`                                                  | SPA atrás do Akamai: exige `proxy: stealth` e ~18s. O BL retorna os containers; o retry (`attempts = 2`) vale só para `not_found` real, nunca para divergência de navio.                                                                              |
+| MSC            | `msc`       | `/api/feature/tools/TrackingInfo`                                     | **API JSON gratuita** (0 créditos) com cookie de sessão. BL de casa (forwarder) não existe na MSC → `link`; só o primeiro container é consultado (os demais `link`).                                                                                  |
+| CMA CGM        | `cma`       | `/ebusiness/tracking`                                                 | Formulário POST: o scraping abre a página base e preenche `#Reference` (`actions`). BL de casa (forwarder) não é reconhecido — o rastreio efetivo é pelo primeiro container (os demais `link`).                                                       |
+| Hapag-Lloyd    | `hapag`     | `track-by-container-solution.html` / `track-by-booking-solution.html` | Formulário AEM (`hl12`/`hl16` + `hl25`/`hl18`) via Firecrawl `actions`, ~12s. Em 28/10/2026 o portal estava **em manutenção**; BL de casa (não `HLCU`) fica `link` e só o primeiro container é consultado.                                            |
+| COSCO          | `cosco`     | `/scct/public/ct/base`                                                | SPA nova: `trackingType=blNumber\|containerNumber\|bookingNumber` + `number` na URL, ~14s. O BL devolve os containers; o fan-out evita consultas individuais.                                                                                         |
+| OOCL           | `oocl`      | `oocl.com/.../cargotracking.aspx`                                     | Portal com **captcha da CargoSmart**: v1 usa `link` + evento manual (sem rastreio automático).                                                                                                                                                        |
+| HMM            | `hmm`       | `hmm21.com/e-service/general/trackNTrace`                             | **API interna** (0 créditos) com sessão + CSRF. BL com prefixo `HMMU` é a fonte autoritativa (container `link`); BL de casa sem master cai para o primeiro container, porque a API aceita `cntr`.                                                     |
+| ONE            | `one`       | `one-line.com/one-ecom/manage-shipment/cargo-tracking`                | **API interna** `ecomm.one-line.com/api` (0 créditos, sem captcha). BL `ONEY` é autoritativo e o container fica `link` (recarga); BL de casa sem master cai para o primeiro container (`CNTR_NO`).                                                    |
+| Evergreen      | `evergreen` | `ct.shipmentlink.com/servlet/TDB1_CargoTracking.do`                   | Formulário POST (`#s_bl`/`#s_cntr` + `#NO`). O BL retorna todos os containers; o serviço replica o resultado e não consulta container por container.                                                                                                  |
+| Kuehne + Nagel | `kuehne`    | `mykn.kuehne-nagel.com/public-tracking`                               | **Agente de carga (NVOCC)** com API interna pública (0 créditos): `shipment-list?query=` + `abstract`/`content`/`shipment-routing`. O BL de casa da K+N (`reference.OBL`) é consultável; só marcos `ACTUAL` viram evento e a previsão alimenta o ETA. |
 
 O reconhecimento usa o campo `carrier` do BL (`lib/tracking/carriers.ts`) e,
 quando ele não identifica, o nome do navio, os **prefixos de container do próprio
@@ -388,6 +389,22 @@ OOCL `OOLU`/`OOCU` — e, por último, o prefixo do **master** BL
 (`lib/tracking/bl-prefix.ts`). Containers de locadora (TXTU/Textainer,
 TGHU/Triton, SEGU/Seacastle, TCNU…) pertencem ao dono do equipamento e **não**
 identificam o armador.
+
+A Kuehne + Nagel é agente de carga, mas o BL de casa emitido por ela (NVOCC) é
+consultável no **portal público myKN**: por isso `kuehne` tem portal próprio e o
+`FORWARDER_RE` de `lib/ai/bl-normalize.ts` não rebaixa mais o nome para o
+armador oceânico. Trocar a K+N pelo armador faria a consulta procurar no portal
+do armador um BL que ele não emitiu (e cair no primeiro container). Como não há
+prefixo de BL mapeado para a K+N, `looksLikeCarrierBl` devolve `true` e o BL do
+documento continua sendo o alvo consultável.
+
+O BL da K+N sai sob a marca **Blue Anchor Line** (título "Blue Anchor Line Bill
+of Lading" ou "as agent for Blue Anchor Line"). `normalizeCarrier` reconhece
+essa marca no markdown e **vence o armador do navio**: um BL `1077603444` com
+navio `MAERSK SAN VINCENT` é rastreado no myKN, não no portal da Maersk — o
+número de 10 dígitos não é BL da Maersk e o portal dela responde `not_found`.
+A K+N citada apenas como *delivery agent* num BL do armador (sem a marca Blue
+Anchor) **não** dispara a regra.
 
 O armador devolvido pela IA só é aceito quando a marca aparece no **texto do
 PDF** (`normalizeCarrier` recebe o markdown em `applyMarkdownFallbacks`). Sem a
@@ -468,6 +485,27 @@ não foi possível validar a timeline. O BL de casa `SASE3388881` (forwarder YQN
 vira `link`; a Hapag é inferida pelos containers `HLBU...` e o container
 `HLBU9334723` é consultado. Quando o portal voltar, o adapter já está pronto;
 o card oferece o link e o evento manual enquanto isso.
+
+Kuehne + Nagel validada com o portal público myKN (`fetchKuehneTracking`, 0
+créditos). BL de casa (`reference.OBL`) `SK#606N000455SZ1` → embarque
+`522814459` (tracking `1076358717`, Shenzhen → Riyadh Dry Port); o embarque
+`525569072` (Hamburg → Jeddah) devolve navio `CMA CGM RIO GRANDE` / `0R10FE1MA`,
+ETA `2026-08-01` e só a partida como fato consumado (transbordo e chegada ainda
+previstos). Caso real de produção: o BL escaneado `1077603444` (Blue Anchor
+Line, navio `MAERSK SAN VINCENT` / `640W`, Chaozhou → Itapoá, containers
+`HAMU1578596` e `GCXU5197277`) é consultado no myKN e devolve 5 marcos, navio e
+ETA `2026-11-21` — pelo portal da Maersk o mesmo número e os containers
+respondem `not_found`. A busca é **texto exato** e diferencia pontuação: o
+número gravado passa por `normalizeTrackingNumber` (sem `#`), então um BL com
+`#` pode não casar — nesse caso o `not_found` já promove o primeiro container.
+A busca por container confere o equipamento no `content` antes de aceitar o
+embarque, porque a API devolve embarques antigos que reutilizaram o mesmo
+número; um embarque sem eventos nem ETA (reserva antiga) só é aceito se nenhum
+outro candidato trouxer timeline. Os embarques públicos de demonstração usam o
+container `TEST123456`, que não segue a ISO 6346 e por isso é descartado pela
+normalização. Embarque aéreo (`modeOfTransport: air`) fica atrás dos marítimos
+na ordenação de candidatos, então só é tentado se nenhum embarque marítimo
+responder.
 
 ## Variáveis
 

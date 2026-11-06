@@ -111,6 +111,27 @@ describe("buildTrackingTargets", () => {
     });
   });
 
+  it("consulta o BL de casa da Kuehne + Nagel e deixa os containers em link", () => {
+    // BL real 1077603444 (Blue Anchor Line / K+N, navio MAERSK SAN VINCENT):
+    // o numero tem 10 digitos e nao segue o padrao da Maersk - quem rastreia
+    // e o myKN, nao o portal do armador.
+    const targets = buildTrackingTargets(
+      "1077603444",
+      { containerNumbers: ["HAMU1578596", "GCXU5197277"] },
+      3,
+      "kuehne",
+    );
+
+    expect(targets[0]).toEqual({
+      queryType: "bl",
+      queryValue: "1077603444",
+      containerNumber: null,
+    });
+    expect(targets.slice(1).every((target) => target.strategy === "link")).toBe(
+      true,
+    );
+  });
+
   it("mantÃ©m o BL de casa da MSC como link e consulta sÃ³ o primeiro container", () => {
     const targets = buildTrackingTargets(
       "PLIQD4H06868",

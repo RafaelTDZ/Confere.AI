@@ -109,6 +109,8 @@ O projeto usa apenas Supabase cloud — não é necessário Docker, rede IPv6 ou
 - **HMM** usa API interna (`lib/tracking/providers/hmm.ts`, 0 créditos) com sessão + CSRF. BL com prefixo `HMMU` é autoritativo (container `link`); BL de casa sem master cai para o primeiro container, porque a API aceita `cntr`.
 - **ONE** usa a API interna `ecomm.one-line.com/api` (`lib/tracking/providers/one.ts`, 0 créditos). BL `ONEY` é autoritativo e o container fica `link` (recarga); BL de casa sem master cai para o primeiro container (`CNTR_NO`).
 - **Hapag-Lloyd** usa formulário AEM via Firecrawl `actions` (`track-by-container`/`track-by-booking`, ~12s). Em 28/10/2026 o portal estava em manutenção; BL de casa fica `link`, Hapag é inferida por containers `HLBU/HLXU/HLKU`.
+- **Kuehne + Nagel (agente de carga)** usa a API interna do portal público myKN (`lib/tracking/providers/kuehne.ts`, 0 créditos): `shipment-list?query=` + `abstract`/`content`/`shipment-routing` por embarque. O BL de casa da K+N (`reference.OBL`) é consultável, então `FORWARDER_RE` (`lib/ai/bl-normalize.ts`) **não** rebaixa mais o nome para o armador oceânico; só marcos `ACTUAL` viram evento (previsão vira ETA) e a busca por container valida o equipamento no `content`.
+- **BL da K+N é Blue Anchor Line**: `normalizeCarrier` reconhece "Blue Anchor Line Bill of Lading" / "as agent for Blue Anchor Line" no markdown e usa `kuehne` mesmo quando o navio é de outro armador (caso real `1077603444`, navio `MAERSK SAN VINCENT` — a Maersk responde `not_found` para esse número). A K+N citada só como *delivery agent* num BL do armador não dispara a regra; o prompt de `extract-bl` também pede K+N como carrier nesses documentos.
 - Orçamento: `TRACKING_FIRECRAWL_MONTHLY_CREDITS` (tenant) e `TRACKING_FIRECRAWL_GLOBAL_CREDITS`; ao estourar, o shipment vira `blocked` e a UI oferece link do armador + evento manual.
 - Fallback universal: `buildCarrierDeepLink` + `POST /api/imports/[id]/tracking/events` (owner/admin/operator). Sem `FIRECRAWL_API_KEY`, o rastreio fica bloqueado mas a análise segue normal.
 - Armadores v1: Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, HMM, ONE e OOCL (link/manual). MSC, HMM, ONE (APIs internas), CMA, Evergreen, Maersk e COSCO foram validados com BLs reais; Hapag-Lloyd tem adapter pronto, mas o portal estava em manutenção em 28/10/2026 — ver `docs/tracking.md`.
@@ -231,7 +233,7 @@ preview/túnel remoto). O Next faz proxy same-origin:
 | Classificação + extração | Fila `ai_jobs` (202 + worker via `after()`/`/api/ai/jobs/run`); Invoice e número da Invoice no PL em `extraction_results`; BL sem número da Invoice |
 | Rastreio de BL/container | Firecrawl + timeline/ETA por importação; **uma consulta por importação** (BL com prefixo → master BL → primeiro container), cadência semanal/diária, cron diário e refresh pela fila; orçamento de créditos e fallback manual |
 | Pipeline completo (extração integral de PL, comparação) | Não implementado |
-| Testes automatizados | Vitest 5.0.5 — 1.208 testes em 72 arquivos; CI roda `test:coverage` (gates: `documents` 96% funções/88% linhas, `ai` 98%, `tracking` 85% linhas) |
+| Testes automatizados | Vitest 5.1.0 — 1.262 testes em 74 arquivos; CI roda `test:coverage` (gates: `documents` 96% funções/88% linhas, `ai` 98%, `tracking` 85% linhas) |
 
 Detalhes e próximos passos: [`PLAN.md`](PLAN.md).
 

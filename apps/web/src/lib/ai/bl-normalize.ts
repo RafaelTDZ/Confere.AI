@@ -25,11 +25,28 @@ const CARRIER_DISPLAY: Partial<Record<CarrierCode, string>> = {
   oocl: "OOCL",
   hmm: "HMM",
   one: "ONE",
+  kuehne: CARRIERS.kuehne.label.toUpperCase(),
 };
 
-/** Emitentes que normalmente são forwarders, não o armador oceânico. */
+/**
+ * Emitentes que normalmente são forwarders, não o armador oceânico.
+ *
+ * A Kuehne + Nagel fica de fora: o BL de casa dela é consultável no portal
+ * público myKN (`kuehne`), então preservar o nome permite rastrear pelo BL do
+ * documento em vez de cair no portal do armador oceânico com um BL de casa.
+ */
 const FORWARDER_RE =
-  /\b(LX\s*PANTOS|YQN|DHL|KUEHNE|SCHENKER|PANALPINA|EXPEDITORS|CEVA|GEODIS|DSV|FEDEX|UPS|LOGISTICS)\b/i;
+  /\b(LX\s*PANTOS|YQN|DHL|SCHENKER|PANALPINA|EXPEDITORS|CEVA|GEODIS|DSV|FEDEX|UPS|LOGISTICS)\b/i;
+
+/**
+ * O BL emitido pela própria Kuehne + Nagel (NVOCC) sai sob a marca **Blue
+ * Anchor Line** — no título ("Blue Anchor Line Bill of Lading") ou como
+ * "as agent for Blue Anchor Line". Nesses documentos o rastreio é no portal
+ * público myKN, mesmo que o navio seja de outro armador (ex.: `MAERSK SAN
+ * VINCENT`): o número do BL pertence à K+N, não ao armador oceânico.
+ */
+const KUEHNE_ISSUER_RE =
+  /\bBLUE\s*ANCHOR\s*LINE\b|KUEHNE\s*\+?\s*NAGEL[^\n]{0,60}\bBILL\s+OF\s+LADING\b/i;
 
 type ParsedDecimal = { value: number; decimals: number };
 
@@ -218,7 +235,9 @@ function mentionsCarrier(documentText: string, carrier: CarrierCode): boolean {
  * inferido do navio/containers (ex.: LX Pantos + CMA CGM KRYPTON → CMA CGM).
  *
  * `documentText` (markdown do PDF) valida o armador devolvido pela IA: um nome
- * que não aparece no documento é palpite e cai para a inferência.
+ * que não aparece no documento é palpite e cai para a inferência. Também
+ * identifica o emitente NVOCC da Kuehne + Nagel (Blue Anchor Line), que tem
+ * portal próprio (myKN) e por isso vence o armador oceânico do navio.
  */
 export function normalizeCarrier(
   carrier: string | null | undefined,
@@ -226,13 +245,22 @@ export function normalizeCarrier(
   containers: string[],
   documentText?: string | null,
 ): string | null {
+  if (documentText && KUEHNE_ISSUER_RE.test(documentText)) {
+    return CARRIER_DISPLAY.kuehne ?? "KUEHNE + NAGEL";
+  }
+
   const raw = carrier?.trim() ?? "";
   const code = detectCarrier(raw);
   const unsupported =
     Boolean(documentText) &&
     code !== "unknown" &&
     !mentionsCarrier(documentText ?? "", code);
-  const shouldInfer = !raw || FORWARDER_RE.test(raw) || unsupported;
+  const shouldInfer =
+    !raw ||
+    // K+N é agente de carga, mas tem portal próprio (myKN) que rastreia o BL
+    // dela: o nome nunca é trocado pelo armador oceânico.
+    (code !== "kuehne" && FORWARDER_RE.test(raw)) ||
+    unsupported;
   if (!shouldInfer) return raw.toUpperCase();
 
   const inferred = inferCarrier("", containers, vessel ?? null);

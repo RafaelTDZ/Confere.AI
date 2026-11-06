@@ -11,6 +11,7 @@ export type CarrierCode =
   | "oocl"
   | "hmm"
   | "one"
+  | "kuehne"
   | "unknown";
 
 export type CarrierDefinition = {
@@ -94,6 +95,14 @@ export const CARRIERS: Record<CarrierCode, CarrierDefinition> = {
     accepts: ["bl", "container", "booking"],
     strategy: "http",
   },
+  kuehne: {
+    code: "kuehne",
+    label: "Kuehne + Nagel",
+    // O BL de casa da K+N (NVOCC) é consultável no portal público myKN.
+    aliases: ["kuehne", "kuehne nagel", "kuehnenagel", "blue anchor line"],
+    accepts: ["bl", "container", "booking"],
+    strategy: "http",
+  },
   unknown: {
     code: "unknown",
     label: "Armador não identificado",
@@ -113,6 +122,7 @@ const SUPPORTED_CARRIERS: CarrierCode[] = [
   "oocl",
   "hmm",
   "one",
+  "kuehne",
 ];
 
 /** Rótulo de exibição; código desconhecido cai em `CARRIERS.unknown`. */
@@ -287,6 +297,8 @@ export function buildCarrierDeepLink(params: {
       const code = type === "container" ? "C" : "B";
       return `https://www.one-line.com/one-ecom/manage-shipment/cargo-tracking?trakNoParam=${value}&trakNoTpCdParam=${code}`;
     }
+    case "kuehne":
+      return `https://mykn.kuehne-nagel.com/public-tracking/shipments?query=${value}`;
     default:
       return null;
   }

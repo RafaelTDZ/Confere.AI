@@ -70,10 +70,11 @@ divergências entre documentos.
   por importação** (BL do documento → BL master → 1º container), com timeline, ETA,
   navio/viagem, orçamento de créditos por tenant e fallback link/manual. Armadores:
   Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, HMM, ONE e OOCL (link/manual por
-  captcha); MSC, HMM e ONE usam API interna (0 créditos) (`apps/web/src/lib/tracking`,
+  captcha), mais o agente de carga Kuehne + Nagel (portal público myKN); MSC, HMM, ONE e
+  Kuehne + Nagel usam API interna (0 créditos) (`apps/web/src/lib/tracking`,
   detalhes em `docs/tracking.md`)
 - [x] **Parse de PDF em markdown** — `POST /v2/parse` do Firecrawl converte o PDF (OCR quando necessário) em markdown antes das tasks de IA; o texto vira `TextPart` para todos os providers, com cache por `(tenant_id, sha256)` em `document_parses`, orçamento mensal de créditos e fallback para o pipeline de imagens/PDF quando o parse falha, vem curto ou estoura o teto (`docs/pdf-markdown.md`; `lib/ai/document-parse.ts` + migration `20261028150000_document_parse`) 
-- [x] **Testes automatizados** — Vitest 5 no `apps/web/src`: 72 arquivos cobrindo rotas de
+- [x] **Testes automatizados** — Vitest 5 no `apps/web/src`: 74 arquivos (1.262 testes) cobrindo rotas de
   API, pipeline de análise, IA (tasks/providers/parse), rastreio, RLS/isolamento de tenant
   e utilitários; `pnpm test:coverage` com gates por pasta no CI
 
