@@ -9,7 +9,9 @@ import { normalizeImportKey } from "@/lib/documents/imports-shared";
  * `CONTRACT NO.`, `PO NO.`, `BOOKING NO.`) e, quando não há nada utilizável,
  * usa o código do nome do arquivo (`OYH128 draft bl - ...pdf` → `OYH128`).
  * Valores que só repetem o número da Invoice/BL são descartados — a UI já os
- * mostra em campos próprios.
+ * mostra em campos próprios. Isso inclui o booking embutido no BL: a ONE, por
+ * exemplo, emite `ONEY` + booking (`ONEYTAOGU2357600` → `TAOGU2357600`), e o
+ * `BOOKING NO.` do topo do documento é apenas o BL sem o prefixo do armador.
  */
 
 export type ImportReferenceCandidate = {
@@ -122,6 +124,25 @@ function isRedundant(
   );
 }
 
+/** Tamanho mínimo para reconhecer um código embutido no BL sem falso positivo. */
+const MIN_BL_DERIVED_LENGTH = 6;
+
+/**
+ * Alguns armadores compõem o BL com o booking (`ONEY` + `TAOGU2357600`), então o
+ * `BOOKING NO.` do documento é o próprio BL sem o prefixo. Não serve como
+ * referência da importação: repetiria o que o campo BL já mostra.
+ */
+function isBlDerivative(
+  value: string,
+  blNumber: string | null | undefined,
+): boolean {
+  const normalizedValue = normalizeImportKey(value);
+  const normalizedBl = normalizeImportKey(blNumber);
+  if (!normalizedValue || !normalizedBl) return false;
+  if (normalizedValue.length < MIN_BL_DERIVED_LENGTH) return false;
+  return normalizedBl.endsWith(normalizedValue);
+}
+
 export function extractImportReference(input: {
   filename?: string | null;
   markdown?: string | null;
@@ -141,6 +162,7 @@ export function extractImportReference(input: {
       const value = clean(match[1]);
       if (!value) continue;
       if (isRedundant(value, equivalents)) continue;
+      if (isBlDerivative(value, input.blNumber)) continue;
       return { value, source: "document" };
     }
   }

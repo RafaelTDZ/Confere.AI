@@ -63,6 +63,28 @@ Copies of such provisions are obtainable upon request from the Carrier or his ag
     expect(result).toEqual({ value: "FRI009", source: "filename" });
   });
 
+  it("ignora o booking embutido no número do BL (ONEY + booking) e usa o arquivo", () => {
+    const markdown = `<table><thead><tr><th rowspan="2" colspan="2">SHIPPER/EXPORTER OYH INTERNATIONAL TRADE</th><th>BOOKING NO. TAOGU2357600</th><th>BILL OF LADING NO. ONEYTAOGU2357600</th></tr><tr><th colspan="2">EXPORT REFERENCES(for the Merchant's and/or Carrier's reference only.</th></tr></thead></table>`;
+
+    const result = extractImportReference({
+      markdown,
+      filename: "OYH106 bl - 06-11-2026.pdf",
+      blNumber: "ONEYTAOGU2357600",
+    });
+
+    expect(result).toEqual({ value: "OYH106", source: "filename" });
+  });
+
+  it("mantém o booking quando ele não deriva do número do BL", () => {
+    const result = extractImportReference({
+      markdown: "BOOKING NO.: SZPGC3008300",
+      filename: "documento.pdf",
+      blNumber: "MAEU123456789",
+    });
+
+    expect(result).toEqual({ value: "SZPGC3008300", source: "document" });
+  });
+
   it("não usa o código do arquivo quando ele é o próprio número do BL", () => {
     const result = extractImportReference({
       filename: "BL123456.pdf",
