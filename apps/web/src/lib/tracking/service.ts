@@ -41,6 +41,7 @@ import {
   type NormalizedTrackingSnapshot,
 } from "@/lib/tracking/normalize";
 import {
+  isArrivedTrackingStatus,
   isTrackingQueryableStatus,
   TRACKING_STATUSES,
   type ImportTracking,
@@ -510,6 +511,53 @@ export async function enqueueTrackingForImport(params: {
     throw new Error(`Falha ao listar rastreios: ${listError.message}`);
   }
 
+  let currentShipments = shipments ?? [];
+
+  // Defesa: o upsert é idempotente e deveria gravar todos os alvos, mas já
+  // vimos um container do BL ficar de fora (OYH145: payload com 4 containers,
+  // 3 shipments). Sem essa checagem a linha some silenciosamente e o container
+  // nunca aparece no rastreio; aqui recriamos o que faltou e logamos o caso.
+  const presentKeys = new Set(
+    currentShipments.map((row) => `${row.query_type}:${row.query_value}`),
+  );
+  const missingRows = rows.filter(
+    (row) => !presentKeys.has(`${row.query_type}:${row.query_value}`),
+  );
+
+  if (missingRows.length > 0) {
+    log.warn("enqueue_missing_shipments", {
+      tenantId: params.tenantId,
+      importId: params.importId,
+      carrier,
+      missing: missingRows.map((row) => row.query_value),
+    });
+
+    const { error: retryError } = await admin
+      .from("tracking_shipments")
+      .upsert(missingRows, {
+        onConflict: "import_id,carrier_code,query_type,query_value",
+        ignoreDuplicates: true,
+      });
+
+    if (retryError) {
+      throw new Error(`Falha ao recriar rastreios: ${retryError.message}`);
+    }
+
+    const { data: reloaded, error: reloadError } = await admin
+      .from("tracking_shipments")
+      .select(
+        "id, carrier_code, strategy, status, next_check_at, query_type, query_value",
+      )
+      .eq("tenant_id", params.tenantId)
+      .eq("import_id", params.importId);
+
+    if (reloadError) {
+      throw new Error(`Falha ao listar rastreios: ${reloadError.message}`);
+    }
+
+    currentShipments = reloaded ?? currentShipments;
+  }
+
   // O upsert ignora linhas existentes; sem reconciliar, uma importação antiga
   // continuaria com vários alvos consultáveis (fan-out). Garante a regra de
   // **uma consulta por importação**: só o alvo escolhido fica `http`/
@@ -520,7 +568,7 @@ export async function enqueueTrackingForImport(params: {
     consultableTarget && strategy !== "link" ? strategy : null;
   const downgradedIds: string[] = [];
 
-  for (const row of shipments ?? []) {
+  for (const row of currentShipments) {
     const matchesConsultable =
       consultableTarget !== null &&
       row.carrier_code === carrier &&
@@ -583,7 +631,7 @@ export async function enqueueTrackingForImport(params: {
     }
   }
 
-  const shipmentIds = (shipments ?? []).map((row) => row.id);
+  const shipmentIds = currentShipments.map((row) => row.id);
   if (shipmentIds.length === 0) return { shipments: 0, queued: 0 };
 
   const { data: activeJobs, error: jobsError } = await admin
@@ -597,7 +645,7 @@ export async function enqueueTrackingForImport(params: {
   }
 
   const busy = new Set((activeJobs ?? []).map((row) => row.shipment_id));
-  const jobRows = (shipments ?? [])
+  const jobRows = currentShipments
     .filter(
       (row) =>
         !busy.has(row.id) &&
@@ -628,6 +676,7 @@ export async function enqueueTrackingForImport(params: {
     importId: params.importId,
     carrier,
     strategy,
+    targets: targets.length,
     shipments: shipmentIds.length,
     queued: jobRows.length,
     downgraded: downgradedIds.length,
@@ -1097,7 +1146,10 @@ async function fillBlFieldsFromTracking(params: {
   }
 
   if (params.syncEta) {
-    await syncImportEta({ tenantId: params.tenantId, importId: params.importId });
+    await syncImportEta({
+      tenantId: params.tenantId,
+      importId: params.importId,
+    });
   }
 
   return true;
@@ -1207,6 +1259,14 @@ const ARRIVAL_EVENT_RE =
 /** Porto de transbordo (T/S): chegada/descarga ali não é a chegada final. */
 const TRANSSHIPMENT_PLACE_RE = /\bT\/S\b|\bTSS\b|transship|transbordo|transb/i;
 
+/**
+ * Chegada no **porto de origem** (POL) não é a chegada da importação. Caso real
+ * (K+N, OYH145): o evento "Chegada — no porto de embarque" (Qingdao) virava
+ * `ata`, e a tela mostrava "Adiantado −44 dias" e "Trânsito 5 dias".
+ */
+const ORIGIN_PLACE_RE =
+  /port of loading|porto de embarque|loading port|at origin|\bna origem\b|\bPOL\b/;
+
 type TrackingMilestoneEvent = Pick<
   NormalizedTrackingSnapshot["events"][number],
   "eventAt" | "status" | "description" | "location"
@@ -1225,6 +1285,7 @@ function isArrivalEvent(event: TrackingMilestoneEvent): boolean {
   if (PLANNED_EVENT_RE.test(text)) return false;
   if (!ARRIVAL_EVENT_RE.test(text)) return false;
   const place = `${event.description ?? ""} ${event.location ?? ""}`;
+  if (ORIGIN_PLACE_RE.test(place)) return false;
   return !TRANSSHIPMENT_PLACE_RE.test(place);
 }
 
@@ -1241,6 +1302,8 @@ function trackingMilestonePatch(params: {
   etaOriginal: string | null | undefined;
   ata: string | null | undefined;
   eta: string | null | undefined;
+  /** Status do snapshot: `ata` só existe quando o embarque chegou. */
+  status: TrackingStatus;
   events: ReadonlyArray<TrackingMilestoneEvent>;
   now?: Date;
 }): { eta_original?: string; ata?: string } {
@@ -1251,7 +1314,10 @@ function trackingMilestonePatch(params: {
     if (eta) patch.eta_original = eta;
   }
 
-  if (!params.ata?.trim()) {
+  // Chegada real só faz sentido com o embarque já chegou/descarregou. Sem esse
+  // guarda, um marco de chegada no porto de origem (comum no rastreio do agente)
+  // virava `ata` e a tela calculava atraso/trânsito contra ele.
+  if (!params.ata?.trim() && isArrivedTrackingStatus(params.status)) {
     const now = (params.now ?? new Date()).getTime();
     const arrivals = params.events
       .filter(isArrivalEvent)
@@ -1288,6 +1354,7 @@ async function persistTrackingMilestones(params: {
     etaOriginal: params.shipment.eta_original,
     ata: params.shipment.ata,
     eta: params.snapshot.eta,
+    status: params.snapshot.status,
     events: params.snapshot.events,
     now: params.now,
   });

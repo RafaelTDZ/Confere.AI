@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTrackingTargets,
   enqueueDueTrackingShipments,
+  enqueueTrackingForImport,
   getPrimaryTrackingShipmentId,
   onboardDateFromTrackingEvents,
   prioritizeBlShipments,
@@ -825,7 +826,12 @@ describe("onboardDateFromTrackingEvents", () => {
   it("devolve null sem evento de embarque", () => {
     expect(
       onboardDateFromTrackingEvents(
-        [trackingEvent("2026-10-10T10:00:00.000Z", "Gate In to Outbound Terminal")],
+        [
+          trackingEvent(
+            "2026-10-10T10:00:00.000Z",
+            "Gate In to Outbound Terminal",
+          ),
+        ],
         now,
       ),
     ).toBeNull();
@@ -2284,6 +2290,42 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     expect(shipment?.eta_original).toBe("2026-11-10");
   });
 
+  it("não grava ata com chegada no porto de origem", async () => {
+    // K+N OYH145: "Chegada — no porto de embarque" (Qingdao) é marco de origem;
+    // usá-la como ATA gerava "Adiantado −44 dias" e "Trânsito 5 dias".
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        status: "in_transit",
+        eta: "2026-12-07",
+        eta_original: "2026-12-07",
+        ata: null,
+        raw: {},
+      }),
+    );
+    mocks.scrape.mockResolvedValue(
+      firecrawlEventsResult({
+        eta: "2026-12-07",
+        events: [
+          {
+            date: daysAgo(5),
+            location: "Qingdao / CN",
+            description: "Chegada — no porto de embarque",
+          },
+          {
+            date: daysAgo(3),
+            location: "Qingdao / CN",
+            description: "Partida — no porto de embarque",
+          },
+        ],
+      }),
+    );
+    seedJob("job-origem");
+
+    await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(db.rows("tracking_shipments")[0]?.ata).toBeNull();
+  });
+
   it("não agenda nova consulta quando o snapshot confirma a chegada", async () => {
     db.rows("tracking_shipments").push(
       shipmentRow({
@@ -2488,6 +2530,89 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     expectLog(consoleWarn, "milestones_persist_failed", {
       error: { message: "Falha ao salvar marcos do embarque: banco fora" },
     });
+  });
+});
+
+describe("enqueueTrackingForImport — alvo que sumiu do upsert", () => {
+  let db: FakeSupabase;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    db = new FakeSupabase({ tracking_shipments: [], tracking_jobs: [] });
+    mocks.admin = db;
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.getImportDetail.mockResolvedValue({
+      bl_number: "1077841553",
+      bl: {
+        number: "1077841553",
+        carrier: "KUEHNE + NAGEL",
+        vessel: "COSCO SHIPPING URUGUAY",
+        containerNumbers: [
+          "BMOU5866089",
+          "CMAU7209933",
+          "TCNU2698745",
+          "BMOU5608084",
+        ],
+      },
+    });
+  });
+
+  function warns(): string {
+    return warn.mock.calls
+      .map((args: unknown[]) => args.join(" "))
+      .join("\n");
+  }
+
+  it("não loga nem duplica quando todos os alvos já existem", async () => {
+    const result = await enqueueTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+    });
+
+    expect(result.shipments).toBe(5);
+    expect(
+      db
+        .rows("tracking_shipments")
+        .map((row) => row.query_value)
+        .sort(),
+    ).toEqual([
+      "1077841553",
+      "BMOU5608084",
+      "BMOU5866089",
+      "CMAU7209933",
+      "TCNU2698745",
+    ]);
+    expect(
+      db.rows("tracking_shipments").filter((row) => row.strategy !== "link"),
+    ).toHaveLength(1);
+    expect(warns()).not.toContain("enqueue_missing_shipments");
+  });
+
+  it("não recria o que já existe (upsert idempotente)", async () => {
+    for (const container of ["BMOU5866089", "CMAU7209933", "TCNU2698745"]) {
+      db.rows("tracking_shipments").push(
+        shipmentRow({
+          id: `shipment-${container}`,
+          carrier_code: "kuehne",
+          strategy: "link",
+          query_type: "container",
+          query_value: container,
+          container_number: container,
+        }),
+      );
+    }
+
+    const result = await enqueueTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+    });
+
+    // Duas consultas seguidas não duplicam linhas e mantêm um só alvo
+    // consultável (o BL); os containers continuam em `link`.
+    const rows = db.rows("tracking_shipments");
+    expect(result.shipments).toBe(5);
+    expect(rows).toHaveLength(5);
+    expect(rows.filter((row) => row.strategy !== "link")).toHaveLength(1);
   });
 });
 
