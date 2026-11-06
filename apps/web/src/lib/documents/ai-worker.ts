@@ -54,6 +54,9 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
               userId: job.user_id ?? "",
               file,
               importId: job.import_id ?? undefined,
+              // O arquivo já está no Storage: o pipeline copia para o caminho
+              // definitivo em vez de subir os mesmos bytes outra vez.
+              sourceStoragePath: job.storage_path,
             }),
           ),
         ),

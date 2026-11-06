@@ -74,6 +74,7 @@ import {
 } from "@/lib/documents/parties";
 import {
   buildUniqueStoragePath,
+  copyImportFile,
   uploadImportFile,
 } from "@/lib/documents/storage";
 import { recordAiCall, withSpan } from "@/lib/observability/tracing";
@@ -109,7 +110,46 @@ type AnalyzePipelineParams = {
   file: File;
   startedAt?: number;
   importId?: string;
+  /**
+   * Caminho do PDF bruto no Storage (`_jobs/<jobId>/...`), que o worker acabou
+   * de baixar. Quando presente, o arquivo definitivo é uma **cópia** no próprio
+   * Storage em vez de um segundo upload dos mesmos bytes.
+   */
+  sourceStoragePath?: string;
 };
+
+/**
+ * Grava o PDF no caminho definitivo da importação. Copiar do arquivo do job é
+ * bem mais rápido que reenviar os bytes; se a cópia falhar, sobe normalmente.
+ */
+async function persistImportFile(params: {
+  storagePath: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  sourceStoragePath?: string;
+}): Promise<void> {
+  if (params.sourceStoragePath) {
+    try {
+      await copyImportFile({
+        fromPath: params.sourceStoragePath,
+        toPath: params.storagePath,
+      });
+      return;
+    } catch (error) {
+      log.warn("storage_copy_failed", {
+        from: params.sourceStoragePath,
+        to: params.storagePath,
+        error,
+      });
+    }
+  }
+
+  await uploadImportFile({
+    storagePath: params.storagePath,
+    bytes: params.bytes,
+    mediaType: params.mediaType,
+  });
+}
 
 type ReusableUpload = {
   latestImportId: string;
@@ -208,19 +248,21 @@ async function applyDefaultConsignee(params: {
   const documentConsignee = documentConsigneeFrom(params.invoice, params.bl);
   const divergences = compareConsignee(documentConsignee, defaultConsignee);
 
-  if (defaultConsignee) {
-    await updateImportConsignee({
+  // As duas escritas são independentes: uma viagem ao banco em vez de duas.
+  await Promise.all([
+    defaultConsignee
+      ? updateImportConsignee({
+          tenantId: params.tenantId,
+          importId: params.importId,
+          partyId: defaultConsignee.id,
+        })
+      : Promise.resolve(),
+    updateImportConsigneeDivergences({
       tenantId: params.tenantId,
       importId: params.importId,
-      partyId: defaultConsignee.id,
-    });
-  }
-
-  await updateImportConsigneeDivergences({
-    tenantId: params.tenantId,
-    importId: params.importId,
-    divergences: defaultConsignee ? divergences : null,
-  });
+      divergences: defaultConsignee ? divergences : null,
+    }),
+  ]);
 
   return defaultConsignee;
 }
@@ -287,10 +329,11 @@ async function buildReusableResult(
         filename: file.filename,
         digest: file.digest,
       });
-      await uploadImportFile({
+      await persistImportFile({
         storagePath,
         bytes: file.buffer,
         mediaType: file.mediaType,
+        sourceStoragePath: params.sourceStoragePath,
       });
 
       const newDocs = await insertDocuments({
@@ -444,6 +487,8 @@ async function buildReusableResult(
     ? await enqueueTrackingBestEffort({
         tenantId: params.tenantId,
         importId,
+        bl,
+        blNumber: normalizeImportKey(bl.number),
       })
     : false;
 
@@ -470,6 +515,9 @@ async function buildReusableResult(
 async function enqueueTrackingBestEffort(params: {
   tenantId: string;
   importId: string;
+  /** Payload do BL já carregado (evita reler a importação). */
+  bl?: BlExtraction | null;
+  blNumber?: string | null;
 }): Promise<boolean> {
   const delays = [300, 1_200];
   let lastError: unknown = null;
@@ -533,6 +581,8 @@ export async function runAnalyzePipeline(params: {
   file: File;
   startedAt?: number;
   importId?: string;
+  /** PDF bruto do job no Storage: evita reenviar os bytes. */
+  sourceStoragePath?: string;
 }): Promise<AnalyzePipelineResult> {
   return runWithLogContext(
     {
@@ -611,6 +661,7 @@ async function executeAnalyzePipeline(
     file: File;
     startedAt?: number;
     importId?: string;
+    sourceStoragePath?: string;
   },
   tracker: PipelineTracker,
 ): Promise<AnalyzePipelineResult> {
@@ -1124,10 +1175,11 @@ async function executeAnalyzePipeline(
       filename,
       digest,
     });
-    await uploadImportFile({
+    await persistImportFile({
       storagePath,
       bytes: buffer,
       mediaType,
+      sourceStoragePath: params.sourceStoragePath,
     });
 
     documents = await insertDocuments({
@@ -1339,27 +1391,42 @@ async function executeAnalyzePipeline(
     });
   }
 
-  const defaultConsignee = await applyDefaultConsignee({
+  // Rastreio, consignee e status são independentes entre si e do resultado da
+  // análise: as três escritas saem juntas (o enqueue usa o BL que acabou de ser
+  // persistido, sem reler a importação).
+  const trackingPromise = bl
+    ? enqueueTrackingBestEffort({
+        tenantId: params.tenantId,
+        importId,
+        bl,
+        blNumber,
+      })
+    : Promise.resolve(false);
+
+  const consigneePromise = applyDefaultConsignee({
     tenantId: params.tenantId,
     importId,
     invoice,
     bl,
   });
 
-  try {
-    await updateImportStatus({
-      tenantId: params.tenantId,
-      importId,
-      status: "awaiting_review",
-    });
-  } catch (statusErr) {
+  const statusPromise = updateImportStatus({
+    tenantId: params.tenantId,
+    importId,
+    status: "awaiting_review",
+  }).catch((statusErr) => {
     log.error("import_status_failed", {
       tenantId: params.tenantId,
       importId,
       status: "awaiting_review",
       error: statusErr,
     });
-  }
+  });
+
+  const [defaultConsignee] = await Promise.all([
+    consigneePromise,
+    statusPromise,
+  ]);
 
   let pendingParties: PendingParty[] = [];
   if (invoice) {
@@ -1409,13 +1476,7 @@ async function executeAnalyzePipeline(
     }
   }
 
-  let trackingPending = false;
-  if (bl) {
-    trackingPending = await enqueueTrackingBestEffort({
-      tenantId: params.tenantId,
-      importId,
-    });
-  }
+  const trackingPending = await trackingPromise;
 
   return {
     importId,

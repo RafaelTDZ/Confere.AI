@@ -82,6 +82,9 @@ type TrackingTarget = {
 type TrackingBlPayload = {
   number?: string | null;
   masterBlNumber?: string | null;
+  carrier?: string | null;
+  vessel?: string | null;
+  voyage?: string | null;
   containerNumbers?: string[];
 };
 
@@ -457,23 +460,35 @@ async function adoptStaleCarrierRows(params: {
 export async function enqueueTrackingForImport(params: {
   tenantId: string;
   importId: string;
+  /**
+   * Payload do BL e número já carregados por quem chamou (a análise acabou de
+   * persistir). Evita reler importação/documentos/extração — 4 a 5 queries por
+   * análise. Omitido nos outros chamadores (`refresh`, edição, cron).
+   */
+  bl?: TrackingBlPayload | null;
+  blNumber?: string | null;
 }): Promise<{ shipments: number; queued: number }> {
-  const detail = await getImportDetail(params.tenantId, params.importId);
-  const bl = detail.bl;
+  let bl: TrackingBlPayload | null;
+  let blNumber: string | null;
+
+  if (params.bl !== undefined) {
+    bl = params.bl;
+    blNumber = params.blNumber ?? null;
+  } else {
+    const detail = await getImportDetail(params.tenantId, params.importId);
+    bl = detail.bl as TrackingBlPayload | null;
+    blNumber = detail.bl_number;
+  }
+
   const carrier = resolveTrackingCarrier(bl);
-  const targets = buildTrackingTargets(
-    detail.bl_number,
-    bl,
-    undefined,
-    carrier,
-  );
+  const targets = buildTrackingTargets(blNumber, bl, undefined, carrier);
 
   if (targets.length === 0) {
     log.info("enqueue_no_targets", {
       tenantId: params.tenantId,
       importId: params.importId,
       carrier,
-      blNumber: detail.bl_number,
+      blNumber,
     });
     return { shipments: 0, queued: 0 };
   }

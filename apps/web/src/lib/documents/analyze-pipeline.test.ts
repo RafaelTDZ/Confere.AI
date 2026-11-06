@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   findLatestExtractionsByDocumentIds: vi.fn(),
   buildUniqueStoragePath: vi.fn(),
   uploadImportFile: vi.fn(),
+  copyImportFile: vi.fn(),
   resolveInvoiceParties: vi.fn(),
   resolveBlParties: vi.fn(),
   pendingPartiesFromInvoice: vi.fn(),
@@ -120,6 +121,7 @@ vi.mock("@/lib/documents/extractions", () => ({
 vi.mock("@/lib/documents/storage", () => ({
   buildUniqueStoragePath: mocks.buildUniqueStoragePath,
   uploadImportFile: mocks.uploadImportFile,
+  copyImportFile: mocks.copyImportFile,
 }));
 
 vi.mock("@/lib/documents/parties", () => ({
@@ -417,6 +419,7 @@ function setDefaultMocks() {
   mocks.persistAiLog.mockImplementation(async () => nextAiLogId());
   mocks.attachAiLogsToImport.mockResolvedValue(undefined);
   mocks.uploadImportFile.mockResolvedValue(undefined);
+  mocks.copyImportFile.mockResolvedValue(undefined);
   mocks.updateDocumentStatus.mockResolvedValue(undefined);
   mocks.fillImportKeysIfEmpty.mockResolvedValue(undefined);
   mocks.fillImportReferenceIfEmpty.mockResolvedValue(true);
@@ -592,6 +595,37 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractInvoice).toHaveBeenCalledWith(PREPARED);
     expect(mocks.extractPackingList).toHaveBeenCalledWith(PREPARED);
     expect(mocks.extractBl).toHaveBeenCalledWith(PREPARED);
+  });
+
+  it("copia o PDF do job em vez de reenviar os bytes", async () => {
+    const result = await runAnalyzePipeline({
+      ...baseParams(),
+      sourceStoragePath: "tenant-a/_jobs/job-1/invoice.pdf",
+    });
+
+    expect(result.deduped).toBe(false);
+    expect(mocks.copyImportFile).toHaveBeenCalledWith({
+      fromPath: "tenant-a/_jobs/job-1/invoice.pdf",
+      toPath: "tenant-a/import-1/invoice.pdf",
+    });
+    expect(mocks.uploadImportFile).not.toHaveBeenCalled();
+  });
+
+  it("sobe o arquivo quando a cópia falha", async () => {
+    mocks.copyImportFile.mockRejectedValue(new Error("storage offline"));
+
+    const result = await runAnalyzePipeline({
+      ...baseParams(),
+      sourceStoragePath: "tenant-a/_jobs/job-1/invoice.pdf",
+    });
+
+    expect(result.deduped).toBe(false);
+    expect(mocks.uploadImportFile).toHaveBeenCalledWith(
+      expect.objectContaining({ storagePath: "tenant-a/import-1/invoice.pdf" }),
+    );
+    expectLog(console.warn, "storage_copy_failed", {
+      error: { message: "storage offline" },
+    });
   });
 
   it("dispara as extrações independentes em paralelo", async () => {
@@ -1871,6 +1905,8 @@ describe("primeira consulta de rastreio", () => {
     expect(mocks.enqueueTrackingForImport).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
       importId: "import-1",
+      bl: expect.objectContaining({ number: expect.anything() }),
+      blNumber: expect.any(String),
     });
     // A consulta ao armador (5-35s) roda depois do job fechado, no worker.
     expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();

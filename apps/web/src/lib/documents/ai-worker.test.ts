@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfConversionError } from "@/lib/ai/pdf-pages";
-import {
-  processAiJobById,
-  processNextAiJob,
-} from "@/lib/documents/ai-worker";
+import { processAiJobById, processNextAiJob } from "@/lib/documents/ai-worker";
 
 const mocks = vi.hoisted(() => ({
   claimAiJob: vi.fn(),
@@ -99,6 +96,7 @@ describe("processAiJobById", () => {
       userId: "user-a",
       file: expect.any(File),
       importId: undefined,
+      sourceStoragePath: JOB.storage_path,
     });
     expect(mocks.markAiJobSucceeded).toHaveBeenCalledWith("job-1", {
       importId: "import-1",
@@ -124,7 +122,10 @@ describe("processAiJobById", () => {
 
     await processAiJobById("job-1");
 
-    expect(mocks.markAiJobFailed).toHaveBeenCalledWith("job-1", "IA fora do ar");
+    expect(mocks.markAiJobFailed).toHaveBeenCalledWith(
+      "job-1",
+      "IA fora do ar",
+    );
     expect(mocks.markAiJobSucceeded).not.toHaveBeenCalled();
     expect(mocks.removeAiJobFile).not.toHaveBeenCalled();
   });

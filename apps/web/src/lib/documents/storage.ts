@@ -78,3 +78,22 @@ export async function uploadImportFile(params: {
     throw new Error(error.message || "Falha ao enviar arquivo ao Storage");
   }
 }
+
+/**
+ * Copia o arquivo bruto do job para o caminho definitivo da importação, no
+ * próprio Storage. A análise já enviou o PDF uma vez (`_jobs/<jobId>/`); copiar
+ * evita subir os mesmos bytes de novo (~1,8s medidos no OYH123).
+ */
+export async function copyImportFile(params: {
+  fromPath: string;
+  toPath: string;
+}): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.storage
+    .from(BUCKET)
+    .copy(params.fromPath, params.toPath);
+
+  if (error) {
+    throw new Error(error.message || "Falha ao copiar arquivo no Storage");
+  }
+}
