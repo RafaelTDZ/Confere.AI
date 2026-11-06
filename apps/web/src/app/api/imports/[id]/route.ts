@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createLogger } from "@/lib/observability/logger";
 import { getAuthContext, UnauthorizedError } from "@/lib/auth";
 import {
@@ -17,6 +17,30 @@ import {
   type ImportExtractionPatch,
   type ImportProductPatch,
 } from "@/lib/documents/import-edit-shared";
+import {
+  enqueueTrackingForImport,
+  processQueuedTrackingJobs,
+} from "@/lib/tracking/service";
+
+/** `after()` roda o rastreio depois da resposta; o teto cobre o pior scrape. */
+export const maxDuration = 120;
+
+/**
+ * Campos do BL que mudam **qual** consulta o rastreio faz. Corrigir o armador
+ * (caso OYH140: LX Pantos → CMA CGM) troca o alvo consultável do BL para o
+ * primeiro container; sem isso a edição fica só no formulário.
+ */
+const TRACKING_BL_FIELDS = [
+  "number",
+  "masterBlNumber",
+  "carrier",
+  "containerNumbers",
+] as const;
+
+function touchesTracking(bl: BlEditablePatch | undefined): boolean {
+  if (!bl) return false;
+  return TRACKING_BL_FIELDS.some((field) => field in bl);
+}
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -205,6 +229,34 @@ export async function PATCH(request: Request, context: RouteContext) {
         detail?.id ?? id,
         patch.extraction,
       );
+    }
+
+    // Recalcula os alvos do rastreio quando a edição muda o BL/armador/containers
+    // e consulta na hora: a resposta não espera o scrape (pode levar ~15s).
+    if (touchesTracking(patch.extraction.bl)) {
+      const importId = detail?.id ?? id;
+      const tenantId = auth.tenantId;
+      after(async () => {
+        try {
+          const enqueued = await enqueueTrackingForImport({
+            tenantId,
+            importId,
+          });
+          if (enqueued.queued > 0) {
+            await processQueuedTrackingJobs({
+              importId,
+              limit: 1,
+              worker: "refresh",
+            });
+          }
+        } catch (error) {
+          log.error("tracking_reconcile_failed", {
+            tenantId,
+            importId,
+            error,
+          });
+        }
+      });
     }
 
     return NextResponse.json({
