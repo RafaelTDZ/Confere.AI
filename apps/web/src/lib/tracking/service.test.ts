@@ -2147,6 +2147,151 @@ describe("processQueuedTrackingJobs â€” fallback BL not_found â†’ 1Â�
   });
 });
 
+describe("processQueuedTrackingJobs - fallback container not_found -> proximo container", () => {
+  let db: FakeSupabase;
+  let consoleError: ReturnType<typeof vi.spyOn>;
+  let consoleWarn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    db = new FakeSupabase({
+      tracking_shipments: [],
+      tracking_jobs: [],
+      documents: [],
+      extraction_results: [],
+    });
+    mocks.admin = db;
+    mocks.scrape.mockReset();
+    consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+  });
+
+  function seedJob(shipmentId: string): void {
+    const job = jobRow({ id: `job-${shipmentId}`, shipment_id: shipmentId });
+    db.rows("tracking_jobs").push(job);
+    db.onRpc("claim_tracking_jobs", { data: [job] });
+  }
+
+  function containerRow(
+    id: string,
+    number: string,
+    overrides: FakeRow = {},
+  ): FakeRow {
+    return shipmentRow({
+      id,
+      carrier_code: "cosco",
+      strategy: "link",
+      query_type: "container",
+      query_value: number,
+      container_number: number,
+      status: "pending",
+      eta: null,
+      next_check_at: null,
+      raw: {},
+      ...overrides,
+    });
+  }
+
+  it("promove o proximo container e consulta uma vez", async () => {
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        id: "bl",
+        carrier_code: "cosco",
+        query_type: "bl",
+        query_value: "COSU6508676460",
+        strategy: "link",
+        status: "pending",
+        raw: {},
+      }),
+      containerRow("c1", "GAOU7393528", {
+        strategy: "firecrawl",
+        created_at: "2026-10-20T10:01:00.000Z",
+      }),
+      containerRow("c2", "GAOU7393529", {
+        created_at: "2026-10-20T10:02:00.000Z",
+      }),
+      containerRow("c3", "GAOU7393530", {
+        created_at: "2026-10-20T10:03:00.000Z",
+      }),
+    );
+    seedJob("c1");
+    mocks.scrape
+      .mockResolvedValueOnce(firecrawlNotFoundResult())
+      .mockResolvedValueOnce(firecrawlResult("2026-12-01"));
+
+    const result = await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(mocks.scrape).toHaveBeenCalledTimes(2);
+    expect(mocks.scrape.mock.calls[1]?.[0]).toMatchObject({
+      url: expect.stringContaining("GAOU7393529"),
+    });
+
+    const shipments = db.rows("tracking_shipments");
+    expect(shipments.find((row) => row.id === "c1")).toMatchObject({
+      strategy: "link",
+      next_check_at: null,
+      status: "not_found",
+    });
+    expect(shipments.find((row) => row.id === "c2")).toMatchObject({
+      strategy: "firecrawl",
+      status: "pending",
+      raw: { containerFallbackFrom: "c1" },
+    });
+    // Terceiro container segue `link` (um alvo consultável por importação).
+    expect(shipments.find((row) => row.id === "c3")).toMatchObject({
+      strategy: "link",
+    });
+  });
+
+  it("nao encadeia quando o container promovido tambem nao existe", async () => {
+    db.rows("tracking_shipments").push(
+      containerRow("c1", "GAOU7393528", {
+        strategy: "firecrawl",
+        created_at: "2026-10-20T10:01:00.000Z",
+        raw: { containerFallbackFrom: "c0" },
+      }),
+      containerRow("c2", "GAOU7393529", {
+        created_at: "2026-10-20T10:02:00.000Z",
+      }),
+    );
+    seedJob("c1");
+    mocks.scrape.mockResolvedValue(firecrawlNotFoundResult());
+
+    await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(mocks.scrape).toHaveBeenCalledTimes(1);
+    expect(
+      db.rows("tracking_shipments").find((row) => row.id === "c2"),
+    ).toMatchObject({
+      strategy: "link",
+    });
+  });
+
+  it("nao promove quando nao ha outro container consultavel", async () => {
+    db.rows("tracking_shipments").push(
+      containerRow("c1", "GAOU7393528", {
+        strategy: "firecrawl",
+        created_at: "2026-10-20T10:01:00.000Z",
+      }),
+    );
+    seedJob("c1");
+    mocks.scrape.mockResolvedValue(firecrawlNotFoundResult());
+
+    await processQueuedTrackingJobs({ limit: 1 });
+
+    expect(mocks.scrape).toHaveBeenCalledTimes(1);
+    expect(db.rows("tracking_shipments")[0]).toMatchObject({
+      id: "c1",
+      status: "not_found",
+    });
+  });
+});
+
 /** Resposta do Firecrawl com eventos de container (base dos marcos). */
 function firecrawlEventsResult(params: {
   eta?: string | null;
@@ -2558,9 +2703,7 @@ describe("enqueueTrackingForImport — alvo que sumiu do upsert", () => {
   });
 
   function warns(): string {
-    return warn.mock.calls
-      .map((args: unknown[]) => args.join(" "))
-      .join("\n");
+    return warn.mock.calls.map((args: unknown[]) => args.join(" ")).join("\n");
   }
 
   it("não loga nem duplica quando todos os alvos já existem", async () => {

@@ -1762,6 +1762,113 @@ async function fallbackToFirstContainer(shipment: ShipmentRow): Promise<void> {
   await processShipment(promoted as ShipmentRow);
 }
 
+/**
+ * Fallback do container: o armador às vezes não conhece o **primeiro** container
+ * do BL (ainda não cadastrado no portal, BL recém-emitido) e responde
+ * `not_found`, enquanto os demais containers do mesmo embarque rastreiam.
+ *
+ * Regra: promove **um** próximo container (`link`) e consulta uma vez, mantendo
+ * um único alvo consultável. Não encadeia: o container promovido aqui recebe
+ * `raw.containerFallbackFrom`, então um segundo `not_found` encerra a busca
+ * (sem ping-pong e sem gastar crédito atrás de uma lista inteira).
+ */
+async function fallbackToNextContainer(shipment: ShipmentRow): Promise<void> {
+  if (shipment.query_type !== "container") return;
+
+  const raw = (shipment.raw ?? {}) as Record<string, unknown>;
+  if (raw.containerFallbackFrom) return;
+
+  const admin = createSupabaseAdminClient();
+
+  const { data, error } = await admin
+    .from("tracking_shipments")
+    .select("*")
+    .eq("tenant_id", shipment.tenant_id)
+    .eq("import_id", shipment.import_id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Falha ao listar rastreios do fallback: ${error.message}`);
+  }
+
+  const siblings = ((data ?? []) as ShipmentRow[]).filter(
+    (row) => row.id !== shipment.id,
+  );
+
+  const carrier = shipment.carrier_code as CarrierCode;
+  if (!carrierSupportsContainer(carrier)) return;
+
+  const strategy = trackingStrategyForCarrier(carrier);
+  if (strategy === "link") return;
+
+  const next = siblings.find(
+    (row) =>
+      row.query_type === "container" &&
+      row.strategy === "link" &&
+      row.carrier_code === carrier &&
+      isTrackingQueryableStatus(row.status),
+  );
+  if (!next) return;
+
+  const { data: promoted, error: promoteError } = await admin
+    .from("tracking_shipments")
+    .update({
+      strategy,
+      next_check_at: null,
+      raw: {
+        ...((next.raw ?? {}) as Record<string, unknown>),
+        containerFallbackFrom: shipment.id,
+      },
+    })
+    .eq("id", next.id)
+    .eq("tenant_id", shipment.tenant_id)
+    .eq("strategy", "link")
+    .select("*")
+    .maybeSingle();
+
+  if (promoteError) {
+    throw new Error(
+      `Falha ao promover próximo container do fallback: ${promoteError.message}`,
+    );
+  }
+  if (!promoted) return;
+
+  // Um alvo consultável por importação: o container que respondeu `not_found`
+  // vira `link` (histórico/evento manual) e não é consultado de novo.
+  const { error: demoteError } = await admin
+    .from("tracking_shipments")
+    .update({ strategy: "link", next_check_at: null })
+    .eq("id", shipment.id)
+    .eq("tenant_id", shipment.tenant_id);
+
+  if (demoteError) {
+    throw new Error(
+      `Falha ao rebaixar container do fallback: ${demoteError.message}`,
+    );
+  }
+
+  const { error: jobsError } = await admin
+    .from("tracking_jobs")
+    .update({ status: "done", last_error: "single_query_target" })
+    .eq("shipment_id", shipment.id)
+    .eq("status", "queued");
+
+  if (jobsError) {
+    throw new Error(`Falha ao encerrar jobs do fallback: ${jobsError.message}`);
+  }
+
+  log.info("fallback_next_container_promoted", {
+    tenantId: shipment.tenant_id,
+    importId: shipment.import_id,
+    fromShipmentId: shipment.id,
+    toShipmentId: next.id,
+    carrier,
+    strategy,
+  });
+
+  await processShipment(promoted as ShipmentRow);
+}
+
 async function processShipment(shipment: ShipmentRow): Promise<boolean> {
   const admin = createSupabaseAdminClient();
   const timer = createTimer();
@@ -1858,6 +1965,26 @@ async function processShipment(shipment: ShipmentRow): Promise<boolean> {
       await fallbackToFirstContainer(shipment);
     } catch (error) {
       log.error("fallback_container_failed", {
+        tenantId: shipment.tenant_id,
+        importId: shipment.import_id,
+        shipmentId: shipment.id,
+        carrier: shipment.carrier_code,
+        error,
+      });
+    }
+  }
+
+  // Container consultado que o portal não conhece: tenta o próximo container do
+  // mesmo BL (uma vez, sem encadear). Caso real OYH103: o primeiro container
+  // ainda não estava no portal da CMA e o segundo rastreava.
+  if (
+    shipment.query_type === "container" &&
+    outcome.snapshot.status === "not_found"
+  ) {
+    try {
+      await fallbackToNextContainer(shipment);
+    } catch (error) {
+      log.error("fallback_next_container_failed", {
         tenantId: shipment.tenant_id,
         importId: shipment.import_id,
         shipmentId: shipment.id,
