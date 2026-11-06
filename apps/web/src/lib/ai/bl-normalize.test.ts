@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BlExtraction } from "@/lib/ai/schemas";
 import {
   applyMarkdownFallbacks,
+  blNumberInText,
   formatDecimalBr,
   masterBlFromText,
   normalizeBlExtraction,
@@ -119,6 +120,16 @@ describe("formatDecimalBr", () => {
     // Formato com decimais do BL continua preservado.
     expect(formatDecimalBr("40,093.200", opts)).toBe("40.093,200");
     expect(formatDecimalBr("136,5", opts)).toBe("136,5");
+  });
+
+  it("não infla o peso quando o BL usa 3 casas decimais", () => {
+    const opts = { groupThousands: true, decimals: 2 };
+    // "138631.600KGS" é 138.631,6 kg, não 138.631.600 kg.
+    expect(formatDecimalBr("138631.600", opts)).toBe("138.631,60");
+    expect(formatDecimalBr("110905.280", opts)).toBe("110.905,28");
+    // Separador curto continua sendo milhar.
+    expect(formatDecimalBr("29,398", opts)).toBe("29.398,00");
+    expect(formatDecimalBr("136.000", opts)).toBe("136.000,00");
   });
 });
 
@@ -271,10 +282,10 @@ describe("normalizeBlExtraction", () => {
 
     expect(bl.carrier).toBe("CMA CGM");
     expect(bl.masterBlNumber).toBe("HLCUSHA2502BAXD3");
-    expect(bl.grossWeight).toBe("40.093,200");
+    expect(bl.grossWeight).toBe("40.093,20");
     expect(bl.volumes).toBe("2664");
-    expect(bl.measurement).toBe("136,000");
-    expect(bl.freightValue).toBe("8.400");
+    expect(bl.measurement).toBe("136,00");
+    expect(bl.freightValue).toBe("8.400,00");
     expect(bl.freightCurrency).toBe("USD");
     expect(bl.freeTime).toBe("21 DIAS");
     expect(bl.containerQuantity).toBe("2");
@@ -358,12 +369,12 @@ describe("applyMarkdownFallbacks", () => {
       `${MARKDOWN_OYH120_HOME}\n\n---\n\n${MARKDOWN_OYH120}`,
     );
 
-    expect(bl.grossWeight).toBe("40.093,200");
-    expect(bl.measurement).toBe("136,000");
+    expect(bl.grossWeight).toBe("40.093,20");
+    expect(bl.measurement).toBe("136,00");
     expect(bl.volumes).toBe("2664");
     expect(bl.containerQuantity).toBe("2");
     expect(bl.containerType).toBe("40 HC");
-    expect(bl.freightValue).toBe("8.400");
+    expect(bl.freightValue).toBe("8.400,00");
     expect(bl.freightCurrency).toBe("USD");
     expect(bl.freeTime).toBe("21 DIAS");
     expect(bl.onboardDate).toBe("01/10/2026");
@@ -377,7 +388,7 @@ describe("applyMarkdownFallbacks", () => {
       { ...blOych120(), grossWeight: "11,111.000" },
       MARKDOWN_OYH120,
     );
-    expect(bl.grossWeight).toBe("11.111,000");
+    expect(bl.grossWeight).toBe("11.111,00");
   });
 
   it("preenche o master BL pelo markdown quando a IA deixou vazio", () => {
@@ -425,5 +436,31 @@ NCM CODE:6910
       markdown,
     );
     expect(bl.descriptionOfGoods).toBe("TOILET");
+  });
+
+  it("mantém o número do BL quando ele aparece no texto", () => {
+    const bl = applyMarkdownFallbacks(
+      blOych120(),
+      "PLISZ4H14434\nB/L No. 1 077 841 412",
+    );
+    expect(bl.number).toBe("PLISZ4H14434");
+  });
+
+  it("descarta número de BL que não está no texto (invenção do modelo)", () => {
+    // NEX016: o fac-símile não traz o B/L No. e o modelo devolveu "NEXUS",
+    // o nome que aparece no documento.
+    const bl = applyMarkdownFallbacks(
+      { ...blOych120(), number: "NEXUS" },
+      "NEXUS\n915CARTONS\nSHIPPED ON BOARD",
+    );
+    expect(bl.number).toBeNull();
+  });
+
+  it("sobrevive a espaços e hífens do OCR no número do BL", () => {
+    expect(blNumberInText("1077841412", "B/L No. 1 077 841 412")).toBe(true);
+    expect(blNumberInText("PLISZ4H16849", "PLISZ-4H16849")).toBe(true);
+    expect(blNumberInText("1077841412", "B/L No. 1077841413")).toBe(false);
+    expect(blNumberInText("NEXUS", "NEXUS")).toBe(false);
+    expect(blNumberInText(null, "qualquer")).toBe(false);
   });
 });

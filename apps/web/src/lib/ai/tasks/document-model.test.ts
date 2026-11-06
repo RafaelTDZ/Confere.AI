@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  documentProviderOptions,
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
 } from "@/lib/ai/tasks/document-model";
@@ -173,6 +174,40 @@ describe("getDocumentLanguageModel", () => {
   });
 });
 
+describe("documentProviderOptions", () => {
+  it("desliga o thinking do Fireworks por padrão", () => {
+    expect(documentProviderOptions("fireworks")).toEqual({
+      fireworks: { thinking: { type: "disabled" } },
+    });
+  });
+
+  it("respeita AI_DOCUMENT_THINKING=enabled", () => {
+    vi.stubEnv("AI_DOCUMENT_THINKING", "enabled");
+
+    expect(documentProviderOptions("fireworks")).toBeUndefined();
+  });
+
+  it("aceita um orçamento de thinking em tokens", () => {
+    vi.stubEnv("AI_DOCUMENT_THINKING", "1024");
+
+    expect(documentProviderOptions("fireworks")).toEqual({
+      fireworks: { thinking: { type: "enabled", budgetTokens: 1024 } },
+    });
+  });
+
+  it("ignora orçamento abaixo do mínimo do provider (1024)", () => {
+    vi.stubEnv("AI_DOCUMENT_THINKING", "512");
+
+    expect(documentProviderOptions("fireworks")).toEqual({
+      fireworks: { thinking: { type: "disabled" } },
+    });
+  });
+
+  it("não envia opção de provider fora do Fireworks", () => {
+    expect(documentProviderOptions("openrouter")).toBeUndefined();
+  });
+});
+
 describe("shouldFallbackPdfEngine", () => {
   it.each([401, 403, 429])(
     "não faz fallback para status %i mesmo com erro de PDF",
@@ -235,9 +270,9 @@ describe("shouldFallbackPdfEngine", () => {
   });
 
   it("faz fallback para objeto com responseBody de arquivo não suportado", () => {
-    expect(
-      shouldFallbackPdfEngine({ responseBody: "unsupported file" }),
-    ).toBe(true);
+    expect(shouldFallbackPdfEngine({ responseBody: "unsupported file" })).toBe(
+      true,
+    );
   });
 
   it("faz fallback para status 500 com responseBody de parse", () => {
@@ -268,9 +303,9 @@ describe("shouldFallbackPdfEngine", () => {
     expect(
       shouldFallbackPdfEngine(new Error("Provider returned an error")),
     ).toBe(false);
-    expect(
-      shouldFallbackPdfEngine(new Error("Internal server error")),
-    ).toBe(false);
+    expect(shouldFallbackPdfEngine(new Error("Internal server error"))).toBe(
+      false,
+    );
   });
 
   it.each([

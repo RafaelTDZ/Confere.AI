@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
+import { analysisStageLabel } from "@/components/analise/analysis-stage";
 import type { DocumentType } from "@/lib/ai/schemas";
 import {
   DOCUMENT_TYPE_LABELS,
@@ -47,8 +48,9 @@ const MAX_POLLS = 170;
 /** Acompanha o job até concluir/falhar (a análise roda em background). */
 async function waitForJob(
   jobId: string,
-  onStatus: (status: JobStatusResponse["status"]) => void,
+  onStatus: (status: JobStatusResponse["status"], elapsedMs: number) => void,
 ): Promise<JobStatusResponse> {
+  const started = Date.now();
   for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
     const res = await fetch(`/api/ai/jobs/${jobId}`, { cache: "no-store" });
     const data = (await res.json()) as JobStatusResponse;
@@ -56,7 +58,7 @@ async function waitForJob(
       throw new Error(data.error || "Falha ao consultar a análise");
     }
 
-    onStatus(data.status);
+    onStatus(data.status, Date.now() - started);
     if (data.status === "succeeded" || data.status === "failed") {
       return data;
     }
@@ -80,7 +82,8 @@ export function UploadDropzone({
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [presentTypes, setPresentTypes] = useState<DocumentType[]>(initialTypes);
+  const [presentTypes, setPresentTypes] =
+    useState<DocumentType[]>(initialTypes);
   const [lastFileName, setLastFileName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -111,17 +114,15 @@ export function UploadDropzone({
       }
 
       setStage("Na fila...");
-      const job = await waitForJob(accepted.jobId, (status) => {
-        setStage(status === "queued" ? "Na fila..." : "Analisando com IA...");
+      const job = await waitForJob(accepted.jobId, (status, elapsedMs) => {
+        setStage(analysisStageLabel(status, elapsedMs));
       });
 
       if (job.status !== "succeeded") {
         throw new Error(job.errorMessage || "Falha ao analisar documento");
       }
 
-      setPresentTypes((current) => [
-        ...new Set([...current, ...job.types]),
-      ]);
+      setPresentTypes((current) => [...new Set([...current, ...job.types])]);
 
       if (importId) {
         router.refresh();

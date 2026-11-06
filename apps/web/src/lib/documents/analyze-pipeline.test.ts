@@ -590,6 +590,47 @@ describe("runAnalyzePipeline", () => {
     expect(mocks.extractBl).toHaveBeenCalledWith(PREPARED);
   });
 
+  it("dispara as extrações independentes em paralelo", async () => {
+    mocks.classifyDocument.mockResolvedValue({
+      classification: makeClassification(["invoice", "bill_of_lading"]),
+      model: "classify-model",
+      tokensIn: 30,
+      tokensOut: 12,
+      latencyMs: 50,
+      usage: { costUsd: 0.01, reasoningTokens: 0 },
+    });
+    mocks.insertDocuments.mockResolvedValue([
+      { id: "doc-invoice", docType: "invoice" },
+      { id: "doc-bl", docType: "bill_of_lading" },
+    ]);
+
+    let resolverInvoice!: (value: unknown) => void;
+    let blIniciou = false;
+    mocks.extractInvoice.mockImplementation(
+      () => new Promise((resolve) => {
+        resolverInvoice = resolve;
+      }),
+    );
+    mocks.extractBl.mockImplementation(async () => {
+      blIniciou = true;
+      return makeExtractionResult("bl", makeBl(), "bl-model");
+    });
+
+    const pipeline = runAnalyzePipeline(baseParams());
+    // Cede o event loop: a invoice ainda está pendente e o BL já deve ter saído.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(blIniciou).toBe(true);
+
+    resolverInvoice(
+      makeExtractionResult("invoice", makeInvoice(), "invoice-model"),
+    );
+    const result = await pipeline;
+
+    expect(result.types).toEqual(["invoice", "bill_of_lading"]);
+    expect(result.invoice).not.toBeNull();
+  });
+
   it("propaga falha ao preparar o documento no log do classify", async () => {
     const erro = new Error(
       "Não foi possível converter o PDF em imagens (arquivo protegido ou corrompido). Selecione OpenRouter ou envie o documento como PNG/JPG.",
@@ -1809,8 +1850,6 @@ describe("falha no pipeline", () => {
 });
 
 describe("primeira consulta de rastreio", () => {
-  const calls: string[] = [];
-
   function classifyAsBl() {
     mocks.classifyDocument.mockResolvedValue({
       classification: makeClassification(["bill_of_lading"]),
@@ -1825,21 +1864,8 @@ describe("primeira consulta de rastreio", () => {
     ]);
   }
 
-  function trackCalls() {
-    calls.length = 0;
-    mocks.enqueueTrackingForImport.mockImplementation(async () => {
-      calls.push("enqueue");
-      return { shipments: 1, queued: 1 };
-    });
-    mocks.processQueuedTrackingJobs.mockImplementation(async () => {
-      calls.push("process");
-      return { processed: 1, failed: 0 };
-    });
-  }
-
-  it("enfileira e processa 1 alvo na hora quando há BL", async () => {
+  it("enfileira o rastreio e delega a consulta ao worker", async () => {
     classifyAsBl();
-    trackCalls();
 
     const result = await runAnalyzePipeline(baseParams());
 
@@ -1847,12 +1873,9 @@ describe("primeira consulta de rastreio", () => {
       tenantId: TENANT_ID,
       importId: "import-1",
     });
-    expect(mocks.processQueuedTrackingJobs).toHaveBeenCalledWith({
-      limit: 1,
-      worker: "analyze",
-      importId: "import-1",
-    });
-    expect(calls).toEqual(["enqueue", "process"]);
+    // A consulta ao armador (5-35s) roda depois do job fechado, no worker.
+    expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
+    expect(result.trackingPending).toBe(true);
     expect(result.types).toEqual(["bill_of_lading"]);
     expect(mocks.updateImportStatus).toHaveBeenCalledWith({
       tenantId: TENANT_ID,
@@ -1861,24 +1884,24 @@ describe("primeira consulta de rastreio", () => {
     });
   });
 
-  it("não consulta rastreio quando o documento não tem BL", async () => {
-    trackCalls();
-
-    await runAnalyzePipeline(baseParams());
+  it("não enfileira rastreio quando o documento não tem BL", async () => {
+    const result = await runAnalyzePipeline(baseParams());
 
     expect(mocks.enqueueTrackingForImport).not.toHaveBeenCalled();
-    expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
+    expect(result.trackingPending).toBe(false);
   });
 
-  it("erro na consulta imediata não impede a análise", async () => {
+  it("erro ao enfileirar não impede a análise", async () => {
     classifyAsBl();
-    mocks.processQueuedTrackingJobs.mockRejectedValue(
+    mocks.enqueueTrackingForImport.mockRejectedValue(
       new Error("orçamento de rastreio esgotado"),
     );
 
     const result = await runAnalyzePipeline(baseParams());
 
     expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(1);
+    expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
+    expect(result.trackingPending).toBe(false);
     expect(result.types).toEqual(["bill_of_lading"]);
     expect(result.deduped).toBe(false);
     expect(mocks.updateImportStatus).toHaveBeenCalledWith({

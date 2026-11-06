@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   markAiJobSucceeded: vi.fn(),
   removeAiJobFile: vi.fn(),
   runAnalyzePipeline: vi.fn(),
+  processQueuedTrackingJobs: vi.fn(),
 }));
 
 vi.mock("@/lib/documents/ai-jobs", () => ({
@@ -26,6 +27,10 @@ vi.mock("@/lib/documents/ai-jobs", () => ({
 
 vi.mock("@/lib/documents/analyze-pipeline", () => ({
   runAnalyzePipeline: mocks.runAnalyzePipeline,
+}));
+
+vi.mock("@/lib/tracking/service", () => ({
+  processQueuedTrackingJobs: mocks.processQueuedTrackingJobs,
 }));
 
 const JOB = {
@@ -57,6 +62,7 @@ const PIPELINE_RESULT = {
   model: "model-x",
   latencyMs: 10,
   deduped: false,
+  trackingPending: false,
 };
 
 beforeEach(() => {
@@ -67,6 +73,10 @@ beforeEach(() => {
   mocks.markAiJobSucceeded.mockResolvedValue(undefined);
   mocks.markAiJobFailed.mockResolvedValue(undefined);
   mocks.removeAiJobFile.mockResolvedValue(undefined);
+  mocks.processQueuedTrackingJobs.mockResolvedValue({
+    processed: 1,
+    failed: 0,
+  });
 });
 
 describe("processAiJobById", () => {
@@ -161,6 +171,56 @@ describe("processAiJobById", () => {
 
     expect(mocks.markAiJobFailed).not.toHaveBeenCalled();
     expect(mocks.removeAiJobFile).not.toHaveBeenCalled();
+  });
+
+  it("consulta o armador só depois de fechar o job", async () => {
+    const ordem: string[] = [];
+    mocks.claimAiJob.mockResolvedValue(JOB);
+    mocks.runAnalyzePipeline.mockResolvedValue({
+      ...PIPELINE_RESULT,
+      types: ["bill_of_lading"],
+      trackingPending: true,
+    });
+    mocks.markAiJobSucceeded.mockImplementation(async () => {
+      ordem.push("job_succeeded");
+    });
+    mocks.processQueuedTrackingJobs.mockImplementation(async () => {
+      ordem.push("tracking");
+      return { processed: 1, failed: 0 };
+    });
+
+    await processAiJobById("job-1");
+
+    expect(mocks.processQueuedTrackingJobs).toHaveBeenCalledWith({
+      limit: 1,
+      worker: "analyze",
+      importId: "import-1",
+    });
+    expect(ordem).toEqual(["job_succeeded", "tracking"]);
+  });
+
+  it("não consulta o armador quando o pipeline não enfileirou rastreio", async () => {
+    mocks.claimAiJob.mockResolvedValue(JOB);
+
+    await processAiJobById("job-1");
+
+    expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
+  });
+
+  it("erro na consulta ao armador não derruba o job concluído", async () => {
+    mocks.claimAiJob.mockResolvedValue(JOB);
+    mocks.runAnalyzePipeline.mockResolvedValue({
+      ...PIPELINE_RESULT,
+      trackingPending: true,
+    });
+    mocks.processQueuedTrackingJobs.mockRejectedValue(
+      new Error("orçamento de rastreio esgotado"),
+    );
+
+    await expect(processAiJobById("job-1")).resolves.toBeUndefined();
+
+    expect(mocks.markAiJobSucceeded).toHaveBeenCalledTimes(1);
+    expect(mocks.markAiJobFailed).not.toHaveBeenCalled();
   });
 });
 

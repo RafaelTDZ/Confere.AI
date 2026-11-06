@@ -18,6 +18,7 @@ import {
 } from "@/lib/observability/logger";
 import { withSpan } from "@/lib/observability/tracing";
 import { runWithAdminReads } from "@/lib/supabase/read-client";
+import { processQueuedTrackingJobs } from "@/lib/tracking/service";
 
 const log = createLogger("ai-worker");
 
@@ -106,6 +107,32 @@ async function runClaimedJob(job: AiJobRow): Promise<void> {
     elapsedMs: timer.elapsedMs(),
     fileBytes: file.size,
   });
+
+  // A primeira consulta ao armador é acessória e pode levar 5-35s (Firecrawl da
+  // Maersk): roda depois do job fechado, para o cliente receber o resultado da
+  // análise sem esperar o rastreio. O `after()` da request mantém a função viva
+  // até este await terminar; sem isso o cron diário seria o único resgate.
+  if (result.trackingPending) {
+    try {
+      const tracking = await processQueuedTrackingJobs({
+        limit: 1,
+        worker: "analyze",
+        importId: result.importId,
+      });
+      jobLog.info("tracking_first_query_finished", {
+        importId: result.importId,
+        processed: tracking.processed,
+        failed: tracking.failed,
+        elapsedMs: timer.elapsedMs(),
+      });
+    } catch (error) {
+      // Sem chave/orçamento o próprio processamento marca `blocked`.
+      jobLog.error("tracking_first_query_failed", {
+        importId: result.importId,
+        error,
+      });
+    }
+  }
 }
 
 /**

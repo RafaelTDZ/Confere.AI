@@ -3,6 +3,7 @@ import "server-only";
 import { generateText, Output } from "ai";
 import type { PreparedDocument } from "@/lib/ai/document-content";
 import {
+  documentProviderOptions,
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
@@ -21,6 +22,7 @@ async function extractOnce(
 ) {
   return generateText({
     abortSignal,
+    providerOptions: documentProviderOptions(prepared.provider),
     model: getDocumentLanguageModel({
       provider: prepared.provider,
       modelId: prepared.modelId,
@@ -52,9 +54,7 @@ async function extractOnce(
   });
 }
 
-export async function extractPackingList(
-  prepared: PreparedDocument,
-): Promise<{
+export async function extractPackingList(prepared: PreparedDocument): Promise<{
   packingList: PackingListExtraction;
   model: string;
   tokensIn: number;

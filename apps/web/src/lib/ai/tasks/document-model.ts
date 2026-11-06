@@ -7,6 +7,43 @@ import type { AiProviderId } from "@/lib/ai/provider";
 
 export type PdfEngine = "native" | "mistral-ocr";
 
+/**
+ * Opções de provider para as tasks de documento.
+ *
+ * As quatro tasks (classificar e extrair) devolvem dados estruturados por
+ * schema fechado: o "thinking" do DeepSeek/GLM quase não melhora o resultado e
+ * consome ~80% dos tokens de saída. Medido no BL `276959744`
+ * (`deepseek-v4p1-flash-1017`, mesmo markdown e mesmo prompt):
+ * - thinking padrão: 17,6s, 4.000 tokens de saída, 3.853 de raciocínio e JSON
+ *   truncado quando o teto de tokens bate;
+ * - thinking desligado: 2,8s, 477 tokens, 0 de raciocínio, mesmos campos.
+ *
+ * `AI_DOCUMENT_THINKING`:
+ * - ausente/`disabled` (padrão): sem raciocínio — mais rápido;
+ * - `enabled`: comportamento anterior (raciocínio do provider);
+ * - número ≥ 1024 (ex.: `1024`): thinking com esse orçamento de tokens.
+ */
+export function documentProviderOptions(
+  provider: AiProviderId,
+):
+  | { fireworks: { thinking: { type: "disabled" } } }
+  | { fireworks: { thinking: { type: "enabled"; budgetTokens: number } } }
+  | undefined {
+  if (provider !== "fireworks") return undefined;
+
+  const raw = process.env.AI_DOCUMENT_THINKING?.trim().toLowerCase();
+  if (raw === "enabled") return undefined;
+
+  const budget = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(budget) && budget >= 1024) {
+    return {
+      fireworks: { thinking: { type: "enabled", budgetTokens: budget } },
+    };
+  }
+
+  return { fireworks: { thinking: { type: "disabled" } } };
+}
+
 export type DocumentLanguageModelOptions = {
   provider: AiProviderId;
   modelId: string;
@@ -39,7 +76,9 @@ export function getDocumentLanguageModel(
     ...(reasoning ? { reasoning } : {}),
     plugins: [
       ...(isPdf
-        ? ([{ id: "file-parser" as const, pdf: { engine: pdfEngine } }] as const)
+        ? ([
+            { id: "file-parser" as const, pdf: { engine: pdfEngine } },
+          ] as const)
         : []),
       { id: "response-healing" as const },
     ],

@@ -15,7 +15,10 @@ import {
   sha256Hex,
 } from "@/lib/ai/file-utils";
 import { getAiModelId, type AiOverrides } from "@/lib/ai";
-import { detectDocumentTypes, preparedDocumentText } from "@/lib/ai/document-type-heuristic";
+import {
+  detectDocumentTypes,
+  preparedDocumentText,
+} from "@/lib/ai/document-type-heuristic";
 import { getAiOverrides } from "@/lib/settings/ai-settings";
 import type {
   BlExtraction,
@@ -25,10 +28,7 @@ import type {
   PackingListExtraction,
 } from "@/lib/ai/schemas";
 import type { AiTaskUsage } from "@/lib/ai/usage";
-import {
-  attachAiLogsToImport,
-  persistAiLog,
-} from "@/lib/documents/ai-logs";
+import { attachAiLogsToImport, persistAiLog } from "@/lib/documents/ai-logs";
 import {
   findDocumentsBySha256,
   findTenantDocumentsBySha256,
@@ -63,10 +63,7 @@ import {
   persistExtractionResult,
   type LatestExtraction,
 } from "@/lib/documents/extractions";
-import {
-  enqueueTrackingForImport,
-  processQueuedTrackingJobs,
-} from "@/lib/tracking/service";
+import { enqueueTrackingForImport } from "@/lib/tracking/service";
 import {
   combinePendingParties,
   pendingPartiesFromBl,
@@ -98,6 +95,12 @@ export type AnalyzePipelineResult = {
   model: string;
   latencyMs: number;
   deduped: boolean;
+  /**
+   * BL enfileirado para rastreio. A primeira consulta ao armador não roda mais
+   * dentro da análise: ela pode levar 5-35s (Firecrawl da Maersk) e segurava o
+   * `succeeded` do job, então quem roda é o worker, depois de fechar o job.
+   */
+  trackingPending: boolean;
 };
 
 type AnalyzePipelineParams = {
@@ -302,11 +305,7 @@ async function buildReusableResult(
       });
 
       for (const newDoc of newDocs) {
-        const extraction = extractionForType(
-          docs,
-          extractions,
-          newDoc.docType,
-        );
+        const extraction = extractionForType(docs, extractions, newDoc.docType);
         if (!extraction) continue;
 
         const newExtractionId = await persistExtractionWithSpan({
@@ -448,6 +447,7 @@ async function buildReusableResult(
     model,
     latencyMs: Date.now() - started,
     deduped: true,
+    trackingPending: false,
   };
 }
 
@@ -715,7 +715,17 @@ async function executeAnalyzePipeline(
   // o documento precisa ficar `failed` (nunca `pending` para sempre).
   const extractionErrors: Partial<Record<DocumentType, string>> = {};
 
-  if (types.includes("invoice")) {
+  /**
+   * As três extrações são independentes (mesmo documento preparado, schemas
+   * distintos) e rodam em paralelo: a análise passa a durar o maior passo em
+   * vez da soma. Antes, um PDF com Invoice + Packing List + BL encadeava três
+   * chamadas de IA — cada uma com orçamento próprio de timeout.
+   */
+  async function runInvoiceExtraction(): Promise<{
+    invoice: InvoiceExtraction;
+    model: string;
+    tokensUsed: number;
+  }> {
     try {
       const extracted = await withSpan(
         "ai.extract_invoice",
@@ -731,9 +741,6 @@ async function executeAnalyzePipeline(
           return result;
         },
       );
-      invoice = extracted.invoice;
-      invoiceModel = extracted.model;
-      invoiceTokensUsed = extracted.tokensIn + extracted.tokensOut;
       log.info("document_extracted", {
         docType: "invoice",
         model: extracted.model,
@@ -752,6 +759,11 @@ async function executeAnalyzePipeline(
         costUsd: extracted.usage.costUsd,
         reasoningTokens: extracted.usage.reasoningTokens,
       });
+      return {
+        invoice: extracted.invoice,
+        model: extracted.model,
+        tokensUsed: extracted.tokensIn + extracted.tokensOut,
+      };
     } catch (err) {
       await logAi({
         tenantId: params.tenantId,
@@ -767,7 +779,11 @@ async function executeAnalyzePipeline(
     }
   }
 
-  if (types.includes("packing_list")) {
+  async function runPackingListExtraction(): Promise<{
+    packingList: PackingListExtraction;
+    model: string;
+    tokensUsed: number;
+  } | null> {
     try {
       const extracted = await withSpan(
         "ai.extract_packing_list",
@@ -783,9 +799,6 @@ async function executeAnalyzePipeline(
           return result;
         },
       );
-      packingList = extracted.packingList;
-      packingListModel = extracted.model;
-      packingListTokensUsed = extracted.tokensIn + extracted.tokensOut;
       log.info("document_extracted", {
         docType: "packing_list",
         model: extracted.model,
@@ -804,6 +817,11 @@ async function executeAnalyzePipeline(
         costUsd: extracted.usage.costUsd,
         reasoningTokens: extracted.usage.reasoningTokens,
       });
+      return {
+        packingList: extracted.packingList,
+        model: extracted.model,
+        tokensUsed: extracted.tokensIn + extracted.tokensOut,
+      };
     } catch (err) {
       await logAi({
         tenantId: params.tenantId,
@@ -822,10 +840,16 @@ async function executeAnalyzePipeline(
         model: modelId,
         error: err,
       });
+      // Packing List é opcional: nunca derruba a análise.
+      return null;
     }
   }
 
-  if (types.includes("bill_of_lading")) {
+  async function runBlExtraction(): Promise<{
+    bl: BlExtraction;
+    model: string;
+    tokensUsed: number;
+  }> {
     try {
       const extracted = await withSpan(
         "ai.extract_bl",
@@ -841,9 +865,6 @@ async function executeAnalyzePipeline(
           return result;
         },
       );
-      bl = extracted.bl;
-      blModel = extracted.model;
-      blTokensUsed = extracted.tokensIn + extracted.tokensOut;
       log.info("document_extracted", {
         docType: "bill_of_lading",
         model: extracted.model,
@@ -864,6 +885,11 @@ async function executeAnalyzePipeline(
         costUsd: extracted.usage.costUsd,
         reasoningTokens: extracted.usage.reasoningTokens,
       });
+      return {
+        bl: extracted.bl,
+        model: extracted.model,
+        tokensUsed: extracted.tokensIn + extracted.tokensOut,
+      };
     } catch (err) {
       await logAi({
         tenantId: params.tenantId,
@@ -880,14 +906,49 @@ async function executeAnalyzePipeline(
       log.error("extraction_failed", {
         docType: "bill_of_lading",
         model: modelId,
-        fatal: !invoice,
         error: err,
       });
-      if (!invoice) throw err;
+      throw err;
     }
   }
 
-  const invoiceNumber = normalizeImportKey(invoice?.number) ??
+  const [invoiceOutcome, packingListOutcome, blOutcome] =
+    await Promise.allSettled([
+      types.includes("invoice")
+        ? runInvoiceExtraction()
+        : Promise.resolve(null),
+      types.includes("packing_list")
+        ? runPackingListExtraction()
+        : Promise.resolve(null),
+      types.includes("bill_of_lading")
+        ? runBlExtraction()
+        : Promise.resolve(null),
+    ]);
+
+  // Invoice é a espinha da importação: sem ela a análise não tem o que mostrar.
+  // BL só derruba a análise quando não há Invoice para segurar o resultado.
+  if (invoiceOutcome.status === "rejected") throw invoiceOutcome.reason;
+
+  if (invoiceOutcome.status === "fulfilled" && invoiceOutcome.value) {
+    invoice = invoiceOutcome.value.invoice;
+    invoiceModel = invoiceOutcome.value.model;
+    invoiceTokensUsed = invoiceOutcome.value.tokensUsed;
+  }
+  if (packingListOutcome.status === "fulfilled" && packingListOutcome.value) {
+    packingList = packingListOutcome.value.packingList;
+    packingListModel = packingListOutcome.value.model;
+    packingListTokensUsed = packingListOutcome.value.tokensUsed;
+  }
+  if (blOutcome.status === "rejected") {
+    if (!invoice) throw blOutcome.reason;
+  } else if (blOutcome.value) {
+    bl = blOutcome.value.bl;
+    blModel = blOutcome.value.model;
+    blTokensUsed = blOutcome.value.tokensUsed;
+  }
+
+  const invoiceNumber =
+    normalizeImportKey(invoice?.number) ??
     normalizeImportKey(packingList?.invoiceNumber);
   const blNumber =
     normalizeImportKey(bl?.number) ?? normalizeImportKey(invoice?.blNumber);
@@ -1276,32 +1337,17 @@ async function executeAnalyzePipeline(
     }
   }
 
+  let trackingPending = false;
   if (bl) {
     try {
       await enqueueTrackingForImport({
         tenantId: params.tenantId,
         importId,
       });
+      trackingPending = true;
     } catch (trackingErr) {
       // Rastreio é acessório: nunca derruba a análise.
       log.error("tracking_enqueue_failed", {
-        tenantId: params.tenantId,
-        importId,
-        error: trackingErr,
-      });
-    }
-
-    try {
-      // Primeira consulta na hora (priorizando o BL): o ETA do armador chega
-      // junto com a análise, em vez de esperar o botão manual ou o cron.
-      await processQueuedTrackingJobs({
-        limit: 1,
-        worker: "analyze",
-        importId,
-      });
-    } catch (trackingErr) {
-      // Sem chave/orçamento o próprio processamento marca `blocked`.
-      log.error("tracking_first_query_failed", {
         tenantId: params.tenantId,
         importId,
         error: trackingErr,
@@ -1319,5 +1365,6 @@ async function executeAnalyzePipeline(
     model: classifyResult.model,
     latencyMs: Date.now() - started,
     deduped: false,
+    trackingPending,
   };
 }

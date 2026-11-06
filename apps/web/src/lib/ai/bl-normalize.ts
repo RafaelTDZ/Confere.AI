@@ -53,6 +53,8 @@ type ParsedDecimal = { value: number; decimals: number };
 type DecimalOptions = {
   /** Trata um único separador seguido de 3 dígitos como milhar (valores de frete). */
   groupThousands?: boolean;
+  /** Força o número de casas decimais no valor formatado (ex.: peso com 2). */
+  decimals?: number;
 };
 
 /** Converte "40,093.200", "136.000", "1.234,56" etc. em número + casas. */
@@ -82,14 +84,21 @@ export function parseDecimalBr(
   // Múltiplos separadores iguais (1.234.567) ou nenhum: são milhares.
 
   // Valores inteiros grandes (frete) aparecem como "8,400" ou "8.400" nas duas
-  // convenções; um único separador seguido de exatamente 3 dígitos é milhar.
+  // convenções; um único separador seguido de exatamente 3 dígitos é milhar
+  // **quando a parte inteira é curta**. Com 4+ dígitos antes do separador o
+  // valor é decimal com 3 casas (peso do BL: "138631.600" = 138.631,6 kg) —
+  // tratá-lo como milhar inflaria o peso em 1.000x.
   if (
     options?.groupThousands &&
     decimalSeparator &&
     commaCount + dotCount === 1
   ) {
-    const tail = text.slice(text.lastIndexOf(decimalSeparator) + 1);
-    if (/^\d{3}$/.test(tail)) decimalSeparator = null;
+    const separatorIndex = text.lastIndexOf(decimalSeparator);
+    const tail = text.slice(separatorIndex + 1);
+    const head = text.slice(0, separatorIndex).replace("-", "");
+    if (/^\d{3}$/.test(tail) && head.length > 0 && head.length <= 3) {
+      decimalSeparator = null;
+    }
   }
 
   let normalized = text;
@@ -122,9 +131,10 @@ export function formatDecimalBr(
 ): string | null {
   const parsed = parseDecimalBr(value, options);
   if (!parsed) return null;
+  const decimals = options?.decimals ?? parsed.decimals;
   return parsed.value.toLocaleString("pt-BR", {
-    minimumFractionDigits: parsed.decimals,
-    maximumFractionDigits: parsed.decimals,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   });
 }
 
@@ -284,10 +294,16 @@ export function normalizeBlExtraction(
       bl.containerNumbers,
       options.documentText,
     ),
-    grossWeight: formatDecimalBr(bl.grossWeight, { groupThousands: true }),
+    grossWeight: formatDecimalBr(bl.grossWeight, {
+      groupThousands: true,
+      decimals: 2,
+    }),
     volumes: normalizeIntegerBr(bl.volumes),
-    measurement: formatDecimalBr(bl.measurement),
-    freightValue: formatDecimalBr(bl.freightValue, { groupThousands: true }),
+    measurement: formatDecimalBr(bl.measurement, { decimals: 2 }),
+    freightValue: formatDecimalBr(bl.freightValue, {
+      groupThousands: true,
+      decimals: 2,
+    }),
     freeTime: normalizeFreeTimeBr(bl.freeTime),
     containerQuantity: normalizeIntegerBr(bl.containerQuantity),
     containerType: normalizeContainerType(bl.containerType),
@@ -333,6 +349,26 @@ export function masterBlFromText(text: string): string | null {
 
 function isBlank(value: string | null | undefined): boolean {
   return !value || value.trim().length === 0;
+}
+
+/**
+ * O número do BL só pode ter saído do texto: quando o parse está ativo o modelo
+ * recebe apenas o markdown, então um número que não aparece ali é invenção (caso
+ * real NEX016: o fac-símile não traz o B/L No. e o modelo devolveu "NEXUS").
+ * Exige também 4+ dígitos — número de BL tem sempre uma parte numérica, e isso
+ * derruba palavra solta que existe no documento. Compara só letras/dígitos para
+ * sobreviver a espaços, hífens e quebras de linha do OCR.
+ */
+export function blNumberInText(
+  number: string | null | undefined,
+  text: string,
+): boolean {
+  if (isBlank(number)) return false;
+  const alvo = (number ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (alvo.length < 4) return false;
+  if ((alvo.match(/\d/g) ?? []).length < 4) return false;
+  const haystack = text.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return haystack.includes(alvo);
 }
 
 /**
@@ -391,6 +427,9 @@ export function applyMarkdownFallbacks(
   return normalizeBlExtraction(
     {
       ...bl,
+      // Sem o número no texto não há como o modelo tê-lo lido: melhor nulo (o
+      // usuário preenche / o rastreio cai no container) do que um valor errado.
+      number: blNumberInText(bl.number, text) ? bl.number : null,
       masterBlNumber: isBlank(bl.masterBlNumber)
         ? masterBlNumber
         : bl.masterBlNumber,

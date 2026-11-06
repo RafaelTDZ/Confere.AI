@@ -3,6 +3,7 @@ import "server-only";
 import { generateText, Output } from "ai";
 import type { PreparedDocument } from "@/lib/ai/document-content";
 import {
+  documentProviderOptions,
   getDocumentLanguageModel,
   shouldFallbackPdfEngine,
   type PdfEngine,
@@ -23,6 +24,7 @@ async function classifyOnce(
 ) {
   return generateText({
     abortSignal,
+    providerOptions: documentProviderOptions(prepared.provider),
     model: getDocumentLanguageModel({
       provider: prepared.provider,
       modelId: prepared.modelId,

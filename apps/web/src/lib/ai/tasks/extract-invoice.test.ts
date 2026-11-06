@@ -30,6 +30,9 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai/tasks/document-model", () => ({
   getDocumentLanguageModel: mocks.getDocumentLanguageModel,
   shouldFallbackPdfEngine: mocks.shouldFallbackPdfEngine,
+  documentProviderOptions: () => ({
+    fireworks: { thinking: { type: "disabled" } },
+  }),
 }));
 
 type ChamadaGenerateText = {

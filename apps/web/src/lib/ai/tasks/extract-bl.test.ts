@@ -30,6 +30,9 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai/tasks/document-model", () => ({
   getDocumentLanguageModel: mocks.getDocumentLanguageModel,
   shouldFallbackPdfEngine: mocks.shouldFallbackPdfEngine,
+  documentProviderOptions: () => ({
+    fireworks: { thinking: { type: "disabled" } },
+  }),
 }));
 
 type ChamadaGenerateText = {
@@ -144,7 +147,7 @@ const BL_LIMPO: BlExtraction = {
   grossWeight: "1.234,56",
   volumes: "10",
   packages: "CAIXAS",
-  measurement: "12,5",
+  measurement: "12,50",
   freightValue: "1.500,00",
   freightCurrency: "USD",
   freightTerms: "PREPAID",
