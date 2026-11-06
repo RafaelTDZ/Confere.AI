@@ -18,7 +18,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\" --ignore-path .gitignore"
   },
   "dependencies": {
-    "next": "^16.4.3"
+    "next": "^16.4.5"
   },
   "devDependencies": {
     "prettier": "^3.9.10",
