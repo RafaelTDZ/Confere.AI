@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useElapsedSeconds } from "@/components/tracking/use-elapsed-seconds";
 
 type Feedback = { type: "success" | "error"; message: string } | null;
 
@@ -24,24 +25,6 @@ type RefreshOutcome = {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-/**
- * Segundos desde o início da consulta. O portal do armador leva 10–60s, então
- * sem um contador o botão parece travado. O relógio só avança dentro do timer
- * (nada de `Date.now()` no render, que quebra a pureza exigida pelo React).
- */
-function useElapsedSeconds(startedAt: number | null): number {
-  const [now, setNow] = useState(0);
-
-  useEffect(() => {
-    if (startedAt === null) return;
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
-  if (startedAt === null || now <= startedAt) return 0;
-  return Math.floor((now - startedAt) / 1_000);
 }
 
 /** Dica exibida enquanto o portal responde (a consulta pode demorar ~1 min). */

@@ -3,7 +3,13 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Boxes, FileText, Receipt, ScrollText, Ship, type LucideIcon } from "lucide-react";
+import {
+  Boxes,
+  FileText,
+  Receipt,
+  ScrollText,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -49,6 +55,7 @@ import {
 } from "@/lib/documents/imports-shared";
 import { setFlash } from "@/lib/flash";
 import { cn, formatDate } from "@/lib/utils";
+import { TrackingLinkButton } from "@/components/tracking/tracking-link-button";
 
 type BlFormState = {
   text: Record<BlEditableTextField, string>;
@@ -183,10 +190,15 @@ export function ImportacaoForm({
   detail,
   canEdit,
   trackingHref,
+  trackingActive = false,
+  trackingSince = null,
 }: {
   detail: ImportDetail;
   canEdit: boolean;
   trackingHref: string;
+  /** Consulta ao armador em andamento (indica no botão "Rastrear"). */
+  trackingActive?: boolean;
+  trackingSince?: string | null;
 }) {
   const router = useRouter();
   const [referenceNumber, setReferenceNumber] = useState(
@@ -466,16 +478,12 @@ export function ImportacaoForm({
           }
           description="Campos extraídos do conhecimento de embarque."
           action={
-            <Link
+            <TrackingLinkButton
+              importId={detail.id}
               href={trackingHref}
-              className={cn(
-                buttonVariants({ variant: "outline", size: "sm" }),
-                "min-h-11 shrink-0 sm:min-h-8",
-              )}
-            >
-              <Ship aria-hidden="true" className="h-4 w-4" />
-              Rastrear
-            </Link>
+              initialActive={trackingActive}
+              initialSince={trackingSince}
+            />
           }
           contentClassName="space-y-6"
         >
@@ -648,9 +656,7 @@ export function ImportacaoForm({
                   id="bl-container-numbers"
                   label="Números"
                   value={bl.lists.containerNumbers}
-                  onChange={(value) =>
-                    updateBlList("containerNumbers", value)
-                  }
+                  onChange={(value) => updateBlList("containerNumbers", value)}
                   className="sm:col-span-2"
                   disabled={fieldsDisabled}
                 />
@@ -658,9 +664,7 @@ export function ImportacaoForm({
                   id="bl-container-quantity"
                   label="Quantidade"
                   value={bl.text.containerQuantity}
-                  onChange={(value) =>
-                    updateBlText("containerQuantity", value)
-                  }
+                  onChange={(value) => updateBlText("containerQuantity", value)}
                   disabled={fieldsDisabled}
                 />
                 <BlField
@@ -781,9 +785,7 @@ export function ImportacaoForm({
       ) : null}
 
       <div className="sticky bottom-3 z-10 ml-auto w-fit max-w-full space-y-2 rounded-lg border border-border bg-card/95 p-2 shadow-sm backdrop-blur">
-        {error ? (
-          <Notice tone="danger">{error}</Notice>
-        ) : null}
+        {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="flex justify-end gap-2">
           <Link
             href="/importacoes"

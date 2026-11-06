@@ -9,7 +9,10 @@ import {
   ImportNotFoundError,
 } from "@/lib/documents";
 import { getImportAiFailures } from "@/lib/documents/ai-logs";
-import { getPrimaryTrackingShipmentId } from "@/lib/tracking/service";
+import {
+  getPrimaryTrackingShipmentId,
+  getTrackingInProgress,
+} from "@/lib/tracking/service";
 
 const FAILURE_LABELS: Record<string, string> = {
   classify: "Classificação",
@@ -46,6 +49,12 @@ export default async function ImportacaoDetailPage({
   const trackingHref = primaryShipmentId
     ? `/rastreio/${primaryShipmentId}`
     : `/rastreio?import=${detail.id}`;
+  // Consulta ao armador em andamento (primeira consulta da análise ou botão
+  // "Atualizar"): o botão "Rastrear" mostra spinner e o tempo decorrido.
+  const trackingProgress = await getTrackingInProgress({
+    tenantId: auth.tenantId,
+    importId: id,
+  }).catch(() => ({ active: false, since: null }));
   const failures = await getImportAiFailures({
     tenantId: auth.tenantId,
     importId: id,
@@ -54,10 +63,7 @@ export default async function ImportacaoDetailPage({
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <header className="flex min-w-0 items-center gap-2">
-        <BackButton
-          fallbackHref="/importacoes"
-          className="size-11 sm:size-9"
-        />
+        <BackButton fallbackHref="/importacoes" className="size-11 sm:size-9" />
         <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight text-balance">
           {displayImportReference(detail) || "Identificar importação"}
         </h1>
@@ -94,6 +100,8 @@ export default async function ImportacaoDetailPage({
         detail={detail}
         canEdit={auth.role !== "viewer"}
         trackingHref={trackingHref}
+        trackingActive={trackingProgress.active}
+        trackingSince={trackingProgress.since}
       />
     </div>
   );

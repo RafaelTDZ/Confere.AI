@@ -2438,6 +2438,47 @@ export async function getPrimaryTrackingShipmentId(params: {
   return candidates.sort(comparePrimaryShipment)[0]?.id ?? null;
 }
 
+/**
+ * Consulta ao armador em andamento para a importação (`queued` ou `running`).
+ * Alimenta o indicador do botão "Rastrear" no formulário do BL: o botão mostra
+ * spinner e o tempo decorrido enquanto o portal responde.
+ */
+export async function getTrackingInProgress(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<{ active: boolean; since: string | null }> {
+  const supabase = await getReadClient();
+
+  const { data: shipments, error } = await supabase
+    .from("tracking_shipments")
+    .select("id")
+    .eq("tenant_id", params.tenantId)
+    .eq("import_id", params.importId);
+
+  if (error) {
+    throw new Error(`Falha ao carregar rastreios: ${error.message}`);
+  }
+
+  const shipmentIds = (shipments ?? []).map((row) => row.id);
+  if (shipmentIds.length === 0) return { active: false, since: null };
+
+  const { data: jobs, error: jobsError } = await supabase
+    .from("tracking_jobs")
+    .select("created_at")
+    .eq("tenant_id", params.tenantId)
+    .in("shipment_id", shipmentIds)
+    .in("status", ["queued", "running"])
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (jobsError) {
+    throw new Error(`Falha ao carregar fila de rastreio: ${jobsError.message}`);
+  }
+
+  const first = jobs?.[0]?.created_at ?? null;
+  return { active: first !== null, since: first };
+}
+
 /** Leitura completa do rastreio da importação para as rotas da API (RLS). */
 export async function getTrackingForImport(
   tenantId: string,
