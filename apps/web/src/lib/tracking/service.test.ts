@@ -4,6 +4,7 @@ import {
   enqueueDueTrackingShipments,
   enqueueTrackingForImport,
   getPrimaryTrackingShipmentId,
+  getTrackingInProgress,
   onboardDateFromTrackingEvents,
   prioritizeBlShipments,
   processQueuedTrackingJobs,
@@ -2675,6 +2676,46 @@ describe("processQueuedTrackingJobs â€” marcos do embarque", () => {
     expectLog(consoleWarn, "milestones_persist_failed", {
       error: { message: "Falha ao salvar marcos do embarque: banco fora" },
     });
+  });
+});
+
+describe("getTrackingInProgress", () => {
+  it("ativo quando a consulta está com o lock do shipment", async () => {
+    const db = new FakeSupabase({
+      tracking_shipments: [
+        shipmentRow({
+          id: "s1",
+          locked_until: new Date(Date.now() + 5 * 60_000).toISOString(),
+        }),
+        shipmentRow({ id: "s2", import_id: "import-2", locked_until: null }),
+      ],
+    });
+    mocks.admin = db;
+
+    const result = await getTrackingInProgress({
+      tenantId: TENANT,
+      importId: "import-1",
+    });
+
+    expect(result.active).toBe(true);
+    expect(Date.parse(result.since ?? "")).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("inativo sem lock válido", async () => {
+    const db = new FakeSupabase({
+      tracking_shipments: [
+        shipmentRow({ id: "s1", locked_until: null }),
+        shipmentRow({
+          id: "s2",
+          locked_until: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ],
+    });
+    mocks.admin = db;
+
+    await expect(
+      getTrackingInProgress({ tenantId: TENANT, importId: "import-1" }),
+    ).resolves.toEqual({ active: false, since: null });
   });
 });
 

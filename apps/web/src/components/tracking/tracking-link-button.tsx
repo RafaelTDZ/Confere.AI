@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LoaderCircle, Ship } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ export function TrackingLinkButton({
   initialActive: boolean;
   initialSince: string | null;
 }): ReactElement {
+  const router = useRouter();
   const [status, setStatus] = useState<TrackingStatus>({
     active: initialActive,
     since: initialSince,
@@ -59,6 +61,8 @@ export function TrackingLinkButton({
           setStatus({ active: true, since: data.since ?? status.since });
         } else {
           setStatus({ active: false, since: null });
+          // Consulta terminou: recarrega a página para o BL/ETA aparecerem.
+          router.refresh();
         }
       } catch {
         // Rede instável: mantém o estado atual e tenta no próximo ciclo.
@@ -77,7 +81,7 @@ export function TrackingLinkButton({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [status.active, status.since, importId]);
+  }, [status.active, status.since, importId, router]);
 
   return (
     <Link

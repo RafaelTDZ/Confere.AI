@@ -1884,6 +1884,9 @@ async function fallbackToNextContainer(shipment: ShipmentRow): Promise<void> {
   await processShipment(promoted as ShipmentRow);
 }
 
+/** Lock otimista do shipment durante a consulta (cron e botão disputam). */
+const SHIPMENT_LOCK_MS = 10 * 60_000;
+
 async function processShipment(shipment: ShipmentRow): Promise<boolean> {
   const admin = createSupabaseAdminClient();
   const timer = createTimer();
@@ -1903,7 +1906,7 @@ async function processShipment(shipment: ShipmentRow): Promise<boolean> {
   const { data: claimed } = await admin
     .from("tracking_shipments")
     .update({
-      locked_until: new Date(Date.now() + 10 * 60_000).toISOString(),
+      locked_until: new Date(Date.now() + SHIPMENT_LOCK_MS).toISOString(),
     })
     .eq("id", shipment.id)
     .eq("tenant_id", shipment.tenant_id)
@@ -2449,9 +2452,13 @@ export async function getTrackingInProgress(params: {
 }): Promise<{ active: boolean; since: string | null }> {
   const supabase = await getReadClient();
 
-  const { data: shipments, error } = await supabase
+  // `tracking_jobs` não tem policy de SELECT para `authenticated` (fila é
+  // service role) — ler a fila aqui devolvia sempre vazio. O lock do shipment é
+  // gravado no claim e limpo no fim da consulta, então marca exatamente o
+  // intervalo em que o portal está sendo consultado.
+  const { data, error } = await supabase
     .from("tracking_shipments")
-    .select("id")
+    .select("locked_until")
     .eq("tenant_id", params.tenantId)
     .eq("import_id", params.importId);
 
@@ -2459,24 +2466,18 @@ export async function getTrackingInProgress(params: {
     throw new Error(`Falha ao carregar rastreios: ${error.message}`);
   }
 
-  const shipmentIds = (shipments ?? []).map((row) => row.id);
-  if (shipmentIds.length === 0) return { active: false, since: null };
+  const now = Date.now();
+  const locks = (data ?? [])
+    .map((row) => row.locked_until)
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value) && value > now);
 
-  const { data: jobs, error: jobsError } = await supabase
-    .from("tracking_jobs")
-    .select("created_at")
-    .eq("tenant_id", params.tenantId)
-    .in("shipment_id", shipmentIds)
-    .in("status", ["queued", "running"])
-    .order("created_at", { ascending: true })
-    .limit(1);
+  if (locks.length === 0) return { active: false, since: null };
 
-  if (jobsError) {
-    throw new Error(`Falha ao carregar fila de rastreio: ${jobsError.message}`);
-  }
-
-  const first = jobs?.[0]?.created_at ?? null;
-  return { active: first !== null, since: first };
+  // O lock dura SHIPMENT_LOCK_MS; a subtração devolve quando a consulta começou.
+  const startedAt = Math.min(...locks) - SHIPMENT_LOCK_MS;
+  return { active: true, since: new Date(startedAt).toISOString() };
 }
 
 /** Leitura completa do rastreio da importação para as rotas da API (RLS). */
