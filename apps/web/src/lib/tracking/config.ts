@@ -52,6 +52,11 @@ export function trackingStrategyForCarrier(
 /**
  * Teto de containers criados por importação (exibição e evento manual). Todos
  * os containers do BL viram shipment; o teto só protege contra listas absurdas.
+ *
+ * ATENÇÃO: este export já chegou ausente ao runtime (bundle com cache antigo
+ * após o rename de `trackingContainerFallbackLimit`), derrubando todo o
+ * enfileiramento de rastreio. `buildTrackingTargets` resolve o limite com guarda
+ * e cai em 8 quando a função não existe; mantenha o nome estável.
  */
 export function trackingContainerLimit(): number {
   return readPositiveInt(process.env.TRACKING_CONTAINER_FALLBACK_LIMIT, 50);
