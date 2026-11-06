@@ -261,6 +261,49 @@ describe("normalizeCarrier", () => {
     ).toBe("MSC");
   });
 
+  it("usa a CMA CGM para BL da LX Pantos sem marca de armador", () => {
+    // OYH140: BL de casa da LX Pantos, navio SEASPAN OCEANIA (tonnage provider) e
+    // containers de locadora — nada identifica o armador.
+    expect(
+      normalizeCarrier(
+        "LX PANTOS",
+        "SEASPAN OCEANIA",
+        ["FFAU5011211", "TIIU4335429"],
+        "LX PANTOS LOGISTICS (CHINA) CO.,LTD.\nSEASPAN OCEANIA\nFFAU5011211/TIIU4335429",
+      ),
+    ).toBe("CMA CGM");
+  });
+
+  it("aplica a dica do agente quando o modelo devolve a operadora do navio", () => {
+    // Segunda extração real do OYH140: o modelo chamou o armador de "SEASPAN"
+    // (a tonnage provider do casco), não de LX Pantos.
+    expect(
+      normalizeCarrier(
+        "SEASPAN",
+        "SEASPAN OCEANIA",
+        ["FFAU5011211", "TIIU4335429"],
+        "LX PANTOS LOGISTICS (CHINA) CO.,LTD.\nSEASPAN OCEANIA",
+      ),
+    ).toBe("CMA CGM");
+  });
+
+  it("não aplica a dica do agente quando o navio identifica outro armador", () => {
+    expect(
+      normalizeCarrier("LX PANTOS", "MSC AURORA", ["FFAU5011211"], null),
+    ).toBe("MSC");
+  });
+
+  it("não inventa armador para emitente que não é agente mapeado", () => {
+    expect(
+      normalizeCarrier(
+        "TRANSPORTES XYZ",
+        "NAVIO SEM MARCA",
+        ["FFAU5011211"],
+        null,
+      ),
+    ).toBe("TRANSPORTES XYZ");
+  });
+
   it("mantém o armador quando a marca está no texto do documento", () => {
     expect(
       normalizeCarrier(

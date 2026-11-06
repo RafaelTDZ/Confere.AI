@@ -39,6 +39,19 @@ const FORWARDER_RE =
   /\b(LX\s*PANTOS|YQN|DHL|SCHENKER|PANALPINA|EXPEDITORS|CEVA|GEODIS|DSV|FEDEX|UPS|LOGISTICS)\b/i;
 
 /**
+ * Agentes de carga com armador predominante conhecido. Só entra quando navio e
+ * containers não identificam nada (caso real OYH140: LX Pantos, navio
+ * `SEASPAN OCEANIA` de tonnage provider e containers de locadora `FFAU`/`TIIU`).
+ * A maior parte da carteira da LX Pantos embarca em CMA CGM (informação do
+ * time); como o campo é editável no formulário — e editar reenfileira o
+ * rastreio —, um caso fora do padrão é corrigido em um clique.
+ */
+const FORWARDER_CARRIER_HINTS: ReadonlyArray<{
+  re: RegExp;
+  carrier: CarrierCode;
+}> = [{ re: /pantos/i, carrier: "cma" }];
+
+/**
  * O BL emitido pela própria Kuehne + Nagel (NVOCC) sai sob a marca **Blue
  * Anchor Line** — no título ("Blue Anchor Line Bill of Lading") ou como
  * "as agent for Blue Anchor Line". Nesses documentos o rastreio é no portal
@@ -267,6 +280,10 @@ export function normalizeCarrier(
     !mentionsCarrier(documentText ?? "", code);
   const shouldInfer =
     !raw ||
+    // Nome não reconhecido (ex.: `SEASPAN`, a operadora do navio, devolvida como
+    // armador): vale a inferência por navio/containers e, na falta dela, a dica
+    // do agente de carga.
+    code === "unknown" ||
     // K+N é agente de carga, mas tem portal próprio (myKN) que rastreia o BL
     // dela: o nome nunca é trocado pelo armador oceânico.
     (code !== "kuehne" && FORWARDER_RE.test(raw)) ||
@@ -276,6 +293,16 @@ export function normalizeCarrier(
   const inferred = inferCarrier("", containers, vessel ?? null);
   const display = inferred === "unknown" ? null : CARRIER_DISPLAY[inferred];
   if (display) return display;
+
+  // Último recurso: agente de carga com armador predominante conhecido. Olha o
+  // campo e o texto do documento, porque o modelo às vezes devolve a operadora
+  // do navio no lugar do agente que emitiu o BL.
+  const hint = FORWARDER_CARRIER_HINTS.find(
+    (item) =>
+      item.re.test(raw) ||
+      (typeof documentText === "string" && item.re.test(documentText)),
+  );
+  if (hint) return CARRIER_DISPLAY[hint.carrier] ?? raw.toUpperCase();
 
   return raw.length > 0 ? raw.toUpperCase() : null;
 }
