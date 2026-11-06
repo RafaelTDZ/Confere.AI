@@ -1898,7 +1898,7 @@ describe("primeira consulta de rastreio", () => {
 
     const result = await runAnalyzePipeline(baseParams());
 
-    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(2);
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(3);
     expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
     expect(result.trackingPending).toBe(false);
     expect(result.types).toEqual(["bill_of_lading"]);
@@ -1922,7 +1922,33 @@ describe("primeira consulta de rastreio", () => {
     expect(result.trackingPending).toBe(true);
     expectLog(console.warn, "tracking_enqueue_retry", {
       importId: "import-1",
+      attempt: 1,
       error: { message: "socket hang up" },
     });
+  });
+
+  it("não derruba a análise quando desiste do rastreio", async () => {
+    classifyAsBl();
+    mocks.enqueueTrackingForImport.mockRejectedValue(new Error("boom"));
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(3);
+    expect(result.trackingPending).toBe(false);
+    expectLog(console.error, "tracking_enqueue_failed", {
+      importId: "import-1",
+      error: { message: "boom" },
+    });
+    // O erro real fica no banco: os runtime logs da Vercel não são consultáveis.
+    expect(
+      mocks.persistAiLog.mock.calls.some(
+        ([entry]) =>
+          (entry as { capability?: string; errorMessage?: string })
+            .capability === "tracking_enqueue" &&
+          String((entry as { errorMessage?: string }).errorMessage).includes(
+            "boom",
+          ),
+      ),
+    ).toBe(true);
   });
 });

@@ -437,6 +437,16 @@ async function buildReusableResult(
     latencyMs: Date.now() - started,
   });
 
+  // Reenvio do mesmo arquivo também garante o rastreio: se a primeira análise
+  // não conseguiu enfileirar, subir o arquivo de novo recupera o embarque (o
+  // enqueue é idempotente e `ignoreDuplicates` não mexe no que já existe).
+  const trackingPending = bl
+    ? await enqueueTrackingBestEffort({
+        tenantId: params.tenantId,
+        importId,
+      })
+    : false;
+
   return {
     importId,
     types,
@@ -447,8 +457,70 @@ async function buildReusableResult(
     model,
     latencyMs: Date.now() - started,
     deduped: true,
-    trackingPending: false,
+    trackingPending,
   };
+}
+
+/**
+ * Enfileira o rastreio sem derrubar a análise. Tenta 3 vezes (falhas de conexão
+ * já tiraram o rastreio de um BL), e quando desiste grava o motivo em `ai_logs`
+ * — os runtime logs da Vercel não estão consultáveis, então o banco é a única
+ * fonte do erro real.
+ */
+async function enqueueTrackingBestEffort(params: {
+  tenantId: string;
+  importId: string;
+}): Promise<boolean> {
+  const delays = [300, 1_200];
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      await enqueueTrackingForImport(params);
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (attempt < delays.length) {
+        log.warn("tracking_enqueue_retry", {
+          tenantId: params.tenantId,
+          importId: params.importId,
+          attempt: attempt + 1,
+          error,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      }
+    }
+  }
+
+  log.error("tracking_enqueue_failed", {
+    tenantId: params.tenantId,
+    importId: params.importId,
+    error: lastError,
+  });
+
+  try {
+    await persistAiLog({
+      tenantId: params.tenantId,
+      capability: "tracking_enqueue",
+      model: "tracking",
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: 0,
+      status: "error",
+      errorMessage:
+        lastError instanceof Error
+          ? `${lastError.name}: ${lastError.message}`
+          : String(lastError),
+      importId: params.importId,
+    });
+  } catch (logError) {
+    log.error("tracking_enqueue_log_failed", {
+      importId: params.importId,
+      error: logError,
+    });
+  }
+
+  return false;
 }
 
 /**
@@ -1339,37 +1411,10 @@ async function executeAnalyzePipeline(
 
   let trackingPending = false;
   if (bl) {
-    try {
-      try {
-        await enqueueTrackingForImport({
-          tenantId: params.tenantId,
-          importId,
-        });
-      } catch (firstError) {
-        // Falha transitória de conexão já deixou um BL sem rastreio: no OYH140 o
-        // enfileiramento leu a importação e a extração, mas não chegou a criar
-        // nenhum shipment (`tracking_shipments` sem POST nos edge logs) e o job
-        // seguiu `succeeded` sem rastreio. Uma segunda tentativa cobre o caso.
-        log.warn("tracking_enqueue_retry", {
-          tenantId: params.tenantId,
-          importId,
-          error: firstError,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        await enqueueTrackingForImport({
-          tenantId: params.tenantId,
-          importId,
-        });
-      }
-      trackingPending = true;
-    } catch (trackingErr) {
-      // Rastreio é acessório: nunca derruba a análise.
-      log.error("tracking_enqueue_failed", {
-        tenantId: params.tenantId,
-        importId,
-        error: trackingErr,
-      });
-    }
+    trackingPending = await enqueueTrackingBestEffort({
+      tenantId: params.tenantId,
+      importId,
+    });
   }
 
   return {
