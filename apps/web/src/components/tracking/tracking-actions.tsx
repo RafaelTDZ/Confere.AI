@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,8 +26,32 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+/**
+ * Segundos desde o início da consulta. O portal do armador leva 10–60s, então
+ * sem um contador o botão parece travado. O relógio só avança dentro do timer
+ * (nada de `Date.now()` no render, que quebra a pureza exigida pelo React).
+ */
+function useElapsedSeconds(startedAt: number | null): number {
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    if (startedAt === null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+
+  if (startedAt === null || now <= startedAt) return 0;
+  return Math.floor((now - startedAt) / 1_000);
+}
+
+/** Dica exibida enquanto o portal responde (a consulta pode demorar ~1 min). */
+const REFRESH_HINT =
+  "Consultando o portal do armador — pode levar até 1 minuto.";
+
 /** Consulta o armador agora; respeita o cooldown por importação do servidor. */
-async function requestTrackingRefresh(importId: string): Promise<RefreshOutcome> {
+async function requestTrackingRefresh(
+  importId: string,
+): Promise<RefreshOutcome> {
   try {
     const res = await fetch(`/api/imports/${importId}/tracking/refresh`, {
       method: "POST",
@@ -51,7 +75,10 @@ async function requestTrackingRefresh(importId: string): Promise<RefreshOutcome>
       };
     }
     if (data.skipped === "cooldown") {
-      const minutes = Math.max(1, Math.ceil((data.retryAfterSeconds ?? 0) / 60));
+      const minutes = Math.max(
+        1,
+        Math.ceil((data.retryAfterSeconds ?? 0) / 60),
+      );
       return {
         feedback: {
           type: "success",
@@ -106,16 +133,18 @@ export function TrackingRefreshButton({
   canEdit: boolean;
 }): ReactElement {
   const router = useRouter();
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const isRefreshing = startedAt !== null;
+  const elapsedSeconds = useElapsedSeconds(startedAt);
 
   async function handleRefresh() {
     if (!canEdit || isRefreshing) return;
     setFeedback(null);
-    setIsRefreshing(true);
+    setStartedAt(Date.now());
     const outcome = await requestTrackingRefresh(importId);
     setFeedback(outcome.feedback);
-    setIsRefreshing(false);
+    setStartedAt(null);
     if (outcome.refreshed) router.refresh();
   }
 
@@ -137,9 +166,19 @@ export function TrackingRefreshButton({
         ) : (
           <RefreshCw aria-hidden="true" className="h-4 w-4" />
         )}
-        {isRefreshing ? "Atualizando..." : "Consultar armador"}
+        {isRefreshing ? "Consultando armador..." : "Consultar armador"}
+        {isRefreshing ? (
+          <span aria-hidden="true" className="text-xs tabular-nums opacity-70">
+            {elapsedSeconds}s
+          </span>
+        ) : null}
       </Button>
       <div role="status" aria-live="polite" className="w-full">
+        {isRefreshing ? (
+          <p className="text-center text-xs text-muted-foreground">
+            {REFRESH_HINT}
+          </p>
+        ) : null}
         <FeedbackMessage feedback={feedback} />
       </div>
     </div>
@@ -165,16 +204,18 @@ export function TrackingActions({
   canEdit,
 }: TrackingActionsProps): ReactElement {
   const router = useRouter();
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const isRefreshing = startedAt !== null;
+  const elapsedSeconds = useElapsedSeconds(startedAt);
 
   async function handleRefresh() {
     if (!canEdit || isRefreshing) return;
     setFeedback(null);
-    setIsRefreshing(true);
+    setStartedAt(Date.now());
     const outcome = await requestTrackingRefresh(importId);
     setFeedback(outcome.feedback);
-    setIsRefreshing(false);
+    setStartedAt(null);
     if (outcome.refreshed) router.refresh();
   }
 
@@ -198,6 +239,14 @@ export function TrackingActions({
             <RefreshCw aria-hidden="true" className="h-4 w-4" />
           )}
           {isRefreshing ? "Atualizando..." : "Atualizar"}
+          {isRefreshing ? (
+            <span
+              aria-hidden="true"
+              className="text-xs tabular-nums opacity-70"
+            >
+              {elapsedSeconds}s
+            </span>
+          ) : null}
         </Button>
         {canEdit ? (
           <Link
@@ -213,12 +262,22 @@ export function TrackingActions({
         ) : null}
       </div>
 
-      {feedback ? (
+      {isRefreshing || feedback ? (
         <Card className="basis-full">
           <CardContent className="p-4">
-            <div aria-live="polite" role="status">
-              <FeedbackMessage feedback={feedback} />
-            </div>
+            {isRefreshing ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-sm text-muted-foreground"
+              >
+                {REFRESH_HINT}
+              </p>
+            ) : (
+              <div aria-live="polite" role="status">
+                <FeedbackMessage feedback={feedback} />
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : null}
