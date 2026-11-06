@@ -167,6 +167,7 @@ async function extractOnce(
               "Não extraia nem infira número de Invoice a partir do BL.",
               "Campos obrigatórios no schema (use null quando não encontrar; arrays vazios se não houver itens):",
               "1) number — número do BL / Bill of Lading / AWB / conhecimento de embarque",
+              "   O número costuma repetir no rider (linha com VESSEL). Se as duas ocorrências divergirem (OCR borrado), use a do rider.",
               "2) masterBlNumber — procure MASTER B/L, MBL NO., OCEAN B/L e B/L MASTER (BL da consolidação emitido pelo armador). Quando o BL do documento for do agente de carga (forwarder/NVOCC) e o documento trouxer o BL master, devolva apenas esse número (maiúsculas, sem espaços); se não houver, use null. Nunca repita o número do BL do documento.",
               '3) carrier — armador oceânico (vessel operator), NÃO o forwarder que emitiu o BL. Se o emitente for LX Pantos/YQN/DHL etc., use o armador identificável pelo navio (CMA CGM, MSC, MAERSK, EVERGREEN, COSCO, OOCL, HAPAG, HMM, ONE). Exceção: quando o BL foi emitido pela própria Kuehne + Nagel (título "Blue Anchor Line Bill of Lading" ou "as agent for Blue Anchor Line"), use KUEHNE + NAGEL — o portal myKN rastreia esse BL de casa, mesmo que o navio seja de outro armador.',
               "4) shipper — shipper / exportador (texto; não estruture CNPJ nem endereço)",

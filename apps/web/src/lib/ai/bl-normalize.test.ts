@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BlExtraction } from "@/lib/ai/schemas";
 import {
   applyMarkdownFallbacks,
+  blNumberFromRider,
   blNumberInText,
   formatDecimalBr,
   masterBlFromText,
@@ -497,6 +498,51 @@ NCM CODE:6910
       "NEXUS\n915CARTONS\nSHIPPED ON BOARD",
     );
     expect(bl.number).toBeNull();
+  });
+
+  it("prefere a cópia do rider quando o OCR erra um dígito no cabeçalho", () => {
+    // OYH131: cabeçalho borrado lido como …284; rider legível com …285.
+    const markdown = [
+      "<table><tr><th>BL NO. PLITJ4H14284</th></tr></table>",
+      "ATTACHED RIDER",
+      "VESSEL : MAERSK EDIRNE 636W BL : PLITJ4H14285",
+    ].join("\n");
+
+    const bl = applyMarkdownFallbacks(
+      { ...blOych120(), number: "PLITJ4H14284" },
+      markdown,
+    );
+
+    expect(bl.number).toBe("PLITJ4H14285");
+  });
+
+  it("mantém o número quando o rider confirma o cabeçalho", () => {
+    const markdown = [
+      "BL NO. PLITJ4H14284",
+      "VESSEL : MAERSK EDIRNE 636W BL : PLITJ4H14284",
+    ].join("\n");
+
+    const bl = applyMarkdownFallbacks(
+      { ...blOych120(), number: "PLITJ4H14284" },
+      markdown,
+    );
+
+    expect(bl.number).toBe("PLITJ4H14284");
+  });
+
+  it("ignora candidatos do rider fora do formato do número", () => {
+    // Alvo curto demais para ser BL.
+    expect(blNumberFromRider("PLIT4H1", "VESSEL : X BL : PLITJ4H14285")).toBeNull();
+    // Candidato com tamanho diferente do alvo.
+    expect(
+      blNumberFromRider("PLITJ4H14284", "VESSEL : X BL : PLITJ4H1429"),
+    ).toBeNull();
+    // Candidato com dois dígitos diferentes (não é erro de OCR de 1 caractere).
+    expect(
+      blNumberFromRider("PLITJ4H14284", "VESSEL : X BL : PLITJ4H14299"),
+    ).toBeNull();
+    // Sem linha de rider.
+    expect(blNumberFromRider("PLITJ4H14284", "BL NO. PLITJ4H14284")).toBeNull();
   });
 
   it("sobrevive a espaços e hífens do OCR no número do BL", () => {

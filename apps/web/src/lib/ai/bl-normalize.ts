@@ -400,6 +400,42 @@ export function blNumberInText(
 }
 
 /**
+ * O número do BL costuma aparecer duas vezes: no cabeçalho do formulário e na
+ * linha do rider (`VESSEL : MAERSK EDIRNE 636W BL : PLITJ4H14285`). Em PDF
+ * escaneado, o OCR pode errar um dígito na página borrada e o modelo copia essa
+ * ocorrência (caso real OYH131: `…284` no cabeçalho borrado e `…285` no rider).
+ *
+ * Quando existe no texto uma variante que difere do número extraído por **um**
+ * caractere e ela está na linha com `VESSEL`, vale a do rider: é a cópia tipada
+ * do anexo, digitada junto com o navio/viagem.
+ */
+export function blNumberFromRider(
+  number: string | null | undefined,
+  text: string,
+): string | null {
+  const alvo = (number ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (alvo.length < 8) return null;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!/\bvessel\b/i.test(line)) continue;
+    for (const match of line.matchAll(/\b[A-Z]{2,}[A-Z0-9]{4,}\b/gi)) {
+      const candidate = match[0].toUpperCase();
+      if (candidate.length !== alvo.length) continue;
+      let diferencas = 0;
+      for (let index = 0; index < candidate.length; index += 1) {
+        if (candidate[index] !== alvo[index]) {
+          diferencas += 1;
+          if (diferencas > 1) break;
+        }
+      }
+      if (diferencas === 1) return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Preenche campos que a IA deixou vazios usando o markdown do PDF (Firecrawl).
  * Não sobrescreve valores já extraídos — só completa null/[].
  */
@@ -457,7 +493,11 @@ export function applyMarkdownFallbacks(
       ...bl,
       // Sem o número no texto não há como o modelo tê-lo lido: melhor nulo (o
       // usuário preenche / o rastreio cai no container) do que um valor errado.
-      number: blNumberInText(bl.number, text) ? bl.number : null,
+      // Com o número no texto, ainda vale conferir a cópia do rider: OCR borrado
+      // no cabeçalho já trocou um dígito (OYH131).
+      number: blNumberInText(bl.number, text)
+        ? (blNumberFromRider(bl.number, text) ?? bl.number)
+        : null,
       masterBlNumber: isBlank(bl.masterBlNumber)
         ? masterBlNumber
         : bl.masterBlNumber,
