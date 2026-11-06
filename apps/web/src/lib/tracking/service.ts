@@ -184,10 +184,28 @@ function pickTrackingBlNumber(params: {
  * As regras por armador continuam: a Evergreen mantém um piso de 8 containers e
  * a OOCL fica toda em `link` (captcha).
  */
+/**
+ * Teto de containers por importação, resiliente a bundle desatualizado: em
+ * produção o módulo `config` chegou ao runtime **sem** `trackingContainerLimit`
+ * (rename vindo do trabalho de rastreio + cache de build) e o `TypeError`
+ * derrubava todo o enfileiramento — o BL ficava sem nenhum shipment.
+ */
+function resolveContainerLimit(value: number | undefined): number {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  try {
+    const configured = trackingContainerLimit();
+    return typeof configured === "number" && configured > 0 ? configured : 8;
+  } catch {
+    return 8;
+  }
+}
+
 export function buildTrackingTargets(
   blNumber: string | null,
   blPayload: TrackingBlPayload | null,
-  containerLimit = trackingContainerLimit(),
+  containerLimit?: number,
   carrier?: CarrierCode,
 ): TrackingTarget[] {
   const targets: TrackingTarget[] = [];
@@ -227,10 +245,11 @@ export function buildTrackingTargets(
     }
   }
 
+  const containerLimitResolved = resolveContainerLimit(containerLimit);
   const effectiveLimit =
     effectiveCarrier === "evergreen"
-      ? Math.max(containerLimit, 8)
-      : containerLimit;
+      ? Math.max(containerLimitResolved, 8)
+      : containerLimitResolved;
   const containers = validContainerNumbers(
     blPayload?.containerNumbers ?? [],
     effectiveLimit,
