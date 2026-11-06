@@ -1340,10 +1340,27 @@ async function executeAnalyzePipeline(
   let trackingPending = false;
   if (bl) {
     try {
-      await enqueueTrackingForImport({
-        tenantId: params.tenantId,
-        importId,
-      });
+      try {
+        await enqueueTrackingForImport({
+          tenantId: params.tenantId,
+          importId,
+        });
+      } catch (firstError) {
+        // Falha transitória de conexão já deixou um BL sem rastreio: no OYH140 o
+        // enfileiramento leu a importação e a extração, mas não chegou a criar
+        // nenhum shipment (`tracking_shipments` sem POST nos edge logs) e o job
+        // seguiu `succeeded` sem rastreio. Uma segunda tentativa cobre o caso.
+        log.warn("tracking_enqueue_retry", {
+          tenantId: params.tenantId,
+          importId,
+          error: firstError,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        await enqueueTrackingForImport({
+          tenantId: params.tenantId,
+          importId,
+        });
+      }
       trackingPending = true;
     } catch (trackingErr) {
       // Rastreio é acessório: nunca derruba a análise.

@@ -389,7 +389,11 @@ function setDefaultMocks() {
     makeExtractionResult("invoice", makeInvoice(), "invoice-model"),
   );
   mocks.extractPackingList.mockResolvedValue(
-    makeExtractionResult("packingList", makePackingList(), "packing-list-model"),
+    makeExtractionResult(
+      "packingList",
+      makePackingList(),
+      "packing-list-model",
+    ),
   );
   mocks.extractBl.mockResolvedValue(
     makeExtractionResult("bl", makeBl(), "bl-model"),
@@ -607,9 +611,10 @@ describe("runAnalyzePipeline", () => {
     let resolverInvoice!: (value: unknown) => void;
     let blIniciou = false;
     mocks.extractInvoice.mockImplementation(
-      () => new Promise((resolve) => {
-        resolverInvoice = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolverInvoice = resolve;
+        }),
     );
     mocks.extractBl.mockImplementation(async () => {
       blIniciou = true;
@@ -714,11 +719,7 @@ describe("runAnalyzePipeline", () => {
       makeExtractionResult("invoice", invoice, "invoice-model"),
     );
     mocks.extractPackingList.mockResolvedValue(
-      makeExtractionResult(
-        "packingList",
-        packingList,
-        "packing-list-model",
-      ),
+      makeExtractionResult("packingList", packingList, "packing-list-model"),
     );
     mocks.extractBl.mockResolvedValue(
       makeExtractionResult("bl", bl, "bl-model"),
@@ -731,11 +732,7 @@ describe("runAnalyzePipeline", () => {
 
     const result = await runAnalyzePipeline(baseParams());
 
-    expect(result.types).toEqual([
-      "invoice",
-      "packing_list",
-      "bill_of_lading",
-    ]);
+    expect(result.types).toEqual(["invoice", "packing_list", "bill_of_lading"]);
     expect(result.documents).toEqual([
       { id: "doc-invoice", docType: "invoice" },
       { id: "doc-packing-list", docType: "packing_list" },
@@ -949,9 +946,13 @@ describe("runAnalyzePipeline", () => {
 
     await runAnalyzePipeline({
       ...baseParams(),
-      file: new File([new Uint8Array(FILE_BYTES)], "OYH128 draft bl - 15-10-2026.pdf", {
-        type: "application/pdf",
-      }),
+      file: new File(
+        [new Uint8Array(FILE_BYTES)],
+        "OYH128 draft bl - 15-10-2026.pdf",
+        {
+          type: "application/pdf",
+        },
+      ),
     });
 
     expect(mocks.fillImportReferenceIfEmpty).toHaveBeenCalledWith({
@@ -1593,9 +1594,7 @@ describe("runAnalyzePipeline", () => {
     });
     mocks.extractBl.mockRejectedValue(new Error("bl falhou"));
 
-    await expect(runAnalyzePipeline(baseParams())).rejects.toThrow(
-      "bl falhou",
-    );
+    await expect(runAnalyzePipeline(baseParams())).rejects.toThrow("bl falhou");
 
     const logs = logEntries();
     expect(logs).toHaveLength(2);
@@ -1899,7 +1898,7 @@ describe("primeira consulta de rastreio", () => {
 
     const result = await runAnalyzePipeline(baseParams());
 
-    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(2);
     expect(mocks.processQueuedTrackingJobs).not.toHaveBeenCalled();
     expect(result.trackingPending).toBe(false);
     expect(result.types).toEqual(["bill_of_lading"]);
@@ -1908,6 +1907,22 @@ describe("primeira consulta de rastreio", () => {
       tenantId: TENANT_ID,
       importId: "import-1",
       status: "awaiting_review",
+    });
+  });
+
+  it("tenta de novo quando o enfileiramento falha uma vez", async () => {
+    classifyAsBl();
+    mocks.enqueueTrackingForImport
+      .mockRejectedValueOnce(new Error("socket hang up"))
+      .mockResolvedValueOnce({ shipments: 3, queued: 1 });
+
+    const result = await runAnalyzePipeline(baseParams());
+
+    expect(mocks.enqueueTrackingForImport).toHaveBeenCalledTimes(2);
+    expect(result.trackingPending).toBe(true);
+    expectLog(console.warn, "tracking_enqueue_retry", {
+      importId: "import-1",
+      error: { message: "socket hang up" },
     });
   });
 });
