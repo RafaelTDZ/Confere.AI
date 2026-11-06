@@ -363,8 +363,9 @@ export function blNumberInText(
   number: string | null | undefined,
   text: string,
 ): boolean {
-  if (isBlank(number)) return false;
-  const alvo = (number ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const value = (number ?? "").trim();
+  if (!value) return false;
+  const alvo = value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (alvo.length < 4) return false;
   if ((alvo.match(/\d/g) ?? []).length < 4) return false;
   const haystack = text.replace(/[^A-Za-z0-9]/g, "").toUpperCase();

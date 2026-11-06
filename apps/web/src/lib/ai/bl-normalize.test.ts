@@ -462,5 +462,15 @@ NCM CODE:6910
     expect(blNumberInText("1077841412", "B/L No. 1077841413")).toBe(false);
     expect(blNumberInText("NEXUS", "NEXUS")).toBe(false);
     expect(blNumberInText(null, "qualquer")).toBe(false);
+    expect(blNumberInText("   ", "qualquer")).toBe(false);
+  });
+
+  it("exige tamanho e dígitos mínimos no número do BL", () => {
+    // Curto demais para ser BL.
+    expect(blNumberInText("AB1", "AB1")).toBe(false);
+    // Tamanho ok, mas sem 4 dígitos.
+    expect(blNumberInText("AB12", "AB12")).toBe(false);
+    // Só pontuação depois de normalizar.
+    expect(blNumberInText("-.-", "-.-")).toBe(false);
   });
 });
