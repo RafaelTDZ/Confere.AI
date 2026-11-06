@@ -431,7 +431,7 @@ function seedLikeSearch(): FakeSupabase {
 
 describe("listTenantImports", () => {
   it("retorna somente as importações do tenant ordenadas por created_at desc", async () => {
-    const page = await listTenantImports(TENANT_A);
+    const page = await listTenantImports(TENANT_A, { sort: "created_desc" });
 
     expect(page.rows.map((row) => row.id)).toEqual([
       "import-a-late",
@@ -463,7 +463,11 @@ describe("listTenantImports", () => {
   });
 
   it("devolve a página e o tamanho solicitados mantendo o total global", async () => {
-    const page = await listTenantImports(TENANT_A, { page: 2, pageSize: 5 });
+    const page = await listTenantImports(TENANT_A, {
+      page: 2,
+      pageSize: 5,
+      sort: "created_desc",
+    });
 
     expect(page.page).toBe(2);
     expect(page.pageSize).toBe(5);
@@ -563,7 +567,10 @@ describe("listTenantImports", () => {
       }),
     );
 
-    const page = await listTenantImports(TENANT_A, { search: "DIV-" });
+    const page = await listTenantImports(TENANT_A, {
+      search: "DIV-",
+      sort: "created_desc",
+    });
 
     expect(page.rows.map((row) => row.id)).toEqual([
       "import-divergences",
@@ -725,7 +732,7 @@ describe("listTenantImports", () => {
     }
 
     it.each([
-      [undefined, ["sort-c", "sort-a", "sort-b", "sort-none"]],
+      [undefined, ["sort-c", "sort-b", "sort-a", "sort-none"]],
       ["created_desc" as const, ["sort-c", "sort-a", "sort-b", "sort-none"]],
       ["created_asc" as const, ["sort-none", "sort-b", "sort-a", "sort-c"]],
       ["reference_asc" as const, ["sort-a", "sort-b", "sort-c", "sort-none"]],
@@ -739,11 +746,11 @@ describe("listTenantImports", () => {
       },
     );
 
-    it("usa created_desc quando o valor de ordenação é desconhecido", async () => {
+    it("usa eta_asc quando o valor de ordenação é desconhecido", async () => {
       expect(await sortedIds("invalido" as ImportSort)).toEqual([
         "sort-c",
-        "sort-a",
         "sort-b",
+        "sort-a",
         "sort-none",
       ]);
     });

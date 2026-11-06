@@ -115,17 +115,17 @@ export function importShipmentStage(input: {
 }
 
 export const IMPORT_SORT_LABELS = {
+  eta_asc: "ETA mais próxima",
+  eta_desc: "ETA mais distante",
   created_desc: "Mais recentes",
   created_asc: "Mais antigas",
   reference_asc: "Referência A-Z",
   reference_desc: "Referência Z-A",
-  eta_asc: "ETA mais próxima",
-  eta_desc: "ETA mais distante",
 } as const;
 
 export type ImportSort = keyof typeof IMPORT_SORT_LABELS;
 
-const DEFAULT_IMPORT_SORT: ImportSort = "created_desc";
+const DEFAULT_IMPORT_SORT: ImportSort = "eta_asc";
 
 export function normalizeImportSort(value: unknown): ImportSort {
   if (typeof value !== "string") return DEFAULT_IMPORT_SORT;

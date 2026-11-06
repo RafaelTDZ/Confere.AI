@@ -39,9 +39,11 @@ export function ListFilters({
     <form
       method="get"
       action={action}
+      autoComplete="off"
       className="flex flex-col gap-2 sm:flex-row sm:items-center"
     >
       <Input
+        key={`q:${searchValue ?? ""}`}
         name="q"
         defaultValue={searchValue}
         placeholder={searchPlaceholder}
@@ -50,6 +52,7 @@ export function ListFilters({
       />
       {statusOptions && statusOptions.length > 0 && (
         <select
+          key={`status:${statusValue ?? ""}`}
           name={statusName}
           defaultValue={statusValue ?? ""}
           aria-label="Filtrar por status"
@@ -65,6 +68,7 @@ export function ListFilters({
       )}
       {sortOptions && sortOptions.length > 0 && (
         <select
+          key={`sort:${sortValue ?? ""}`}
           name="sort"
           defaultValue={sortValue ?? sortOptions[0]?.value}
           aria-label={sortLabel}
