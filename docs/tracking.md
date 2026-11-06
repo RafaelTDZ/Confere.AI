@@ -19,9 +19,10 @@ container).
      com `importId`, 1 alvo) para trazer o ETA junto com a análise.
    - Rastreio é acessório: qualquer erro aqui é logado e ignorado.
 2. O processamento acontece em três caminhos:
-   - **Primeira consulta**: ao fim da análise, escopada na importação. Sem
-     `FIRECRAWL_API_KEY` ou com o orçamento estourado, o shipment fica `blocked`
-     (a análise segue normal).
+   - **Primeira consulta**: ao fim da análise, escopada na importação. Com o
+     orçamento estourado — ou sem `FIRECRAWL_API_KEY` no caso de um portal que
+     dependa do Firecrawl — o shipment fica `blocked` (a análise segue normal).
+     Providers `http` (MSC, HMM, ONE e Kuehne + Nagel) funcionam sem a chave.
    - **Manual**: `POST /api/imports/[id]/tracking/refresh` (10/h por tenant).
      Aplica o **cooldown por importação** (`TRACKING_REFRESH_COOLDOWN_MINUTES`,
      padrão 30; ver [Cache curto do botão Atualizar](#cache-curto-do-botão-atualizar-cooldown)):
@@ -43,9 +44,12 @@ container).
      (o filtro de estratégia os exclui). No plano Hobby da Vercel o cron é
      diário (06:00 UTC); para ciclo de 15 min use um cron externo
      (GitHub Actions/cron-job.org) chamando a rota.
-3. O alvo consultável é consultado no portal do armador via Firecrawl
-   (`https://api.firecrawl.dev/v2/scrape`), com `maxAge: 0`, `waitFor` de 8s e
-   extração JSON (5 créditos). O resultado é normalizado em `tracking_events`
+3. O alvo consultável é consultado no portal do armador. Quando o armador tem
+   provider próprio (`http`, 0 créditos — MSC, HMM, ONE e Kuehne + Nagel), a
+   consulta vai direto na API interna, sem Firecrawl. Nos demais, o portal é
+   lido via Firecrawl (`https://api.firecrawl.dev/v2/scrape`), com `maxAge: 0`,
+   `waitFor` de 8s e extração JSON (5 créditos). O resultado é normalizado em
+   `tracking_events`
    (dedupe por `fingerprint`) e atualiza status/ETA/navio/viagem. Navio diferente
    do BL **não** invalida o resultado (rollover/transbordo): o snapshot é aceito
    com o navio/viagem do portal e a divergência sinalizada (`vesselMismatch` —
@@ -549,8 +553,10 @@ implementado.
 
 ## Operação
 
-- **Sem chave**: shipments ficam `blocked` com `firecrawl_not_configured`; a
-  análise continua normal.
+- **Sem chave**: só os shipments dos portais via Firecrawl ficam `blocked` com
+  `firecrawl_not_configured`; providers `http` (MSC, HMM, ONE e Kuehne + Nagel)
+  seguem rastreando com 0 créditos, e o cron continua drenando a fila. A análise
+  continua normal em qualquer caso.
 - **Orçamento esgotado**: `blocked`/`budget_exhausted`; zere
   `TRACKING_FIRECRAWL_MONTHLY_CREDITS` para desligar o rastreio automático.
 - **Armador mudou o layout**: rode o spike com um BL real, atualize o schema em

@@ -74,7 +74,7 @@ divergências entre documentos.
   Kuehne + Nagel usam API interna (0 créditos) (`apps/web/src/lib/tracking`,
   detalhes em `docs/tracking.md`)
 - [x] **Parse de PDF em markdown** — `POST /v2/parse` do Firecrawl converte o PDF (OCR quando necessário) em markdown antes das tasks de IA; o texto vira `TextPart` para todos os providers, com cache por `(tenant_id, sha256)` em `document_parses`, orçamento mensal de créditos e fallback para o pipeline de imagens/PDF quando o parse falha, vem curto ou estoura o teto (`docs/pdf-markdown.md`; `lib/ai/document-parse.ts` + migration `20261028150000_document_parse`) 
-- [x] **Testes automatizados** — Vitest 5 no `apps/web/src`: 74 arquivos (1.262 testes) cobrindo rotas de
+- [x] **Testes automatizados** — Vitest 5 no `apps/web/src`: 74 arquivos (1.263 testes) cobrindo rotas de
   API, pipeline de análise, IA (tasks/providers/parse), rastreio, RLS/isolamento de tenant
   e utilitários; `pnpm test:coverage` com gates por pasta no CI
 

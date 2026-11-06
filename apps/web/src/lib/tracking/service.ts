@@ -740,16 +740,6 @@ type ScrapeOutcome =
     };
 
 async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
-  if (!isFirecrawlConfigured()) {
-    return {
-      ok: false,
-      status: "blocked",
-      errorCode: "firecrawl_not_configured",
-      errorMessage: "FIRECRAWL_API_KEY não configurada",
-      credits: 0,
-    };
-  }
-
   const carrier = shipment.carrier_code as CarrierCode;
   const queryType = shipment.query_type as TrackingQueryType;
   const queryValue = shipment.query_value;
@@ -857,6 +847,18 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
       status: "blocked",
       errorCode: "carrier_unsupported",
       errorMessage: "Armador sem portal de rastreio suportado",
+      credits: 0,
+    };
+  }
+
+  // Só os portais via Firecrawl exigem a chave. Os providers http acima (MSC,
+  // HMM, ONE e Kuehne + Nagel) são gratuitos e seguem funcionando sem ela.
+  if (!isFirecrawlConfigured()) {
+    return {
+      ok: false,
+      status: "blocked",
+      errorCode: "firecrawl_not_configured",
+      errorMessage: "FIRECRAWL_API_KEY não configurada",
       credits: 0,
     };
   }

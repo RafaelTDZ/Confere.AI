@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   admin: undefined as unknown,
   scrape: vi.fn(),
   msc: vi.fn(),
+  kuehne: vi.fn(),
+  firecrawlConfigured: true,
   getImportDetail: vi.fn(),
   syncImportEta: vi.fn(),
 }));
@@ -32,13 +34,17 @@ vi.mock("@/lib/documents/imports", () => ({
 }));
 
 vi.mock("@/lib/tracking/firecrawl", () => ({
-  isFirecrawlConfigured: () => true,
+  isFirecrawlConfigured: () => mocks.firecrawlConfigured,
   estimateFirecrawlCredits: () => 5,
   scrapeWithFirecrawl: mocks.scrape,
 }));
 
 vi.mock("@/lib/tracking/providers/msc", () => ({
   fetchMscTracking: mocks.msc,
+}));
+
+vi.mock("@/lib/tracking/providers/kuehne", () => ({
+  fetchKuehneTracking: mocks.kuehne,
 }));
 
 vi.mock("@/lib/tracking/usage", () => ({
@@ -750,6 +756,8 @@ describe("refreshTrackingForImport", () => {
     mocks.scrape.mockReset();
     mocks.scrape.mockResolvedValue(firecrawlResult());
     mocks.msc.mockReset();
+    mocks.kuehne.mockReset();
+    mocks.firecrawlConfigured = true;
     mocks.getImportDetail.mockReset();
     mocks.getImportDetail.mockResolvedValue({
       bl_number: "276430227",
@@ -1058,6 +1066,72 @@ describe("refreshTrackingForImport", () => {
       queryValue: "TXTU4077041",
     });
     expect(mocks.scrape).not.toHaveBeenCalled();
+  });
+
+  describe("sem FIRECRAWL_API_KEY", () => {
+    afterEach(() => {
+      mocks.firecrawlConfigured = true;
+    });
+
+    it("consulta a Kuehne + Nagel pelo provider http (0 creditos)", async () => {
+      // O provider da K+N nao usa Firecrawl: a ausencia da chave nao pode
+      // bloquear o rastreio do BL de casa.
+      mocks.firecrawlConfigured = false;
+      mocks.getImportDetail.mockResolvedValue({
+        bl_number: "1077603444",
+        bl: {
+          number: "1077603444",
+          carrier: "KUEHNE + NAGEL",
+          vessel: "MAERSK SAN VINCENT",
+          containerNumbers: ["HAMU1578596", "GCXU5197277"],
+        },
+      });
+      mocks.kuehne.mockResolvedValue({
+        ok: true,
+        httpStatus: 200,
+        snapshot: {
+          found: true,
+          status: "in_transit",
+          vessel: "MAERSK SAN VINCENT",
+          voyage: "640W",
+          eta: "2026-11-21",
+          containers: ["HAMU1578596", "GCXU5197277"],
+          events: [],
+          notes: null,
+        },
+      });
+      db.rows("tracking_shipments").push(
+        shipmentRow({
+          id: "bl",
+          carrier_code: "maersk",
+          strategy: "link",
+          query_value: "1077603444",
+          status: "pending",
+          next_check_at: null,
+        }),
+      );
+
+      const result = await refreshTrackingForImport({
+        tenantId: TENANT,
+        importId: "import-1",
+        force: true,
+      });
+
+      expect(result).toEqual({ processed: 1, failed: 0 });
+      expect(mocks.kuehne).toHaveBeenCalledWith({
+        queryType: "bl",
+        queryValue: "1077603444",
+      });
+      expect(mocks.scrape).not.toHaveBeenCalled();
+      expect(
+        db.rows("tracking_shipments").find((row) => row.id === "bl"),
+      ).toMatchObject({
+        carrier_code: "kuehne",
+        strategy: "http",
+        status: "in_transit",
+        eta: "2026-11-21",
+      });
+    });
   });
 
   it("não reescreve linha que já tem evento do armador anterior", async () => {

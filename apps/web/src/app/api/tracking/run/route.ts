@@ -35,12 +35,11 @@ async function handle(request: Request, method: "GET" | "POST") {
     log.warn("unauthorized", { method });
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
+  // Sem FIRECRAWL_API_KEY o cron ainda drena os providers http (MSC, HMM, ONE,
+  // Kuehne + Nagel); os portais que dependem do Firecrawl ficam `blocked` por
+  // shipment em `scrapeShipment`.
   if (!isFirecrawlConfigured()) {
     log.warn("firecrawl_not_configured", { method });
-    return NextResponse.json(
-      { error: "FIRECRAWL_API_KEY não configurada", processed: 0, failed: 0 },
-      { status: 503 },
-    );
   }
 
   const url = new URL(request.url);
@@ -86,7 +85,9 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Falha ao processar rastreio",
+          error instanceof Error
+            ? error.message
+            : "Falha ao processar rastreio",
       },
       { status: 500 },
     );
@@ -106,7 +107,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Falha ao processar rastreio",
+          error instanceof Error
+            ? error.message
+            : "Falha ao processar rastreio",
       },
       { status: 500 },
     );

@@ -134,18 +134,17 @@ describe("POST /api/tracking/run", () => {
     expect(mocks.processQueued).not.toHaveBeenCalled();
   });
 
-  it("devolve 503 sem FIRECRAWL_API_KEY", async () => {
+  it("segue drenando os providers http sem FIRECRAWL_API_KEY", async () => {
     mocks.firecrawlConfigured = false;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { status, body } = await readJson(await POST(makeRequest()));
 
-    expect(status).toBe(503);
-    expect(body).toEqual({
-      error: "FIRECRAWL_API_KEY não configurada",
-      processed: 0,
-      failed: 0,
-    });
-    expect(mocks.enqueueDue).not.toHaveBeenCalled();
+    expect(status).toBe(200);
+    expect(body).toEqual({ ok: true, queued: 0, processed: 0, failed: 0 });
+    expect(mocks.enqueueDue).toHaveBeenCalledWith({ limit: 8 });
+    expect(mocks.processQueued).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 
   it("devolve 500 quando o reenfileiramento falha", async () => {
