@@ -705,6 +705,41 @@ describe("enqueueDueTrackingShipments", () => {
 });
 
 /** Resposta do Firecrawl sem eventos: forÃ§a o caminho de ETA no BL. */
+/** Página de rastreio da CMA (markdown) usada pelo parser nativo. */
+function cmaMarkdownResult(container: string) {
+  const markdown = [
+    "## Tracking details",
+    "",
+    "Vessel Departure",
+    "",
+    `- Container **${container}**`,
+    "- **45G1** **(40HC)**",
+    "",
+    "- POL**SHEKOU (CN)**",
+    "",
+    "- POD**ITAPOA, SC (BR)**",
+    "",
+    "ETA Berth at POD",
+    "",
+    "Mon 09-NOV-202612:30 PM",
+    "",
+    "|  |  | Date | Moves | Location<br>Terminal | Vessel (Voyage) |",
+    "| x |  | Tuesday, 06-OCT-202608:54 PM | Vessel Departure | SHEKOU<br>SHEKOU CONTAINER TERMINAL LTD | [CMA CGM COBALT](https://www.cma-cgm.com/the-group/activities/shipping/vessel/1/x) [( 0BDPHW1MA)](https://www.cma-cgm.com/ebusiness/schedules/voyage/detail?VoyageReference=0BDPHW1MA) |",
+    "| x |  | Monday, 09-NOV-202612:30 PM | Planned Vessel Arrival | ITAPOA, SC<br>ITAPOA TERMINAIS PORTUARIOS | [CMA CGM COBALT](https://www.cma-cgm.com/the-group/activities/shipping/vessel/1/x) [( 0BDPIE1MA)](https://www.cma-cgm.com/ebusiness/schedules/voyage/detail?VoyageReference=0BDPIE1MA) |",
+  ].join("\n");
+
+  return {
+    ok: true,
+    mode: "markdown" as const,
+    json: null,
+    markdown,
+    statusCode: 200,
+    creditsCost: 1,
+    errorCode: null,
+    errorMessage: null,
+  };
+}
+
 function firecrawlResult(eta: string | null = "2026-11-14") {
   return {
     ok: true,
@@ -985,6 +1020,7 @@ describe("refreshTrackingForImport", () => {
         next_check_at: null,
       }),
     );
+    mocks.scrape.mockResolvedValueOnce(cmaMarkdownResult("CAIU9274323"));
 
     const result = await refreshTrackingForImport({
       tenantId: TENANT,
@@ -993,7 +1029,12 @@ describe("refreshTrackingForImport", () => {
     });
 
     expect(result).toEqual({ processed: 1, failed: 0 });
+    // Parser nativo: uma consulta em markdown (1 crédito), sem extração JSON.
     expect(mocks.scrape).toHaveBeenCalledTimes(1);
+    expect(mocks.scrape.mock.calls[0]?.[0]).toMatchObject({
+      mode: "markdown",
+      proxy: "stealth",
+    });
     const shipments = db.rows("tracking_shipments");
     // O BL continua `link`; sÃ³ o primeiro container Ã© promovido e consultado.
     expect(shipments.find((row) => row.id === "bl")).toMatchObject({
@@ -1009,6 +1050,51 @@ describe("refreshTrackingForImport", () => {
     expect(
       db.rows("tracking_jobs").filter((job) => job.status === "queued"),
     ).toHaveLength(0);
+  });
+
+  it("cai para a extração JSON quando o markdown da CMA não é reconhecido", async () => {
+    mocks.getImportDetail.mockResolvedValue({
+      bl_number: "PLISZ4H15403",
+      bl: {
+        number: "PLISZ4H15403",
+        carrier: "CMA CGM",
+        containerNumbers: ["CAIU9274323"],
+      },
+    });
+    db.rows("tracking_shipments").push(
+      shipmentRow({
+        id: "bl",
+        carrier_code: "cma",
+        strategy: "link",
+        query_value: "PLISZ4H15403",
+        next_check_at: null,
+      }),
+      shipmentRow({
+        id: "container-1",
+        carrier_code: "cma",
+        strategy: "link",
+        query_type: "container",
+        query_value: "CAIU9274323",
+        container_number: "CAIU9274323",
+        next_check_at: null,
+      }),
+    );
+    mocks.scrape
+      .mockResolvedValueOnce({
+        ...cmaMarkdownResult("CAIU9274323"),
+        markdown: "<html>captcha</html>",
+      })
+      .mockResolvedValueOnce(firecrawlResult("2026-11-20"));
+
+    const result = await refreshTrackingForImport({
+      tenantId: TENANT,
+      importId: "import-1",
+      force: true,
+    });
+
+    expect(result).toEqual({ processed: 1, failed: 0 });
+    expect(mocks.scrape).toHaveBeenCalledTimes(2);
+    expect(mocks.scrape.mock.calls[1]?.[0]).toMatchObject({ mode: "json" });
   });
 
   it("consulta o BL master e rebaixa o BL de casa Ã³rfÃ£o", async () => {

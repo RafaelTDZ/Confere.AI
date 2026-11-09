@@ -29,6 +29,7 @@ import { fetchMscTracking } from "@/lib/tracking/providers/msc";
 import { fetchHmmTracking } from "@/lib/tracking/providers/hmm";
 import { fetchOneTracking } from "@/lib/tracking/providers/one";
 import { fetchKuehneTracking } from "@/lib/tracking/providers/kuehne";
+import { parseCmaMarkdown } from "@/lib/tracking/providers/cma";
 import {
   getTrackingCreditsUsed,
   consumeTrackingCredits,
@@ -947,7 +948,10 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
     };
   }
 
-  const mode = trackingFirecrawlMode();
+  const isCma = carrier === "cma";
+  // A CMA tem parser próprio do markdown (1 crédito); os demais portais usam a
+  // extração JSON do Firecrawl (5 créditos).
+  const mode = isCma ? "markdown" : trackingFirecrawlMode();
   const credits = estimateFirecrawlCredits(mode);
   const expectedVessel = readExpectedVessel(shipment);
   // 1 retry só na Maersk e só para `not_found` real do portal (`ok: true` com
@@ -987,7 +991,8 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
       // A página do CMA abre em ~25s (medido no OYH103) e a extração JSON soma
       // mais alguns segundos: o teto de 60s estourava com frequência.
       timeoutMs: carrier === "cma" ? 90_000 : undefined,
-      proxy: carrier === "maersk" ? "stealth" : undefined,
+      // DataDome (CMA) e Akamai (Maersk) exigem o proxy furtivo.
+      proxy: carrier === "maersk" || isCma ? "stealth" : undefined,
       actions: buildCarrierActions({
         carrier,
         queryType,
@@ -1022,8 +1027,62 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
       continue;
     }
 
+    let spentCredits = credits;
+    let payload = result.json;
+
+    if (isCma) {
+      const parsed = parseCmaMarkdown(result.markdown ?? "", queryValue);
+      if (parsed) {
+        payload = parsed;
+      } else {
+        // Layout desconhecido (portal mudou): não perde a consulta, cai para a
+        // extração JSON do Firecrawl.
+        const allowedJson = await consumeTrackingCredits({
+          tenantId: shipment.tenant_id,
+          credits: estimateFirecrawlCredits("json"),
+        });
+        if (!allowedJson) {
+          return {
+            ok: false,
+            status: "blocked",
+            errorCode: "budget_exhausted",
+            errorMessage: "Orçamento mensal de rastreio esgotado",
+            credits: spentCredits,
+          };
+        }
+        const jsonResult = await scrapeWithFirecrawl({
+          url,
+          mode: "json",
+          waitForMs: 8_000,
+          timeoutMs: 90_000,
+          proxy: "stealth",
+          actions: buildCarrierActions({
+            carrier,
+            queryType,
+            queryValue,
+          }),
+        });
+        spentCredits += estimateFirecrawlCredits("json");
+        if (
+          !jsonResult.ok ||
+          (jsonResult.statusCode !== null && jsonResult.statusCode >= 400)
+        ) {
+          lastFailure = {
+            ok: false,
+            status: "error",
+            errorCode: jsonResult.errorCode ?? "firecrawl_error",
+            errorMessage:
+              jsonResult.errorMessage ?? "Falha ao consultar o armador",
+            credits: spentCredits,
+          };
+          continue;
+        }
+        payload = jsonResult.json;
+      }
+    }
+
     const snapshot = normalizeFirecrawlResult(
-      result.json,
+      payload,
       shipment.container_number,
       { vessel: expectedVessel },
     );
@@ -1039,7 +1098,7 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
         status: "blocked",
         errorCode: "carrier_blocked",
         errorMessage: snapshot.notes.slice(0, 300),
-        credits,
+        credits: spentCredits,
       };
       continue;
     }
@@ -1057,12 +1116,17 @@ async function scrapeShipment(shipment: ShipmentRow): Promise<ScrapeOutcome> {
         status: "not_found",
         errorCode: "maersk_no_result",
         errorMessage: snapshot.notes ?? "Sem resultado no portal da Maersk",
-        credits,
+        credits: spentCredits,
       };
       continue;
     }
 
-    return { ok: true, snapshot, credits, httpStatus: result.statusCode };
+    return {
+      ok: true,
+      snapshot,
+      credits: spentCredits,
+      httpStatus: result.statusCode,
+    };
   }
 
   return (
